@@ -1646,6 +1646,103 @@ function lineup_decompose() {
     }
 }
 
+// ── DUPLICATE COMP (DEEP) ─────────────────────────────────────────────────────
+// Recursively duplicates a comp and every nested precomp used inside it, so the
+// copy is fully independent of the original — editing one never touches the
+// other. Names are versioned (Comp -> Comp_2 -> Comp_3 ...) and each duplicate
+// is placed in the same Project panel folder as its original. A comp used more
+// than once inside the same tree is only duplicated once and shared by every
+// reference to it, mirroring the original structure.
+//
+// If precomp layers are selected in the active comp's timeline, each one gets
+// its own independent deep duplicate and that layer's source is swapped to it
+// in place. Otherwise it deep-duplicates whichever comp(s) are selected in the
+// Project panel.
+
+function lineup_duplicateCompDeep() {
+    try {
+        var proj = app.project;
+
+        function nameExists(name) {
+            for (var i = 1; i <= proj.numItems; i++) {
+                try { if (proj.item(i).name === name) return true; } catch(e) {}
+            }
+            return false;
+        }
+
+        function versionedName(baseName) {
+            var m = baseName.match(/^(.*)_(\d+)$/);
+            var base = m ? m[1] : baseName;
+            var n = m ? parseInt(m[2], 10) + 1 : 2;
+            var candidate;
+            do { candidate = base + "_" + n; n++; } while (nameExists(candidate));
+            return candidate;
+        }
+
+        function deepDup(comp, cloneMap) {
+            if (cloneMap[comp.id]) return cloneMap[comp.id];
+            var dup = comp.duplicate();
+            dup.name = versionedName(comp.name);
+            try { dup.parentFolder = comp.parentFolder; } catch(e) {}
+            cloneMap[comp.id] = dup;
+            for (var li = 1; li <= dup.numLayers; li++) {
+                var layer = dup.layer(li);
+                if (!(layer instanceof AVLayer)) continue;
+                var src = layer.source;
+                if (src && src instanceof CompItem) {
+                    var newSrc = deepDup(src, cloneMap);
+                    if (newSrc !== src) layer.replaceSource(newSrc, false);
+                }
+            }
+            return dup;
+        }
+
+        var activeComp = proj.activeItem;
+        var precompLayers = [];
+        if (activeComp && activeComp instanceof CompItem) {
+            var sel = activeComp.selectedLayers;
+            for (var i = 0; i < sel.length; i++) {
+                if (sel[i] instanceof AVLayer && sel[i].source && sel[i].source instanceof CompItem)
+                    precompLayers.push(sel[i]);
+            }
+        }
+
+        var messages = [];
+
+        if (precompLayers.length > 0) {
+            app.beginUndoGroup("Duplicate Comp (Deep)");
+            for (var i = 0; i < precompLayers.length; i++) {
+                var cloneMap = {};
+                var origName = precompLayers[i].source.name;
+                var newTop = deepDup(precompLayers[i].source, cloneMap);
+                precompLayers[i].replaceSource(newTop, false);
+                messages.push('"' + origName + '" -> "' + newTop.name + '"');
+            }
+            app.endUndoGroup();
+        } else {
+            var roots = [];
+            for (var i = 0; i < proj.selection.length; i++) {
+                if (proj.selection[i] instanceof CompItem) roots.push(proj.selection[i]);
+            }
+            if (roots.length === 0)
+                return "ERROR: Select a precomp layer in the timeline, or select one or more comps in the Project panel.";
+
+            app.beginUndoGroup("Duplicate Comp (Deep)");
+            for (var i = 0; i < roots.length; i++) {
+                var cloneMap = {};
+                var newTop = deepDup(roots[i], cloneMap);
+                messages.push('"' + roots[i].name + '" -> "' + newTop.name + '"');
+            }
+            app.endUndoGroup();
+        }
+
+        return "Duplicated " + messages.join(", ");
+    } catch (err) {
+        try { app.endUndoGroup(); } catch(e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
 // ── ORGANIZE PROJECT ──────────────────────────────────────────────────────────
 
 function lineup_organizeProject() {

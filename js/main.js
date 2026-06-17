@@ -30,11 +30,12 @@ function restoreCollapsed() {
 
 var _toastTimer = null;
 
-function showToast(msg) {
+function showToast(msg, type) {
     var toast = document.getElementById('toast');
     var msgEl = document.getElementById('toast-msg');
     if (!toast || !msgEl) return;
     msgEl.textContent = msg;
+    toast.classList.toggle('toast-info', type === 'info');
     toast.classList.remove('toast-hidden');
     clearTimeout(_toastTimer);
     _toastTimer = setTimeout(hideToast, 3000);
@@ -942,9 +943,15 @@ function doDecompose() {
     run('lineup_decompose()');
 }
 
+function doDuplicateCompDeep() {
+    run('lineup_duplicateCompDeep()', function(result) {
+        showToast(result, 'info');
+    });
+}
+
 function doConsolidateProject() {
     run('lineup_organizeProject()', function(result) {
-        showToast(result);
+        showToast(result, 'info');
     });
 }
 
@@ -1964,7 +1971,7 @@ function applyCompExport() {
             showToast(result.replace(/^ERROR:\s*/, ''));
             return;
         }
-        showToast('Saved your project, then exported and opened the reduced copy.');
+        showToast('Saved your project, then exported and opened the reduced copy.', 'info');
         closeCompExport();
     });
 }
