@@ -1,0 +1,9 @@
+# Normalize line endings to LF in the repo regardless of OS, so Windows and
+# Mac don't fight over CRLF vs LF and create noisy whole-file diffs.
+* text=auto eol=lf
+
+# Batch scripts need CRLF to run reliably on Windows
+*.cmd text eol=crlf
+
+# Binary files — never touch line endings
+*.png binary

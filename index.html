@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lineup</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="panel">
+
+<div id="panel-content">
+
+  <!-- ── ALIGN ────────────────────────────────────────────────────────────── -->
+  <div class="section" id="sec-align">
+    <div class="section-hdr" onclick="toggleSection('align')">
+      <svg class="sec-icon" viewBox="0 0 14 14" fill="currentColor" style="color:#5b9cf6">
+        <rect x="1" y="2" width="1.5" height="10" rx="0.6"/>
+        <rect x="3.5" y="3" width="8" height="2.8" rx="1.2"/>
+        <rect x="3.5" y="8.2" width="5.5" height="2.8" rx="1.2" opacity="0.6"/>
+      </svg>
+      <span class="sec-title">Align</span>
+      <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+    </div>
+    <div class="section-body" id="body-align">
+      <div class="ctrl-row" style="padding-left:2px">
+        <span class="lbl">Align to</span>
+        <select id="alignMode">
+          <option value="0">Selection</option>
+          <option value="1" selected>Composition</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <div class="btn-group">
+          <!-- Align Left -->
+          <button class="icon-btn" title="Align Left" onclick="doAlign(0)">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <line x1="3.5" y1="2" x2="3.5" y2="18" stroke="currentColor" stroke-width="2" opacity="0.6"/>
+              <rect x="4.5" y="4.5" width="11" height="4" rx="1.2"/>
+              <rect x="4.5" y="11.5" width="7" height="4" rx="1.2" opacity="0.7"/>
+            </svg>
+          </button>
+          <!-- Center Horizontal -->
+          <button class="icon-btn" title="Center Horizontal" onclick="doAlign(1)">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <line x1="10" y1="2" x2="10" y2="18" stroke="currentColor" stroke-width="2" opacity="0.6"/>
+              <rect x="4" y="4.5" width="12" height="4" rx="1.2"/>
+              <rect x="6" y="11.5" width="8" height="4" rx="1.2" opacity="0.7"/>
+            </svg>
+          </button>
+          <!-- Align Right -->
+          <button class="icon-btn" title="Align Right" onclick="doAlign(2)">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <line x1="16.5" y1="2" x2="16.5" y2="18" stroke="currentColor" stroke-width="2" opacity="0.6"/>
+              <rect x="5" y="4.5" width="11" height="4" rx="1.2"/>
+              <rect x="9" y="11.5" width="7" height="4" rx="1.2" opacity="0.7"/>
+            </svg>
+          </button>
+          <!-- Align Top -->
+          <button class="icon-btn" title="Align Top" onclick="doAlign(3)">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <line x1="2" y1="3.5" x2="18" y2="3.5" stroke="currentColor" stroke-width="2" opacity="0.6"/>
+              <rect x="4.5" y="4.5" width="4" height="11" rx="1.2"/>
+              <rect x="11.5" y="4.5" width="4" height="7" rx="1.2" opacity="0.7"/>
+            </svg>
+          </button>
+          <!-- Center Vertical -->
+          <button class="icon-btn" title="Center Vertical" onclick="doAlign(4)">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="2" opacity="0.6"/>
+              <rect x="4.5" y="4" width="4" height="12" rx="1.2"/>
+              <rect x="11.5" y="6" width="4" height="8" rx="1.2" opacity="0.7"/>
+            </svg>
+          </button>
+          <!-- Align Bottom -->
+          <button class="icon-btn" title="Align Bottom" onclick="doAlign(5)">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <line x1="2" y1="16.5" x2="18" y2="16.5" stroke="currentColor" stroke-width="2" opacity="0.6"/>
+              <rect x="4.5" y="4.5" width="4" height="12" rx="1.2" opacity="0.7"/>
+              <rect x="11.5" y="9" width="4" height="7" rx="1.2"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">Margin</span>
+        <input type="text" id="marginInput" value="0" style="width:40px">
+        <select id="pixelDropdown">
+          <option value="0">px</option>
+          <option value="1">%</option>
+        </select>
+        <span class="vsep"></span>
+        <label class="check-label">
+          <input type="checkbox" id="offsetCheck"> Offset Keys
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── DISTRIBUTE ───────────────────────────────────────────────────────── -->
+  <div class="section" id="sec-dist">
+    <div class="section-hdr" onclick="toggleSection('dist')">
+      <svg class="sec-icon" viewBox="0 0 14 14" fill="currentColor" style="color:#a07ef0">
+        <rect x="1" y="2" width="1.5" height="10" rx="0.6"/>
+        <rect x="11.5" y="2" width="1.5" height="10" rx="0.6"/>
+        <rect x="4.5" y="3.5" width="2" height="7" rx="1" opacity="0.9"/>
+        <rect x="7.5" y="3.5" width="2" height="7" rx="1" opacity="0.9"/>
+      </svg>
+      <span class="sec-title">Distribute</span>
+      <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+    </div>
+    <div class="section-body" id="body-dist">
+      <div class="ctrl-row" style="padding-left:2px">
+        <span class="lbl">Distribute to</span>
+        <select id="distMode">
+          <option value="0">Composition</option>
+          <option value="1">Selection</option>
+          <option value="2">Key Layer</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <div class="btn-group">
+          <!-- Distribute H spacing -->
+          <button class="icon-btn" title="Distribute Horizontal Spacing" onclick="doDist(1)">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <line x1="3" y1="3" x2="3" y2="17" stroke="currentColor" stroke-width="1.6" opacity="0.35"/>
+              <line x1="17" y1="3" x2="17" y2="17" stroke="currentColor" stroke-width="1.6" opacity="0.35"/>
+              <rect x="4" y="6" width="5" height="8" rx="1.2"/>
+              <rect x="11" y="6" width="5" height="8" rx="1.2" opacity="0.7"/>
+            </svg>
+          </button>
+          <!-- Distribute V spacing -->
+          <button class="icon-btn" title="Distribute Vertical Spacing" onclick="doDist(0)">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <line x1="3" y1="3" x2="17" y2="3" stroke="currentColor" stroke-width="1.6" opacity="0.35"/>
+              <line x1="3" y1="17" x2="17" y2="17" stroke="currentColor" stroke-width="1.6" opacity="0.35"/>
+              <rect x="6" y="4" width="8" height="5" rx="1.2"/>
+              <rect x="6" y="11" width="8" height="5" rx="1.2" opacity="0.7"/>
+            </svg>
+          </button>
+          <!-- Distribute Z (depth) -->
+          <button id="zDistBtn" class="icon-btn" title="Distribute Z Depth (3D layers) — right-click to set range" onclick="doDistZ()">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <rect x="9" y="4" width="8" height="8" rx="1.2" opacity="0.45"/>
+              <line x1="7.5" y1="8" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.1" opacity="0.4"/>
+              <line x1="7.5" y1="13" x2="9" y2="11.5" stroke="currentColor" stroke-width="1.1" opacity="0.4"/>
+              <rect x="3" y="8" width="8" height="8" rx="1.2"/>
+            </svg>
+          </button>
+          <span class="vsep"></span>
+          <!-- Distribute along path -->
+          <button class="icon-btn" title="Distribute along path" onclick="doDistPath()">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor">
+              <path d="M2,15 C6,15 6,5 10,5 C14,5 14,15 18,15" stroke-width="1.5" stroke-linecap="round"/>
+              <rect x="0" y="13" width="4" height="4" rx="1" fill="currentColor" opacity="0.75"/>
+              <rect x="8" y="3" width="4" height="4" rx="1" fill="currentColor" opacity="0.75"/>
+              <rect x="16" y="13" width="4" height="4" rx="1" fill="currentColor" opacity="0.75"/>
+            </svg>
+          </button>
+          <!-- Distribute Radial -->
+          <button id="radialDistBtn" class="icon-btn" title="Distribute Radially — right-click to set radius" onclick="doDistRadial()">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <circle cx="10" cy="10" r="5.5" stroke="currentColor" stroke-width="1.4" fill="none" opacity="0.35"/>
+              <circle cx="10" cy="3.5" r="2.2"/>
+              <circle cx="16.5" cy="10" r="2.2" opacity="0.8"/>
+              <circle cx="10" cy="16.5" r="2.2" opacity="0.65"/>
+              <circle cx="3.5" cy="10" r="2.2" opacity="0.5"/>
+            </svg>
+          </button>
+          <!-- Distribute Grid -->
+          <button id="gridDistBtn" class="icon-btn" title="Distribute in Grid (W cols × H rows) — right-click to pick size &amp; gap" onclick="doDistGrid()">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <rect x="3.5" y="3.5" width="3" height="3" rx="0.5"/>
+              <rect x="8.5" y="3.5" width="3" height="3" rx="0.5"/>
+              <rect x="13.5" y="3.5" width="3" height="3" rx="0.5"/>
+              <rect x="3.5" y="8.5" width="3" height="3" rx="0.5"/>
+              <rect x="8.5" y="8.5" width="3" height="3" rx="0.5"/>
+              <rect x="13.5" y="8.5" width="3" height="3" rx="0.5"/>
+              <rect x="3.5" y="13.5" width="3" height="3" rx="0.5"/>
+              <rect x="8.5" y="13.5" width="3" height="3" rx="0.5"/>
+              <rect x="13.5" y="13.5" width="3" height="3" rx="0.5"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="ctrl-row">
+        <span id="spacingGroup" class="spacing-group">
+          <span class="lbl">Spacing</span>
+          <input type="text" id="distInput" value="0" style="width:40px">
+          <span class="lbl">%</span>
+        </span>
+        <span class="vsep"></span>
+        <span class="lbl">Radius</span>
+        <input type="text" id="radialInput" value="500" style="width:44px">
+        <span class="lbl">px</span>
+        <span class="vsep"></span>
+        <label class="check-label" title="Auto Rotate along path / circle">
+          <input type="checkbox" id="rotateCheck"> Rotate
+        </label>
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">Grid</span>
+        <input type="text" id="gridColsInput" class="num-input" value="3" style="width:28px">
+        <span class="dim-sep">×</span>
+        <input type="text" id="gridRowsInput" class="num-input" value="3" style="width:28px">
+        <span class="vsep"></span>
+        <span class="gap-inline-group" title="Override horizontal/vertical grid spacing in px (edge-to-edge between cells), centered on the comp/selection center. Leave blank for Auto.">
+          <svg class="gap-inline-icon" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M3,4 L5,4 L5,16 L3,16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M17,4 L15,4 L15,16 L17,16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="9" y="9" width="2" height="2" rx="0.4"/>
+          </svg>
+          <input type="text" id="gridHPadInput" class="num-input gap-inline-input" placeholder="Auto">
+          <svg class="gap-inline-icon" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M4,3 L4,5 L16,5 L16,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4,17 L4,15 L16,15 L16,17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="9" y="9" width="2" height="2" rx="0.4"/>
+          </svg>
+          <input type="text" id="gridVPadInput" class="num-input gap-inline-input" placeholder="Auto">
+        </span>
+        <span class="vsep"></span>
+        <span id="alignEdgesGroup" class="spacing-group">
+          <label class="check-label" title="Align corner layers to composition/selection edges; distribute the rest evenly between them. Ignored on any axis where Gap is set manually.">
+            <input type="checkbox" id="alignEdgesCheck"> Align Edges
+          </label>
+        </span>
+      </div>
+      <input type="hidden" id="zStartInput" value="0">
+      <input type="hidden" id="zEndInput" value="1000">
+      <input type="hidden" id="zEvenInput" value="1">
+      <input type="hidden" id="zStepInput" value="100">
+    </div>
+  </div>
+
+  <!-- ── ANCHOR POINT ─────────────────────────────────────────────────────── -->
+  <div class="section" id="sec-anchor">
+    <div class="section-hdr" onclick="toggleSection('anchor')">
+      <svg class="sec-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" style="color:#4ec9aa">
+        <circle cx="7" cy="7" r="2"/>
+        <line x1="7" y1="1.5" x2="7" y2="5"/>
+        <line x1="7" y1="9" x2="7" y2="12.5"/>
+        <line x1="1.5" y1="7" x2="5" y2="7"/>
+        <line x1="9" y1="7" x2="12.5" y2="7"/>
+      </svg>
+      <span class="sec-title">Anchor Point</span>
+      <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+    </div>
+    <div class="section-body" id="body-anchor">
+      <div class="ctrl-row" style="padding-left:2px">
+        <span class="lbl">Anchor based on:</span>
+        <select id="anchorMode">
+          <option value="0" selected>Object</option>
+          <option value="1">Selection</option>
+          <option value="2">Composition</option>
+        </select>
+        <label class="check-label" title="Use layer bounds instead of mask bounds when Object mode is active">
+          <input type="checkbox" id="ignoreMasksCheck"> Ignore Masks
+        </label>
+      </div>
+      <div class="anchor-row">
+        <div class="anchor-grid">
+          <button class="anchor-btn" title="Top Left"      onclick="doAnchor(0)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7,15 7,7 15,7"/></svg></button>
+          <button class="anchor-btn" title="Top Center"    onclick="doAnchor(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="6" y1="8" x2="18" y2="8"/></svg></button>
+          <button class="anchor-btn" title="Top Right"     onclick="doAnchor(2)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17,15 17,7 9,7"/></svg></button>
+          <button class="anchor-btn" title="Middle Left"   onclick="doAnchor(3)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="6" x2="8" y2="18"/></svg></button>
+          <button class="anchor-btn anchor-btn-center" title="Center" onclick="doAnchor(4)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/></svg></button>
+          <button class="anchor-btn" title="Middle Right"  onclick="doAnchor(5)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="16" y1="6" x2="16" y2="18"/></svg></button>
+          <button class="anchor-btn" title="Bottom Left"   onclick="doAnchor(6)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7,9 7,17 15,17"/></svg></button>
+          <button class="anchor-btn" title="Bottom Center" onclick="doAnchor(7)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="6" y1="16" x2="18" y2="16"/></svg></button>
+          <button class="anchor-btn" title="Bottom Right"  onclick="doAnchor(8)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17,9 17,17 9,17"/></svg></button>
+        </div>
+
+        <div class="cp-panel">
+          <div class="cp-display-row">
+            <div class="display-box" id="anchorDisplay">—, —</div>
+            <button class="icon-btn small filled btn-trash" title="Clear anchor clipboard" onclick="doAnchorClear()">
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+                <polyline points="3,5 4.5,12 9.5,12 11,5"/>
+                <line x1="2" y1="4" x2="12" y2="4"/>
+                <line x1="5.5" y1="4" x2="5.5" y2="2.5"/>
+                <line x1="8.5" y1="4" x2="8.5" y2="2.5"/>
+                <line x1="5.5" y1="2.5" x2="8.5" y2="2.5"/>
+              </svg>
+            </button>
+          </div>
+          <div class="cp-btns">
+            <button class="ease-action-btn" title="Copy anchor point" onclick="doAnchorCopy()">Copy</button>
+            <button class="ease-action-btn" id="anchorPasteBtn" title="Paste anchor point" onclick="doAnchorPaste()" disabled>Paste</button>
+          </div>
+          <button class="btn cp-btn" onclick="doCreateNull()">Null</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── EASE COPY ─────────────────────────────────────────────────────────── -->
+  <div class="section" id="sec-ease">
+    <div class="section-hdr" onclick="toggleSection('ease')">
+      <svg class="sec-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="color:#e05555">
+        <path d="M12,5 L12,3.5 Q12,2 10.5,2 L3.5,2 Q2,2 2,3.5 L2,10.5 Q2,12 3.5,12 L5,12"/>
+        <rect x="7" y="7" width="10" height="10" rx="1.5"/>
+      </svg>
+      <span class="sec-title">Ease Copy</span>
+      <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+    </div>
+    <div class="section-body" id="body-ease">
+      <div class="ease-panels-row">
+      <div class="ease-subpanel">
+        <span class="ease-subpanel-lbl">Copy</span>
+        <div class="ease-subpanel-body">
+          <button class="ease-action-btn" onclick="doEaseCopy()">Copy</button>
+          <div class="display-box ease-subpanel-display" id="easeDisplay">—</div>
+          <button class="icon-btn small filled btn-trash" title="Clear ease clipboard" onclick="doEaseClear()">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+              <polyline points="3,5 4.5,12 9.5,12 11,5"/>
+              <line x1="2" y1="4" x2="12" y2="4"/>
+              <line x1="5.5" y1="4" x2="5.5" y2="2.5"/>
+              <line x1="8.5" y1="4" x2="8.5" y2="2.5"/>
+              <line x1="5.5" y1="2.5" x2="8.5" y2="2.5"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="ease-subpanel">
+        <span class="ease-subpanel-lbl">Paste</span>
+        <div class="ease-subpanel-body ease-paste-row">
+          <button class="ease-action-btn" id="easePasteBtn" onclick="doEasePaste()" disabled>Ease</button>
+          <button class="ease-action-btn" id="easeValueBtn" onclick="doEaseValuePaste()" disabled>Value</button>
+        </div>
+      </div>
+      </div><!-- /ease-panels-row -->
+    </div>
+  </div>
+
+  <!-- ── SHAPE RIGS ─────────────────────────────────────────────────────────── -->
+  <!-- ── AUTO CROP ────────────────────────────────────────────────────────────── -->
+  <div class="section" id="sec-autocrop">
+    <div class="section-hdr" onclick="toggleSection('autocrop')">
+      <svg class="sec-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="color:#5ec47a">
+        <polyline points="2,5 2,2 5,2"/>
+        <polyline points="9,2 12,2 12,5"/>
+        <polyline points="2,9 2,12 5,12"/>
+        <polyline points="9,12 12,12 12,9"/>
+        <rect x="4" y="4" width="6" height="6" rx="0.5" fill="currentColor" stroke="none" opacity="0.55"/>
+      </svg>
+      <span class="sec-title">Auto Crop</span>
+      <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+    </div>
+    <div class="section-body" id="body-autocrop">
+      <div class="btn-row">
+        <div class="btn-group">
+          <!-- Auto Crop: content bounds at current time -->
+          <button class="icon-btn" title="Auto Crop" onclick="doAutoCrop()">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path d="M3,7 L3,4.5 A1.5,1.5 0 0 1 4.5,3 L7,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M13,3 L15.5,3 A1.5,1.5 0 0 1 17,4.5 L17,7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3,13 L3,15.5 A1.5,1.5 0 0 0 4.5,17 L7,17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M13,17 L15.5,17 A1.5,1.5 0 0 0 17,15.5 L17,13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <rect x="6" y="6" width="8" height="8" rx="0.8"/>
+            </svg>
+          </button>
+          <span class="vsep"></span>
+          <!-- Crop Max Area: samples all keyframe positions -->
+          <button class="icon-btn" title="Crop Max Area" onclick="doCropMaxArea()">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path d="M3,7 L3,4.5 A1.5,1.5 0 0 1 4.5,3 L7,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M13,3 L15.5,3 A1.5,1.5 0 0 1 17,4.5 L17,7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3,13 L3,15.5 A1.5,1.5 0 0 0 4.5,17 L7,17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M13,17 L15.5,17 A1.5,1.5 0 0 0 17,15.5 L17,13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <rect x="9.5" y="5.5" width="4.5" height="4.5" rx="1" opacity="0.4"/>
+              <line x1="7.5" y1="10" x2="9.5" y2="7.75" stroke="currentColor" stroke-width="1" opacity="0.35"/>
+              <line x1="7.5" y1="14.5" x2="9.5" y2="10" stroke="currentColor" stroke-width="1" opacity="0.35"/>
+              <rect x="5.5" y="10" width="4.5" height="4.5" rx="1"/>
+            </svg>
+          </button>
+          <!-- Mask Crop: crop to first Add mask bounds, remove mask -->
+          <button class="icon-btn" title="Mask Crop" onclick="doMaskCrop()">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path d="M3,7 L3,4.5 A1.5,1.5 0 0 1 4.5,3 L7,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M13,3 L15.5,3 A1.5,1.5 0 0 1 17,4.5 L17,7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3,13 L3,15.5 A1.5,1.5 0 0 0 4.5,17 L7,17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M13,17 L15.5,17 A1.5,1.5 0 0 0 17,15.5 L17,13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="10" cy="10" r="4.5"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">Pad</span>
+        <input type="text" id="autoCropPad" value="0" style="width:36px">
+        <span class="lbl">px</span>
+        <span class="vsep"></span>
+        <label class="check-label" title="Allow padding to extend beyond the original comp bounds">
+          <input type="checkbox" id="autoCropExpand"> Expand
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── LAYER SORT ─────────────────────────────────────────────────────────── -->
+  <div class="section" id="sec-sort">
+    <div class="section-hdr" onclick="toggleSection('sort')">
+      <svg class="sec-icon" viewBox="0 0 14 14" fill="currentColor" style="color:#e8c140">
+        <rect x="1" y="2" width="7" height="2.2" rx="0.6"/>
+        <rect x="1" y="5.5" width="5" height="2.2" rx="0.6" opacity="0.7"/>
+        <rect x="1" y="9" width="9" height="2.2" rx="0.6" opacity="0.45"/>
+        <line x1="12" y1="2.5" x2="12" y2="10.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        <polyline points="10.2,8.7 12,11 13.8,8.7" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="sec-title">Layer Sort</span>
+      <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+    </div>
+    <div class="section-body" id="body-sort">
+      <div class="sort-controls">
+        <button class="btn sort-btn" onclick="doSort()">Sort</button>
+        <div class="sort-right">
+          <div class="ctrl-row">
+            <div class="sort-prop-seg" id="sortPropSeg">
+              <div class="seg-slider" id="segSlider"></div>
+              <!-- Position: 4-directional arrows -->
+              <button class="seg-btn active" onclick="setSortProp(0)" title="Position">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="8" y1="2.5" x2="8" y2="6.5"/><polyline points="7,4 8,2.5 9,4"/>
+                  <line x1="8" y1="9.5" x2="8" y2="13.5"/><polyline points="7,12 8,13.5 9,12"/>
+                  <line x1="2.5" y1="8" x2="6.5" y2="8"/><polyline points="4,7 2.5,8 4,9"/>
+                  <line x1="9.5" y1="8" x2="13.5" y2="8"/><polyline points="12,7 13.5,8 12,9"/>
+                </svg>
+              </button>
+              <!-- Rotation: circular cycle arrow -->
+              <button class="seg-btn" onclick="setSortProp(1)" title="Rotation">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9,2.5 A5.5,5.5 0 1,1 6,3"/>
+                  <polyline points="4.2,2.7 6,3 4.8,4.5"/>
+                </svg>
+              </button>
+              <!-- Scale: 4 corner arrows pointing outward -->
+              <button class="seg-btn" onclick="setSortProp(2)" title="Scale">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="6" y1="6" x2="3" y2="3"/><polyline points="5.5,3 3,3 3,5.5"/>
+                  <line x1="10" y1="6" x2="13" y2="3"/><polyline points="10.5,3 13,3 13,5.5"/>
+                  <line x1="6" y1="10" x2="3" y2="13"/><polyline points="5.5,13 3,13 3,10.5"/>
+                  <line x1="10" y1="10" x2="13" y2="13"/><polyline points="10.5,13 13,13 13,10.5"/>
+                </svg>
+              </button>
+            </div>
+            <input type="hidden" id="sortProp" value="0">
+            <select id="sortAxis">
+              <option value="0">X</option>
+              <option value="1">Y</option>
+              <option value="2">Z</option>
+            </select>
+          </div>
+          <div class="ctrl-row">
+            <label class="sort-toggle" title="Sort Direction">
+              <input type="checkbox" id="sortDirCheck" checked>
+              <span class="sort-toggle-track">
+                <span class="sort-toggle-thumb">
+                  <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="2" x2="5" y2="8"/>
+                    <polyline points="2.8,5.5 5,8 7.2,5.5"/>
+                  </svg>
+                </span>
+              </span>
+            </label>
+            <div class="vsep"></div>
+            <label class="check-label">
+              <input type="checkbox" id="sortGroup"> Group
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ORGANIZE ────────────────────────────────────────────────────────────── -->
+  <div class="section" id="sec-organize">
+    <div class="section-hdr" onclick="toggleSection('organize')">
+      <svg class="sec-icon" viewBox="0 0 14 14" fill="currentColor" style="color:#b07ef0">
+        <rect x="1.75" y="2.1" width="4.55" height="4.2" rx="0.98" opacity="0.7"/>
+        <rect x="7.7" y="2.1" width="4.55" height="4.2" rx="0.98" opacity="0.7"/>
+        <line x1="4.03" y1="6.3" x2="7" y2="8.54" stroke="currentColor" stroke-width="1.5" opacity="0.55"/>
+        <line x1="9.98" y1="6.3" x2="7" y2="8.54" stroke="currentColor" stroke-width="1.5" opacity="0.55"/>
+        <rect x="4.55" y="8.75" width="4.9" height="3.85" rx="0.98"/>
+      </svg>
+      <span class="sec-title">Organize</span>
+      <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+    </div>
+    <div class="section-body" id="body-organize">
+      <div class="btn-row">
+        <div class="btn-group">
+          <!-- Decompose -->
+          <button class="icon-btn" title="Decompose" onclick="doDecompose()">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <rect x="2" y="2" width="16" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.2"/>
+              <rect x="4" y="4" width="12" height="3" rx="1"/>
+              <rect x="4" y="8.5" width="12" height="3" rx="1" opacity="0.65"/>
+              <rect x="4" y="13" width="12" height="3" rx="1" opacity="0.35"/>
+            </svg>
+          </button>
+          <div class="btn-divider"></div>
+          <!-- Consolidate Project -->
+          <button class="icon-btn" title="Consolidate Project" onclick="doConsolidateProject()">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <rect x="2.5" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/>
+              <rect x="11" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/>
+              <line x1="5.75" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/>
+              <line x1="14.25" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/>
+              <rect x="6.5" y="12.5" width="7" height="5.5" rx="1.4"/>
+            </svg>
+          </button>
+          <div class="btn-divider"></div>
+          <!-- Batch Comp Settings -->
+          <button class="icon-btn" title="Batch Comp Settings" onclick="openBatchCompSettings()">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+              <rect x="2" y="2" width="16" height="16" rx="3.5"/>
+              <circle cx="10" cy="10" r="3" stroke-width="1.3"/>
+              <g fill="currentColor">
+                <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4"/>
+                <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(45 10 10)"/>
+                <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(90 10 10)"/>
+                <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(135 10 10)"/>
+                <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(180 10 10)"/>
+                <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(225 10 10)"/>
+                <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(270 10 10)"/>
+                <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(315 10 10)"/>
+              </g>
+              <circle cx="10" cy="10" r="1" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+          <!-- Batch Rename -->
+          <button class="icon-btn" title="Batch Rename" onclick="openBatchRename()">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+              <rect x="2" y="2" width="16" height="16" rx="3.5"/>
+              <line x1="5.3" y1="8" x2="14.7" y2="8" stroke-linecap="round"/>
+              <line x1="5.3" y1="12" x2="11" y2="12" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <div class="btn-divider"></div>
+          <!-- Comp Export -->
+          <button class="icon-btn" title="Comp Export" onclick="openCompExport()">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5,2.5 H12 L15.5,6 V17 a1,1 0 0,1 -1,1 H5 a1,1 0 0,1 -1,-1 V3.5 a1,1 0 0,1 1,-1 Z"/>
+              <path d="M12,2.5 V6 H15.5"/>
+              <line x1="9.75" y1="9.5" x2="9.75" y2="14.5"/>
+              <polyline points="7.05,12 9.75,14.7 12.45,12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SHAPE RIGS ─────────────────────────────────────────────────────────── -->
+  <div class="section sec-hidden" id="sec-rigs">
+    <div class="section-hdr" onclick="toggleSection('rigs')">
+      <svg class="sec-icon" viewBox="0 0 14 14" fill="currentColor" style="color:#e8a24a">
+        <rect x="0.5" y="5.5" width="3" height="3" rx="0.8"/>
+        <rect x="5.5" y="4.5" width="3" height="5" rx="0.8" opacity="0.8"/>
+        <rect x="10.5" y="5.5" width="3" height="3" rx="0.8" opacity="0.6"/>
+        <line x1="3.5" y1="7" x2="5.5" y2="7" stroke="currentColor" stroke-width="1.2" opacity="0.6"/>
+        <line x1="8.5" y1="7" x2="10.5" y2="7" stroke="currentColor" stroke-width="1.2" opacity="0.6"/>
+      </svg>
+      <span class="sec-title">Shape Rigs <span class="beta-tag">(Beta)</span></span>
+      <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+    </div>
+    <div class="section-body" id="body-rigs">
+      <div class="btn-row">
+        <div class="btn-group">
+          <!-- Create Path Rig -->
+          <button class="icon-btn" title="Create Path Rig" onclick="doRig()">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path d="M3,15 C6,5 14,5 17,15" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.4"/>
+              <rect x="1.5" y="12" width="5" height="5" rx="1.3"/>
+              <rect x="7.5" y="7" width="5" height="5" rx="1.3" opacity="0.75"/>
+              <rect x="13.5" y="12" width="5" height="5" rx="1.3" opacity="0.55"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Remove Rig -->
+        <button class="icon-btn filled btn-trash" title="Remove Rig" onclick="doDerig()">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="5.5" y1="5.5" x2="14.5" y2="14.5"/>
+            <line x1="14.5" y1="5.5" x2="5.5" y2="14.5"/>
+          </svg>
+        </button>
+        <!-- Recalculate Rig -->
+        <button class="icon-btn filled btn-recalc" title="Recalculate Rig" onclick="doRecalcRig()">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15.5,5.5 A6,6 0 1,0 17,11.5"/>
+            <polyline points="14,3 17,5.5 14.5,8"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#panel-content -->
+
+  <!-- ── FOOTER ─────────────────────────────────────────────────────────────── -->
+  <div class="footer" id="panel-footer">
+    <div class="footer-brand">
+      <img src="heist_icon_32.png" class="footer-logo" alt="">
+      <span class="footer-name">Heist Lineup</span>
+      <span class="footer-version">v1.3.0</span>
+    </div>
+    <div class="footer-actions">
+    <button class="settings-btn" onclick="openHelp()" title="Help">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="8" r="6.5"/>
+        <path d="M6,6.2 Q6,4 8,4 Q10,4 10,5.8 Q10,7.2 8,8.4 L8,9.5"/>
+        <circle cx="8" cy="11.5" r="0.7" fill="currentColor" stroke="none"/>
+      </svg>
+    </button>
+    <button class="settings-btn" onclick="openSettings()" title="Settings">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="8" r="2.2"/>
+        <path d="M8,1.5 L8.65,2.9 A4.9,4.9 0 0,1 9.9,3.55 L11.3,2.8 L12.5,4 L11.75,5.4 A4.9,4.9 0 0,1 12.4,6.65 L13.8,7.3 L13.8,8.7 L12.4,9.35 A4.9,4.9 0 0,1 11.75,10.6 L12.5,12 L11.3,13.2 L9.9,12.45 A4.9,4.9 0 0,1 8.65,13.1 L8,14.5 L7.35,13.1 A4.9,4.9 0 0,1 6.1,12.45 L4.7,13.2 L3.5,12 L4.25,10.6 A4.9,4.9 0 0,1 3.6,9.35 L2.2,8.7 L2.2,7.3 L3.6,6.65 A4.9,4.9 0 0,1 4.25,5.4 L3.5,4 L4.7,2.8 L6.1,3.55 A4.9,4.9 0 0,1 7.35,2.9 Z"/>
+      </svg>
+    </button>
+    </div>
+  </div>
+
+</div><!-- /.panel -->
+
+<!-- Settings Modal -->
+<div id="settingsOverlay" class="settings-overlay settings-hidden" onclick="closeSettings()">
+  <div class="settings-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="8" r="2.2"/>
+        <path d="M8,1.5 L8.65,2.9 A4.9,4.9 0 0,1 9.9,3.55 L11.3,2.8 L12.5,4 L11.75,5.4 A4.9,4.9 0 0,1 12.4,6.65 L13.8,7.3 L13.8,8.7 L12.4,9.35 A4.9,4.9 0 0,1 11.75,10.6 L12.5,12 L11.3,13.2 L9.9,12.45 A4.9,4.9 0 0,1 8.65,13.1 L8,14.5 L7.35,13.1 A4.9,4.9 0 0,1 6.1,12.45 L4.7,13.2 L3.5,12 L4.25,10.6 A4.9,4.9 0 0,1 3.6,9.35 L2.2,8.7 L2.2,7.3 L3.6,6.65 A4.9,4.9 0 0,1 4.25,5.4 L3.5,4 L4.7,2.8 L6.1,3.55 A4.9,4.9 0 0,1 7.35,2.9 Z"/>
+      </svg>
+      <span class="settings-title">Settings</span>
+      <button class="settings-close" onclick="closeSettings()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="settings-body">
+      <p class="settings-section-lbl">Sections</p>
+      <div id="settingsSectionList" class="settings-section-list"></div>
+      <p class="settings-section-lbl" style="margin-top:4px">Appearance</p>
+      <div class="settings-scale-block">
+        <input type="range" id="scaleSlider" class="scale-slider" min="0" max="2" step="1" value="1">
+        <div class="scale-stops"><span></span><span></span><span></span></div>
+        <div class="scale-labels"><span>Small</span><span>Default</span><span>Large</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Help Modal -->
+<div id="helpOverlay" class="settings-overlay help-hidden" onclick="closeHelp()">
+  <div class="settings-modal help-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="8" r="6.5"/>
+        <path d="M6,6.2 Q6,4 8,4 Q10,4 10,5.8 Q10,7.2 8,8.4 L8,9.5"/>
+        <circle cx="8" cy="11.5" r="0.7" fill="currentColor" stroke="none"/>
+      </svg>
+      <span class="settings-title">Help</span>
+      <button class="settings-close" onclick="closeHelp()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="help-body">
+
+      <!-- ALIGN -->
+      <div class="help-section collapsed">
+        <div class="help-section-hdr" onclick="toggleHelpSection(this)">
+          <svg class="help-sec-icon" viewBox="0 0 14 14" fill="currentColor" style="color:#5b9cf6"><rect x="1" y="2" width="1.5" height="10" rx="0.6"/><rect x="3.5" y="3" width="8" height="2.8" rx="1.2"/><rect x="3.5" y="8.2" width="5.5" height="2.8" rx="1.2" opacity="0.6"/></svg>
+          <span class="help-sec-title">Align</span>
+          <svg class="help-chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+        </div>
+        <div class="help-items">
+          <div class="help-item">
+            <div class="help-key-row">
+              <span class="help-key">Alignment</span>
+              <span class="help-icon-strip">
+                <svg viewBox="0 0 20 20" fill="currentColor"><line x1="3.5" y1="2" x2="3.5" y2="18" stroke="currentColor" stroke-width="2" opacity="0.6"/><rect x="4.5" y="4.5" width="11" height="4" rx="1.2"/><rect x="4.5" y="11.5" width="7" height="4" rx="1.2" opacity="0.7"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><line x1="10" y1="2" x2="10" y2="18" stroke="currentColor" stroke-width="2" opacity="0.6"/><rect x="4" y="4.5" width="12" height="4" rx="1.2"/><rect x="6" y="11.5" width="8" height="4" rx="1.2" opacity="0.7"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><line x1="16.5" y1="2" x2="16.5" y2="18" stroke="currentColor" stroke-width="2" opacity="0.6"/><rect x="5" y="4.5" width="11" height="4" rx="1.2"/><rect x="9" y="11.5" width="7" height="4" rx="1.2" opacity="0.7"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><line x1="2" y1="3.5" x2="18" y2="3.5" stroke="currentColor" stroke-width="2" opacity="0.6"/><rect x="4.5" y="4.5" width="4" height="11" rx="1.2"/><rect x="11.5" y="4.5" width="4" height="7" rx="1.2" opacity="0.7"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="2" opacity="0.6"/><rect x="4.5" y="4" width="4" height="12" rx="1.2"/><rect x="11.5" y="6" width="4" height="8" rx="1.2" opacity="0.7"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><line x1="2" y1="16.5" x2="18" y2="16.5" stroke="currentColor" stroke-width="2" opacity="0.6"/><rect x="4.5" y="4.5" width="4" height="12" rx="1.2" opacity="0.7"/><rect x="11.5" y="9" width="4" height="7" rx="1.2"/></svg>
+              </span>
+            </div>
+            <span class="help-desc">Snaps selected layers to the left, center-H, right, top, center-V, or bottom of the target.</span>
+          </div>
+          <div class="help-sec-group">
+            <div class="help-item sec"><span class="help-key">Align to</span><span class="help-desc"><em>Selection</em> aligns to combined layer bounds; <em>Composition</em> to comp edges and center.</span></div>
+            <div class="help-item sec"><span class="help-key">Margin</span><span class="help-desc">Extra offset (px or %) added after aligning.</span></div>
+            <div class="help-item sec"><span class="help-key">Offset Keys</span><span class="help-desc">When on, keyframes move with the layer during alignment.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DISTRIBUTE -->
+      <div class="help-section collapsed">
+        <div class="help-section-hdr" onclick="toggleHelpSection(this)">
+          <svg class="help-sec-icon" viewBox="0 0 14 14" fill="currentColor" style="color:#a07ef0"><rect x="1" y="2" width="1.5" height="10" rx="0.6"/><rect x="11.5" y="2" width="1.5" height="10" rx="0.6"/><rect x="4.5" y="3.5" width="2" height="7" rx="1" opacity="0.9"/><rect x="7.5" y="3.5" width="2" height="7" rx="1" opacity="0.9"/></svg>
+          <span class="help-sec-title">Distribute</span>
+          <svg class="help-chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+        </div>
+        <div class="help-items">
+          <div class="help-item">
+            <div class="help-key-row">
+              <span class="help-key">Distribute</span>
+              <span class="help-icon-strip">
+                <svg viewBox="0 0 20 20" fill="currentColor"><line x1="3" y1="3" x2="3" y2="17" stroke="currentColor" stroke-width="1.6" opacity="0.35"/><line x1="17" y1="3" x2="17" y2="17" stroke="currentColor" stroke-width="1.6" opacity="0.35"/><rect x="4" y="6" width="5" height="8" rx="1.2"/><rect x="11" y="6" width="5" height="8" rx="1.2" opacity="0.7"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><line x1="3" y1="3" x2="17" y2="3" stroke="currentColor" stroke-width="1.6" opacity="0.35"/><line x1="3" y1="17" x2="17" y2="17" stroke="currentColor" stroke-width="1.6" opacity="0.35"/><rect x="6" y="4" width="8" height="5" rx="1.2"/><rect x="6" y="11" width="8" height="5" rx="1.2" opacity="0.7"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><rect x="9" y="4" width="8" height="8" rx="1.2" opacity="0.45"/><line x1="7.5" y1="8" x2="9" y2="6.5" stroke="currentColor" stroke-width="1.1" opacity="0.4"/><line x1="7.5" y1="13" x2="9" y2="11.5" stroke="currentColor" stroke-width="1.1" opacity="0.4"/><rect x="3" y="8" width="8" height="8" rx="1.2"/></svg>
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M2,15 C6,15 6,5 10,5 C14,5 14,15 18,15" stroke-width="1.5" stroke-linecap="round"/><rect x="0" y="13" width="4" height="4" rx="1" fill="currentColor" opacity="0.75"/><rect x="8" y="3" width="4" height="4" rx="1" fill="currentColor" opacity="0.75"/><rect x="16" y="13" width="4" height="4" rx="1" fill="currentColor" opacity="0.75"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="5.5" stroke="currentColor" stroke-width="1.4" fill="none" opacity="0.35"/><circle cx="10" cy="3.5" r="2.2"/><circle cx="16.5" cy="10" r="2.2" opacity="0.8"/><circle cx="10" cy="16.5" r="2.2" opacity="0.65"/><circle cx="3.5" cy="10" r="2.2" opacity="0.5"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><rect x="3.5" y="3.5" width="3" height="3" rx="0.5"/><rect x="8.5" y="3.5" width="3" height="3" rx="0.5"/><rect x="13.5" y="3.5" width="3" height="3" rx="0.5"/><rect x="3.5" y="8.5" width="3" height="3" rx="0.5"/><rect x="8.5" y="8.5" width="3" height="3" rx="0.5"/><rect x="13.5" y="8.5" width="3" height="3" rx="0.5"/><rect x="3.5" y="13.5" width="3" height="3" rx="0.5"/><rect x="8.5" y="13.5" width="3" height="3" rx="0.5"/><rect x="13.5" y="13.5" width="3" height="3" rx="0.5"/></svg>
+              </span>
+            </div>
+            <span class="help-desc">Six modes: horizontal spacing, vertical spacing, Z depth (3D), along path, radially, and grid layout.</span>
+          </div>
+          <div class="help-sec-group">
+            <div class="help-item sec"><span class="help-key">Distribute to</span><span class="help-desc">Boundary — <em>Composition</em>, <em>Selection</em> bounds, or a fixed <em>Key Layer</em>.</span></div>
+            <div class="help-item sec"><span class="help-key">Spacing</span><span class="help-desc">Gap (%) between items for H/V modes.</span></div>
+            <div class="help-item sec"><span class="help-key">Radius</span><span class="help-desc">Circle size for radial distribution.</span></div>
+            <div class="help-item sec"><span class="help-key">Rotate</span><span class="help-desc">Orients each layer outward along its path tangent or radial angle.</span></div>
+            <div class="help-item sec"><span class="help-key">Grid W × H</span><span class="help-desc">Column and row count for grid layout.</span></div>
+            <div class="help-item sec"><span class="help-key">Align Edges</span><span class="help-desc">Pins outermost layers to the boundary edges; distributes the rest evenly between them.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ANCHOR POINT -->
+      <div class="help-section collapsed">
+        <div class="help-section-hdr" onclick="toggleHelpSection(this)">
+          <svg class="help-sec-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" style="color:#4ec9aa"><circle cx="7" cy="7" r="2"/><line x1="7" y1="1.5" x2="7" y2="5"/><line x1="7" y1="9" x2="7" y2="12.5"/><line x1="1.5" y1="7" x2="5" y2="7"/><line x1="9" y1="7" x2="12.5" y2="7"/></svg>
+          <span class="help-sec-title">Anchor Point</span>
+          <svg class="help-chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+        </div>
+        <div class="help-items">
+          <div class="help-item">
+            <span class="help-key">3×3 grid</span>
+            <span class="help-desc">Moves the anchor to any corner, edge midpoint, or center of the layer — without shifting the layer visually.</span>
+          </div>
+          <div class="help-sec-group">
+            <div class="help-item sec"><span class="help-key">Based on</span><span class="help-desc"><em>Object</em> positions within each layer's own source bounds; <em>Selection</em> within the combined bounding box of all selected layers; <em>Composition</em> relative to the full comp.</span></div>
+            <div class="help-item sec"><span class="help-key">Copy / Paste</span><span class="help-desc">Saves an exact anchor coordinate from one layer and applies it to others.</span></div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><polyline points="3,5 4.5,12 9.5,12 11,5"/><line x1="2" y1="4" x2="12" y2="4"/><line x1="5.5" y1="4" x2="5.5" y2="2.5"/><line x1="8.5" y1="4" x2="8.5" y2="2.5"/><line x1="5.5" y1="2.5" x2="8.5" y2="2.5"/></svg>
+                <span class="help-key">Clear</span>
+              </div>
+              <span class="help-desc">Empties the anchor clipboard.</span>
+            </div>
+            <div class="help-item sec"><span class="help-key">Null</span><span class="help-desc">Creates a null layer at the layer's current anchor position.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EASE COPY -->
+      <div class="help-section collapsed">
+        <div class="help-section-hdr" onclick="toggleHelpSection(this)">
+          <svg class="help-sec-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="color:#e05555"><path d="M12,5 L12,3.5 Q12,2 10.5,2 L3.5,2 Q2,2 2,3.5 L2,10.5 Q2,12 3.5,12 L5,12"/><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
+          <span class="help-sec-title">Ease Copy</span>
+          <svg class="help-chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+        </div>
+        <div class="help-items">
+          <div class="help-item">
+            <span class="help-key">Copy</span>
+            <span class="help-desc">Captures the Bezier easing handles from the selected keyframes.</span>
+          </div>
+          <div class="help-sec-group">
+            <div class="help-item sec"><span class="help-key">Ease</span><span class="help-desc">Pastes the saved easing curve onto selected keyframes.</span></div>
+            <div class="help-item sec"><span class="help-key">Value</span><span class="help-desc">Pastes only the saved keyframe value — the existing curve is unchanged.</span></div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><polyline points="3,5 4.5,12 9.5,12 11,5"/><line x1="2" y1="4" x2="12" y2="4"/><line x1="5.5" y1="4" x2="5.5" y2="2.5"/><line x1="8.5" y1="4" x2="8.5" y2="2.5"/><line x1="5.5" y1="2.5" x2="8.5" y2="2.5"/></svg>
+                <span class="help-key">Clear</span>
+              </div>
+              <span class="help-desc">Empties the ease clipboard.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SHAPE RIGS -->
+      <div class="help-section collapsed">
+        <div class="help-section-hdr" onclick="toggleHelpSection(this)">
+          <svg class="help-sec-icon" viewBox="0 0 14 14" fill="currentColor" style="color:#e8a24a"><rect x="0.5" y="5.5" width="3" height="3" rx="0.8"/><rect x="5.5" y="4.5" width="3" height="5" rx="0.8" opacity="0.8"/><rect x="10.5" y="5.5" width="3" height="3" rx="0.8" opacity="0.6"/><line x1="3.5" y1="7" x2="5.5" y2="7" stroke="currentColor" stroke-width="1.2" opacity="0.6"/><line x1="8.5" y1="7" x2="10.5" y2="7" stroke="currentColor" stroke-width="1.2" opacity="0.6"/></svg>
+          <span class="help-sec-title">Shape Rigs <span class="help-beta">Beta</span></span>
+          <svg class="help-chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+        </div>
+        <div class="help-items">
+          <div class="help-item">
+            <div class="help-key-row">
+              <svg class="help-inline-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M3,15 C6,5 14,5 17,15" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.4"/><rect x="1.5" y="12" width="5" height="5" rx="1.3"/><rect x="7.5" y="7" width="5" height="5" rx="1.3" opacity="0.75"/><rect x="13.5" y="12" width="5" height="5" rx="1.3" opacity="0.55"/></svg>
+              <span class="help-key">Create Rig</span>
+            </div>
+            <span class="help-desc">Generates null controllers linked by expressions to each vertex of the selected shape path.</span>
+          </div>
+          <div class="help-sec-group">
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5.5" y1="5.5" x2="14.5" y2="14.5"/><line x1="14.5" y1="5.5" x2="5.5" y2="14.5"/></svg>
+                <span class="help-key">Remove Rig</span>
+              </div>
+              <span class="help-desc">Strips the rig expressions and deletes the associated null layers.</span>
+            </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5,5.5 A6,6 0 1,0 17,11.5"/><polyline points="14,3 17,5.5 14.5,8"/></svg>
+                <span class="help-key">Recalculate</span>
+              </div>
+              <span class="help-desc">Re-maps null positions along the path — use after editing the shape.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AUTO CROP -->
+      <div class="help-section collapsed">
+        <div class="help-section-hdr" onclick="toggleHelpSection(this)">
+          <svg class="help-sec-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="color:#5ec47a"><polyline points="2,5 2,2 5,2"/><polyline points="9,2 12,2 12,5"/><polyline points="2,9 2,12 5,12"/><polyline points="9,12 12,12 12,9"/><rect x="4" y="4" width="6" height="6" rx="0.5" fill="currentColor" stroke="none" opacity="0.55"/></svg>
+          <span class="help-sec-title">Auto Crop</span>
+          <svg class="help-chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+        </div>
+        <div class="help-items">
+          <div class="help-item">
+            <div class="help-key-row">
+              <span class="help-key">Crop buttons</span>
+              <span class="help-icon-strip">
+                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3,7 L3,4.5 A1.5,1.5 0 0 1 4.5,3 L7,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,3 L15.5,3 A1.5,1.5 0 0 1 17,4.5 L17,7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3,13 L3,15.5 A1.5,1.5 0 0 0 4.5,17 L7,17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,17 L15.5,17 A1.5,1.5 0 0 0 17,15.5 L17,13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="5" y="5" width="10" height="10" rx="0.8"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3,7 L3,4.5 A1.5,1.5 0 0 1 4.5,3 L7,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,3 L15.5,3 A1.5,1.5 0 0 1 17,4.5 L17,7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3,13 L3,15.5 A1.5,1.5 0 0 0 4.5,17 L7,17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,17 L15.5,17 A1.5,1.5 0 0 0 17,15.5 L17,13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="9.5" y="5" width="5" height="5" rx="1" opacity="0.4"/><line x1="7.5" y1="10" x2="9.5" y2="7.5" stroke="currentColor" stroke-width="1" opacity="0.35"/><line x1="7.5" y1="14.5" x2="9.5" y2="10" stroke="currentColor" stroke-width="1" opacity="0.35"/><rect x="5" y="10" width="5" height="5" rx="1"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3,7 L3,4.5 A1.5,1.5 0 0 1 4.5,3 L7,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,3 L15.5,3 A1.5,1.5 0 0 1 17,4.5 L17,7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3,13 L3,15.5 A1.5,1.5 0 0 0 4.5,17 L7,17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,17 L15.5,17 A1.5,1.5 0 0 0 17,15.5 L17,13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="10" r="5"/></svg>
+              </span>
+            </div>
+            <span class="help-desc">All three buttons resize the selected precomp layer(s) to remove unused canvas space. Layer positions inside the inner comp shift to compensate, and anchor points and masks on the outer layer are preserved in comp-space.</span>
+          </div>
+          <div class="help-sec-group">
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M3,7 L3,4.5 A1.5,1.5 0 0 1 4.5,3 L7,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,3 L15.5,3 A1.5,1.5 0 0 1 17,4.5 L17,7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3,13 L3,15.5 A1.5,1.5 0 0 0 4.5,17 L7,17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,17 L15.5,17 A1.5,1.5 0 0 0 17,15.5 L17,13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="5" y="5" width="10" height="10" rx="0.8"/></svg>
+                <span class="help-key">Auto Crop</span>
+              </div>
+              <span class="help-desc">Shrinks the inner comp to the minimum bounding box of all visible layers at the current comp time.</span>
+            </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M3,7 L3,4.5 A1.5,1.5 0 0 1 4.5,3 L7,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,3 L15.5,3 A1.5,1.5 0 0 1 17,4.5 L17,7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3,13 L3,15.5 A1.5,1.5 0 0 0 4.5,17 L7,17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,17 L15.5,17 A1.5,1.5 0 0 0 17,15.5 L17,13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="9.5" y="5" width="5" height="5" rx="1" opacity="0.4"/><line x1="7.5" y1="10" x2="9.5" y2="7.5" stroke="currentColor" stroke-width="1" opacity="0.35"/><line x1="7.5" y1="14.5" x2="9.5" y2="10" stroke="currentColor" stroke-width="1" opacity="0.35"/><rect x="5" y="10" width="5" height="5" rx="1"/></svg>
+                <span class="help-key">Crop Max Area</span>
+              </div>
+              <span class="help-desc">Samples layer bounds at every keyframe time plus midpoints between keyframes to find the maximum area occupied across the full animation. Alerts and aborts if any transform property has an expression.</span>
+            </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M3,7 L3,4.5 A1.5,1.5 0 0 1 4.5,3 L7,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,3 L15.5,3 A1.5,1.5 0 0 1 17,4.5 L17,7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3,13 L3,15.5 A1.5,1.5 0 0 0 4.5,17 L7,17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13,17 L15.5,17 A1.5,1.5 0 0 0 17,15.5 L17,13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="10" r="5"/></svg>
+                <span class="help-key">Mask Crop</span>
+              </div>
+              <span class="help-desc">Crops to the bounding box of the first enabled Add mask on the precomp layer, then removes that mask. Useful for framing a comp from a rough painted mask.</span>
+            </div>
+            <div class="help-item sec"><span class="help-key">Pad</span><span class="help-desc">Adds extra pixels of breathing room around the cropped bounds. Without Expand, padding is clamped to stay within the original comp dimensions.</span></div>
+            <div class="help-item sec"><span class="help-key">Expand</span><span class="help-desc">Allows the crop (and padding) to extend beyond the original comp bounds — use when content or handles reach outside the original canvas.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LAYER SORT -->
+      <div class="help-section collapsed">
+        <div class="help-section-hdr" onclick="toggleHelpSection(this)">
+          <svg class="help-sec-icon" viewBox="0 0 14 14" fill="currentColor" style="color:#e8c140"><rect x="1" y="2" width="7" height="2.2" rx="0.6"/><rect x="1" y="5.5" width="5" height="2.2" rx="0.6" opacity="0.7"/><rect x="1" y="9" width="9" height="2.2" rx="0.6" opacity="0.45"/><line x1="12" y1="2.5" x2="12" y2="10.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><polyline points="10.2,8.7 12,11 13.8,8.7" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="help-sec-title">Layer Sort</span>
+          <svg class="help-chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+        </div>
+        <div class="help-items">
+          <div class="help-item">
+            <span class="help-key">Sort</span>
+            <span class="help-desc">Reorders selected layers in the comp hierarchy by the chosen property and direction.</span>
+          </div>
+          <div class="help-sec-group">
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <span class="help-key">Property</span>
+                <span class="help-icon-strip">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="2.5" x2="8" y2="6.5"/><polyline points="7,4 8,2.5 9,4"/><line x1="8" y1="9.5" x2="8" y2="13.5"/><polyline points="7,12 8,13.5 9,12"/><line x1="2.5" y1="8" x2="6.5" y2="8"/><polyline points="4,7 2.5,8 4,9"/><line x1="9.5" y1="8" x2="13.5" y2="8"/><polyline points="12,7 13.5,8 12,9"/></svg>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9,2.5 A5.5,5.5 0 1,1 6,3"/><polyline points="4.2,2.7 6,3 4.8,4.5"/></svg>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="3" y2="3"/><polyline points="5.5,3 3,3 3,5.5"/><line x1="10" y1="6" x2="13" y2="3"/><polyline points="10.5,3 13,3 13,5.5"/><line x1="6" y1="10" x2="3" y2="13"/><polyline points="5.5,13 3,13 3,10.5"/><line x1="10" y1="10" x2="13" y2="13"/><polyline points="10.5,13 13,13 13,10.5"/></svg>
+                </span>
+              </div>
+              <span class="help-desc">Sort by Position, Rotation, or Scale.</span>
+            </div>
+            <div class="help-item sec"><span class="help-key">Axis</span><span class="help-desc">When sorting by Position, picks the axis to compare (X, Y, or Z).</span></div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="2" x2="5" y2="8"/><polyline points="2.8,5.5 5,8 7.2,5.5"/></svg>
+                <span class="help-key">Direction</span>
+              </div>
+              <span class="help-desc">Right (↑) = ascending low→high; left (↓) = descending high→low.</span>
+            </div>
+            <div class="help-item sec"><span class="help-key">Group</span><span class="help-desc">Parents all sorted layers under a new "Sort Group" null after sorting.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ORGANIZE -->
+      <div class="help-section collapsed">
+        <div class="help-section-hdr" onclick="toggleHelpSection(this)">
+          <svg class="help-sec-icon" viewBox="0 0 14 14" fill="currentColor" style="color:#b07ef0"><rect x="1.75" y="2.1" width="4.55" height="4.2" rx="0.98" opacity="0.7"/><rect x="7.7" y="2.1" width="4.55" height="4.2" rx="0.98" opacity="0.7"/><line x1="4.03" y1="6.3" x2="7" y2="8.54" stroke="currentColor" stroke-width="1.5" opacity="0.55"/><line x1="9.98" y1="6.3" x2="7" y2="8.54" stroke="currentColor" stroke-width="1.5" opacity="0.55"/><rect x="4.55" y="8.75" width="4.9" height="3.85" rx="0.98"/></svg>
+          <span class="help-sec-title">Organize</span>
+          <svg class="help-chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+        </div>
+        <div class="help-items">
+          <div class="help-item">
+            <div class="help-key-row">
+              <span class="help-key">Buttons</span>
+              <span class="help-icon-strip">
+                <svg viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="2" width="16" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.2"/><rect x="4" y="4" width="12" height="3" rx="1"/><rect x="4" y="8.5" width="12" height="3" rx="1" opacity="0.65"/><rect x="4" y="13" width="12" height="3" rx="1" opacity="0.35"/></svg>
+                <svg viewBox="0 0 20 20" fill="currentColor"><rect x="2.5" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/><rect x="11" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/><line x1="5.75" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><line x1="14.25" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><rect x="6.5" y="12.5" width="7" height="5.5" rx="1.4"/></svg>
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="16" height="16" rx="3.5"/><circle cx="10" cy="10" r="3" stroke-width="1.3"/><g fill="currentColor"><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(45 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(90 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(135 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(180 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(225 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(270 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(315 10 10)"/></g><circle cx="10" cy="10" r="1" fill="currentColor" stroke="none"/></svg>
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="16" height="16" rx="3.5"/><line x1="5.3" y1="8" x2="14.7" y2="8" stroke-linecap="round"/><line x1="5.3" y1="12" x2="11" y2="12" stroke-linecap="round"/></svg>
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5,2.5 H12 L15.5,6 V17 a1,1 0 0,1 -1,1 H5 a1,1 0 0,1 -1,-1 V3.5 a1,1 0 0,1 1,-1 Z"/><path d="M12,2.5 V6 H15.5"/><line x1="9.75" y1="9.5" x2="9.75" y2="14.5"/><polyline points="7.05,12 9.75,14.7 12.45,12"/></svg>
+              </span>
+            </div>
+            <span class="help-desc">Project-level tools for cleaning up, batch-editing, and exporting compositions.</span>
+          </div>
+          <div class="help-sec-group">
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="2" width="16" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.2"/><rect x="4" y="4" width="12" height="3" rx="1"/><rect x="4" y="8.5" width="12" height="3" rx="1" opacity="0.65"/><rect x="4" y="13" width="12" height="3" rx="1" opacity="0.35"/></svg>
+                <span class="help-key">Decompose</span>
+              </div>
+              <span class="help-desc">Copies all layers from the selected precomp into the current comp. Creates a guide shape layer (named after the precomp) that carries the precomp's transform and parents all the inner layers to it. The original precomp layer is removed.</span>
+            </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="currentColor"><rect x="2.5" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/><rect x="11" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/><line x1="5.75" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><line x1="14.25" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><rect x="6.5" y="12.5" width="7" height="5.5" rx="1.4"/></svg>
+                <span class="help-key">Consolidate Project</span>
+              </div>
+              <span class="help-desc">Scans the entire project for exact duplicate compositions (same name, size, frame rate, layers, and keyframes) and merges them into one, updating all usages. Also consolidates duplicate footage items and identical solid layers.</span>
+            </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+                  <rect x="2" y="2" width="16" height="16" rx="3.5"/>
+                  <circle cx="10" cy="10" r="3" stroke-width="1.3"/>
+                  <g fill="currentColor">
+                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4"/>
+                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(45 10 10)"/>
+                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(90 10 10)"/>
+                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(135 10 10)"/>
+                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(180 10 10)"/>
+                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(225 10 10)"/>
+                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(270 10 10)"/>
+                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(315 10 10)"/>
+                  </g>
+                  <circle cx="10" cy="10" r="1" fill="currentColor" stroke="none"/>
+                </svg>
+                <span class="help-key">Batch Comp Settings</span>
+              </div>
+              <span class="help-desc">Applies dimensions, pixel aspect, frame rate, resolution, duration, and/or start time to every selected composition at once. Width/Height have a scrubbable field and an aspect-ratio lock; the comp list at the top can be trimmed (✕) before applying.</span>
+            </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+                  <rect x="2" y="2" width="16" height="16" rx="3.5"/>
+                  <line x1="5.3" y1="8" x2="14.7" y2="8" stroke-linecap="round"/>
+                  <line x1="5.3" y1="12" x2="11" y2="12" stroke-linecap="round"/>
+                </svg>
+                <span class="help-key">Batch Rename</span>
+              </div>
+              <span class="help-desc">Renames every selected composition from a pattern. [#], [##], [###]… insert a zero-padded index counting up from Start at, in the order shown — drag a row's handle to reorder and renumber, or remove (✕) a comp to skip it. There's also a semi-secret [A] token: it inserts a letter (A, B, … Z, AA, AB, …) based on position alone, always starting at A no matter what Start at is set to.</span>
+            </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5,2.5 H12 L15.5,6 V17 a1,1 0 0,1 -1,1 H5 a1,1 0 0,1 -1,-1 V3.5 a1,1 0 0,1 1,-1 Z"/>
+                  <path d="M12,2.5 V6 H15.5"/>
+                  <line x1="9.75" y1="9.5" x2="9.75" y2="14.5"/>
+                  <polyline points="7.05,12 9.75,14.7 12.45,12"/>
+                </svg>
+                <span class="help-key">Comp Export</span>
+              </div>
+              <span class="help-desc">Combines After Effects' own Save, Save As, and Reduce Project: saves the current project as-is, duplicates it to a new file, and strips the duplicate down to just the selected compositions, leaving asset links pointing at their current locations (nothing is copied or collected). The new reduced project is left open. Suggested filename is ProjectName_CompName when one comp is selected, or ProjectName_reduced for more than one; Browse to pick a different name or folder. Requires the project to already be saved once.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Batch Comp Settings Modal -->
+<div id="bcsOverlay" class="settings-overlay bcs-hidden" onclick="closeBatchCompSettings()">
+  <div class="settings-modal bcs-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.1" style="color:#b07ef0">
+        <rect x="1.3" y="1.3" width="11.4" height="11.4" rx="2.4"/>
+        <circle cx="7" cy="7" r="2.1" stroke-width="1"/>
+        <g fill="currentColor">
+          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28"/>
+          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(45 7 7)"/>
+          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(90 7 7)"/>
+          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(135 7 7)"/>
+          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(180 7 7)"/>
+          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(225 7 7)"/>
+          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(270 7 7)"/>
+          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(315 7 7)"/>
+        </g>
+        <circle cx="7" cy="7" r="0.7" fill="currentColor" stroke="none"/>
+      </svg>
+      <span class="settings-title">Batch Comp Settings</span>
+      <button class="settings-close" onclick="closeBatchCompSettings()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="settings-body bcs-body">
+      <div class="bcs-complist" id="bcsCompList">
+        <div class="bcs-complist-empty" id="bcsCompEmpty">No comp selected</div>
+      </div>
+
+      <label class="check-label">
+        <input type="checkbox" id="bcsNested"> Also update nested compositions
+      </label>
+
+      <div class="bcs-groups-row">
+        <div class="bcs-group">
+          <span class="bcs-group-title">Frame</span>
+          <div class="ctrl-row bcs-dims-row">
+            <input type="checkbox" id="bcsDimsCheck">
+            <div class="bcs-row-dim bcs-dims-controls" id="bcsDimsControls">
+              <span class="lbl">W</span>
+              <div class="scrub" id="bcsWidthScrub" tabindex="0">1920</div>
+              <span class="lbl">H</span>
+              <div class="scrub" id="bcsHeightScrub" tabindex="0">1080</div>
+              <button class="chain-btn locked" id="bcsLockBtn" onclick="toggleBcsLock()" title="Lock Aspect Ratio">
+                <svg class="chain-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                  <rect class="chain-a" x="6" y="3" width="5" height="8" rx="2.5"/>
+                  <rect class="chain-b" x="9" y="9" width="5" height="8" rx="2.5"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="ctrl-row">
+            <input type="checkbox" id="bcsParCheck">
+            <span class="lbl">Pixel Aspect</span>
+            <select id="bcsParSelect">
+              <option value="0">Square Pixels</option>
+              <option value="1">D1/DV NTSC (0.91)</option>
+              <option value="2">D1/DV NTSC Widescreen (1.21)</option>
+              <option value="3">D1/DV PAL (1.09)</option>
+              <option value="4">D1/DV PAL Widescreen (1.46)</option>
+              <option value="5">Anamorphic 2:1 (2.0)</option>
+            </select>
+          </div>
+
+          <div class="ctrl-row">
+            <input type="checkbox" id="bcsResCheck">
+            <span class="lbl">Resolution</span>
+            <select id="bcsResSelect">
+              <option value="1">Full</option>
+              <option value="2">Half</option>
+              <option value="3">Third</option>
+              <option value="4">Quarter</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="bcs-group">
+          <span class="bcs-group-title">Time</span>
+          <div class="ctrl-row">
+            <input type="checkbox" id="bcsFrCheck">
+            <span class="lbl">Frame Rate</span>
+            <input type="text" id="bcsFrInput" value="30" style="width:44px">
+            <span class="lbl">fps</span>
+          </div>
+          <div class="ctrl-row bcs-row-dim" id="bcsSnapRow" style="padding-left:18px">
+            <label class="check-label">
+              <input type="checkbox" id="bcsSnapCheck"> Snap Keyframes
+            </label>
+          </div>
+
+          <div class="ctrl-row">
+            <input type="checkbox" id="bcsDurCheck">
+            <span class="lbl">Duration</span>
+            <input type="text" id="bcsDurInput" value="5" style="width:44px">
+            <select id="bcsDurUnit">
+              <option value="0">Seconds</option>
+              <option value="1">Frames</option>
+            </select>
+          </div>
+
+          <div class="ctrl-row">
+            <input type="checkbox" id="bcsStartCheck">
+            <span class="lbl">Start</span>
+            <input type="text" id="bcsStartInput" value="0" style="width:44px">
+            <select id="bcsStartUnit">
+              <option value="0">Seconds</option>
+              <option value="1">Frames</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="ctrl-row bcs-actions">
+        <button class="btn" onclick="closeBatchCompSettings()">Cancel</button>
+        <button class="btn" id="bcsApplyBtn" onclick="applyBatchCompSettings()">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Batch Rename Modal -->
+<div id="brnOverlay" class="settings-overlay brn-hidden" onclick="closeBatchRename()">
+  <div class="settings-modal brn-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" style="color:#b07ef0">
+        <rect x="2" y="2" width="16" height="16" rx="3.5"/>
+        <line x1="5.3" y1="8" x2="14.7" y2="8" stroke-linecap="round"/>
+        <line x1="5.3" y1="12" x2="11" y2="12" stroke-linecap="round"/>
+      </svg>
+      <span class="settings-title">Batch Rename</span>
+      <button class="settings-close" onclick="closeBatchRename()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="settings-body bcs-body">
+      <div class="bcs-complist" id="brnCompList">
+        <div class="bcs-complist-empty">No comp selected</div>
+      </div>
+
+      <div class="ctrl-row">
+        <span class="lbl">Pattern</span>
+        <input type="text" id="brnPattern" placeholder="e.g. Comp_[###]" style="flex:1; min-width:0;">
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">Start at</span>
+        <input type="text" id="brnStart" value="1" style="width:40px">
+      </div>
+
+      <div class="ctrl-row bcs-actions">
+        <button class="btn" onclick="closeBatchRename()">Cancel</button>
+        <button class="btn" id="brnApplyBtn" onclick="applyBatchRename()">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Comp Export Modal -->
+<div id="cexOverlay" class="settings-overlay cex-hidden" onclick="closeCompExport()">
+  <div class="settings-modal cex-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color:#b07ef0">
+        <path d="M5,2.5 H12 L15.5,6 V17 a1,1 0 0,1 -1,1 H5 a1,1 0 0,1 -1,-1 V3.5 a1,1 0 0,1 1,-1 Z"/>
+        <path d="M12,2.5 V6 H15.5"/>
+        <line x1="9.75" y1="9.5" x2="9.75" y2="14.5"/>
+        <polyline points="7.05,12 9.75,14.7 12.45,12"/>
+      </svg>
+      <span class="settings-title">Comp Export</span>
+      <button class="settings-close" onclick="closeCompExport()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="settings-body bcs-body">
+      <div class="bcs-complist" id="cexCompList">
+        <div class="bcs-complist-empty">No comp selected</div>
+      </div>
+
+      <div class="ctrl-row">
+        <span class="lbl">Save to</span>
+        <span class="cex-path" id="cexPath"></span>
+        <button class="btn" id="cexBrowseBtn" onclick="browseCompExport()">Browse…</button>
+      </div>
+
+      <div class="ctrl-row bcs-actions">
+        <button class="btn" onclick="closeCompExport()">Cancel</button>
+        <button class="btn" id="cexApplyBtn" onclick="applyCompExport()">Export</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Error / status toast -->
+<div id="toast" class="toast toast-hidden">
+  <span id="toast-msg"></span>
+  <button class="toast-close" onclick="hideToast()">✕</button>
+</div>
+
+<script src="js/CSInterface.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
