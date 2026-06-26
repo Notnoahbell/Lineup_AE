@@ -750,6 +750,112 @@ function lineup_gridDistribute(distMode, cols, rows, alignEdges, hPad, vPad) {
     }
 }
 
+// ── SIZING ────────────────────────────────────────────────────────────────────
+// mode: 0=Horizontal 1=Vertical 2=Both, sizeMode: 0=comp 1=selection 2=keyLayer
+// crop: 0=Stretch 1=Crop (proportional — grows the other axis / covers the target)
+// move: 0/1 — center each layer's bounds in the target before scaling
+
+function lineup_sizeMatch(mode, sizeMode, crop, move) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
+        var layers = comp.selectedLayers;
+        if (!layers || layers.length === 0) return "ERROR: No layers selected";
+
+        var targetLayers = layers;
+        var targetWidth, targetHeight, targetCenterX, targetCenterY;
+
+        if (sizeMode === 0) {
+            targetWidth   = comp.width;
+            targetHeight  = comp.height;
+            targetCenterX = comp.width  / 2;
+            targetCenterY = comp.height / 2;
+        } else if (sizeMode === 1) {
+            var lf = Infinity, tp = Infinity, rt = -Infinity, bt = -Infinity;
+            for (var i = 0; i < layers.length; i++) {
+                var b = getLayerCompBounds(layers[i], comp);
+                if (b.left   < lf) lf = b.left;
+                if (b.top    < tp) tp = b.top;
+                if (b.right  > rt) rt = b.right;
+                if (b.bottom > bt) bt = b.bottom;
+            }
+            targetWidth   = rt - lf;
+            targetHeight  = bt - tp;
+            targetCenterX = (lf + rt) / 2;
+            targetCenterY = (tp + bt) / 2;
+        } else {
+            if (layers.length < 2) return "ERROR: Select a key layer first, then the layers to resize";
+            var kb = getLayerCompBounds(layers[0], comp);
+            targetWidth   = kb.width;
+            targetHeight  = kb.height;
+            targetCenterX = kb.left + kb.width  / 2;
+            targetCenterY = kb.top  + kb.height / 2;
+            targetLayers  = layers.slice(1);
+        }
+
+        if (!(targetWidth > 0) || !(targetHeight > 0)) return "ERROR: Target has zero size";
+
+        var t = comp.time;
+        app.beginUndoGroup("Match Size");
+        for (var i = 0; i < targetLayers.length; i++) {
+            var layer = targetLayers[i];
+            try {
+                if (move) {
+                    var cb  = getLayerCompBounds(layer, comp);
+                    var ccx = cb.left + cb.width  / 2;
+                    var ccy = cb.top  + cb.height / 2;
+                    shiftPosition(layer.position, targetCenterX - ccx, targetCenterY - ccy, layer.threeDLayer);
+                }
+
+                var rect = layer.sourceRectAtTime(t, false);
+                if (!(rect.width > 0) || !(rect.height > 0)) continue;
+
+                var scaleProp = layer.scale;
+                var sVal = scaleProp.value;
+                var curW = rect.width  * (sVal[0] / 100);
+                var curH = rect.height * (sVal[1] / 100);
+                if (!(curW > 0) || !(curH > 0)) continue;
+
+                var factorX = targetWidth  / curW;
+                var factorY = targetHeight / curH;
+                var newScaleX = sVal[0], newScaleY = sVal[1];
+
+                if (mode === 0) {
+                    newScaleX = sVal[0] * factorX;
+                    if (crop) newScaleY = sVal[1] * factorX;
+                } else if (mode === 1) {
+                    newScaleY = sVal[1] * factorY;
+                    if (crop) newScaleX = sVal[0] * factorY;
+                } else {
+                    if (crop) {
+                        var factor = Math.max(factorX, factorY);
+                        newScaleX = sVal[0] * factor;
+                        newScaleY = sVal[1] * factor;
+                    } else {
+                        newScaleX = sVal[0] * factorX;
+                        newScaleY = sVal[1] * factorY;
+                    }
+                }
+
+                if (scaleProp.dimensionsSeparated) {
+                    var xs = scaleProp.getSeparationFollower(0);
+                    var ys = scaleProp.getSeparationFollower(1);
+                    if (xs.numKeys > 0) xs.setValueAtTime(t, newScaleX); else xs.setValue(newScaleX);
+                    if (ys.numKeys > 0) ys.setValueAtTime(t, newScaleY); else ys.setValue(newScaleY);
+                } else {
+                    var newVal = sVal.length > 2 ? [newScaleX, newScaleY, sVal[2]] : [newScaleX, newScaleY];
+                    if (scaleProp.numKeys > 0) scaleProp.setValueAtTime(t, newVal); else scaleProp.setValue(newVal);
+                }
+            } catch (e) {}
+        }
+        app.endUndoGroup();
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch(e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
 // ── ANCHOR POINT ─────────────────────────────────────────────────────────────
 // loc: 0-8 (TL,TC,TR, ML,C,MR, BL,BC,BR)
 // anchorMode: 0=object (layer source bounds)  1=selection (combined bounds)  2=comp
@@ -2144,6 +2250,31 @@ function snapCompKeyframesToFrames(comp) {
     }
 }
 
+// Rounds each layer's in/out points to the nearest whole frame at the new frame
+// rate. Order of assignment matters — AE rejects an inPoint/outPoint write that
+// would momentarily put inPoint >= outPoint, so whichever edge isn't crossing
+// the other (relative to the layer's *current* points) is set first.
+function snapLayerInOutToFrames(comp) {
+    var frameDur = comp.frameDuration;
+    for (var li = 1; li <= comp.numLayers; li++) {
+        var layer = comp.layer(li);
+        try {
+            var newIn  = Math.round(layer.inPoint  / frameDur) * frameDur;
+            var newOut = Math.round(layer.outPoint / frameDur) * frameDur;
+            if (newOut <= newIn) newOut = newIn + frameDur;
+            if (Math.abs(newIn - layer.inPoint) < 1e-6 && Math.abs(newOut - layer.outPoint) < 1e-6) continue;
+
+            if (newIn < layer.outPoint) {
+                layer.inPoint  = newIn;
+                layer.outPoint = newOut;
+            } else {
+                layer.outPoint = newOut;
+                layer.inPoint  = newIn;
+            }
+        } catch (e) {}
+    }
+}
+
 // Only un-parented layers are shifted directly: a parented layer's position is in
 // its parent's local space, not comp space, so once the parent (also a layer in this
 // comp) is shifted, every descendant inherits that shift through the parenting
@@ -2173,7 +2304,10 @@ function applyBatchSettingsToComp(comp, s, warnings) {
     if (s.applyStart) { comp.displayStartTime = s.startTime; }
     if (s.applyFR) {
         comp.frameRate = s.frameRate;
-        if (s.snapKeyframes) snapCompKeyframesToFrames(comp);
+        if (s.snapKeyframes) {
+            snapCompKeyframesToFrames(comp);
+            snapLayerInOutToFrames(comp);
+        }
     }
 }
 
@@ -2432,5 +2566,223 @@ function lineup_exportReducedProject(exportPath, excludedIndices) {
         return "ok";
     } catch (e) {
         return "ERROR: " + e.toString();
+    }
+}
+
+// ── Spellcheck ────────────────────────────────────────────────────────────────
+
+function spellcheck_getComps(idsJson) {
+    try {
+        var comps = [];
+        if (idsJson && idsJson !== "null" && idsJson !== "") {
+            var ids = JSON.parse(idsJson);
+            for (var ii = 0; ii < ids.length; ii++) {
+                for (var n = 1; n <= app.project.numItems; n++) {
+                    var item = app.project.item(n);
+                    if ((item instanceof CompItem) && item.id === ids[ii]) { comps.push(item); break; }
+                }
+            }
+        } else {
+            for (var n = 1; n <= app.project.numItems; n++) {
+                var item = app.project.item(n);
+                if (item instanceof CompItem) comps.push(item);
+            }
+        }
+        if (comps.length === 0) return JSON.stringify([]);
+
+        var result = [];
+        for (var c = 0; c < comps.length; c++) {
+            var comp = comps[c];
+            var layers = [];
+            for (var i = 1; i <= comp.numLayers; i++) {
+                var layer = comp.layer(i);
+                if (!(layer instanceof TextLayer)) continue;
+                var srcText = layer.property("ADBE Text Properties").property("ADBE Text Document");
+                var texts = [];
+                if (srcText.numKeys > 0) {
+                    for (var k = 1; k <= srcText.numKeys; k++) {
+                        texts.push({ text: srcText.keyValue(k).text, keyIndex: k, time: srcText.keyTime(k) });
+                    }
+                } else {
+                    texts.push({ text: srcText.value.text, keyIndex: 0, time: layer.inPoint });
+                }
+                layers.push({ index: i, name: layer.name, inPoint: layer.inPoint, texts: texts });
+            }
+            result.push({ id: comp.id, name: comp.name, fps: comp.frameRate, label: comp.label, layers: layers });
+        }
+        return JSON.stringify(result);
+    } catch (e) {
+        return "ERROR:" + e.message;
+    }
+}
+
+function spellcheck_goto(compId, layerIndex, time) {
+    try {
+        var comp = null;
+        var cid  = parseInt(compId, 10);
+        for (var n = 1; n <= app.project.numItems; n++) {
+            var item = app.project.item(n);
+            if ((item instanceof CompItem) && item.id === cid) { comp = item; break; }
+        }
+        if (!comp) return "ERROR:Comp not found.";
+        comp.openInViewer();
+        for (var i = 1; i <= comp.numLayers; i++) comp.layer(i).selected = false;
+        var layer = comp.layer(parseInt(layerIndex, 10));
+        layer.selected = true;
+        comp.time = parseFloat(time);
+        return "OK";
+    } catch (e) {
+        return "ERROR:" + e.message;
+    }
+}
+
+var _spellLastCompId = null;
+
+function spellcheck_getState() {
+    try {
+        var result = { activeCompId: null, selectedCompIds: [], lastCompId: _spellLastCompId };
+        var active = app.project.activeItem;
+        if (active instanceof CompItem) {
+            result.activeCompId = active.id;
+            _spellLastCompId    = active.id;
+            result.lastCompId   = active.id;
+        }
+        var sel = app.project.selection;
+        if (sel) {
+            for (var i = 0; i < sel.length; i++) {
+                if (sel[i] instanceof CompItem) result.selectedCompIds.push(sel[i].id);
+            }
+        }
+        return JSON.stringify(result);
+    } catch (e) { return "ERROR:" + e.message; }
+}
+
+// ── Find & Replace ────────────────────────────────────────────────────────────
+
+function _frApply(text, lq, query, repl, mode, invert) {
+    var lText = text.toLowerCase();
+    var idx, result, si, fi;
+
+    if (!invert) {
+        if (mode === 'contains') {
+            if (lText.indexOf(lq) === -1) return null;
+            result = ''; si = 0; fi = lText.indexOf(lq, 0);
+            while (fi !== -1) {
+                result += text.slice(si, fi) + repl;
+                si = fi + lq.length;
+                fi = lText.indexOf(lq, si);
+            }
+            return result + text.slice(si);
+        }
+        if (mode === 'starts') {
+            if (lText.indexOf(lq) !== 0) return null;
+            return repl + text.slice(query.length);
+        }
+        if (mode === 'ends') {
+            idx = lText.length - lq.length;
+            if (idx < 0 || lText.lastIndexOf(lq) !== idx) return null;
+            return text.slice(0, text.length - query.length) + repl;
+        }
+    } else {
+        if (mode === 'starts') {
+            if (lText.indexOf(lq) === 0) return null;
+            return query + text;
+        }
+        if (mode === 'ends') {
+            idx = lText.length - lq.length;
+            if (idx >= 0 && lText.lastIndexOf(lq) === idx) return null;
+            return text + query;
+        }
+    }
+    return null;
+}
+
+function find_replace(paramsJson) {
+    try {
+        app.beginUndoGroup("Find & Replace");
+        var p      = JSON.parse(paramsJson);
+        var query  = p.query  || '';
+        var repl   = (p.repl !== undefined && p.repl !== null) ? p.repl : '';
+        var mode   = p.mode   || 'contains';
+        var invert = !!p.invert;
+        var ids    = p.ids    || null;
+        var lq     = query.toLowerCase();
+        var count      = 0;
+        var layerSet   = {};
+        var layerCount = 0;
+        var n, item, c, i, k, comp, layer, srcText, td, newText, layerKey;
+
+        if (!query || (invert && mode === 'contains')) {
+            app.endUndoGroup();
+            return JSON.stringify({ count: 0 });
+        }
+
+        var comps = [];
+        if (ids && ids.length) {
+            for (var ii = 0; ii < ids.length; ii++) {
+                for (n = 1; n <= app.project.numItems; n++) {
+                    item = app.project.item(n);
+                    if ((item instanceof CompItem) && item.id === ids[ii]) { comps.push(item); break; }
+                }
+            }
+        } else {
+            for (n = 1; n <= app.project.numItems; n++) {
+                item = app.project.item(n);
+                if (item instanceof CompItem) comps.push(item);
+            }
+        }
+
+        for (c = 0; c < comps.length; c++) {
+            comp = comps[c];
+            for (i = 1; i <= comp.numLayers; i++) {
+                layer = comp.layer(i);
+                if (!(layer instanceof TextLayer)) continue;
+                srcText = layer.property("ADBE Text Properties").property("ADBE Text Document");
+                layerKey = comp.id + ':' + i;
+                if (srcText.numKeys > 0) {
+                    for (k = 1; k <= srcText.numKeys; k++) {
+                        td      = srcText.keyValue(k);
+                        newText = _frApply(td.text, lq, query, repl, mode, invert);
+                        if (newText !== null) {
+                            td.text = newText; srcText.setValueAtKey(k, td); count++;
+                            if (!layerSet[layerKey]) { layerSet[layerKey] = true; layerCount++; }
+                        }
+                    }
+                } else {
+                    td      = srcText.value;
+                    newText = _frApply(td.text, lq, query, repl, mode, invert);
+                    if (newText !== null) {
+                        td.text = newText; srcText.setValue(td); count++;
+                        if (!layerSet[layerKey]) { layerSet[layerKey] = true; layerCount++; }
+                    }
+                }
+            }
+        }
+
+        app.endUndoGroup();
+        return JSON.stringify({ count: count, layers: layerCount });
+    } catch (e) {
+        try { app.endUndoGroup(); } catch (e2) {}
+        return 'ERROR:' + e.message;
+    }
+}
+
+function spellcheck_replace(layerIndex, keyIndex, oldWord, newWord) {
+    try {
+        app.beginUndoGroup("Spellcheck Fix");
+        var comp = app.project.activeItem;
+        if (!(comp instanceof CompItem)) { app.endUndoGroup(); return "ERROR:No active composition."; }
+        var layer = comp.layer(parseInt(layerIndex, 10));
+        if (!(layer instanceof TextLayer)) { app.endUndoGroup(); return "ERROR:Not a text layer."; }
+        var srcText = layer.property("ADBE Text Properties").property("ADBE Text Document");
+        var ki = parseInt(keyIndex, 10);
+        var td = ki > 0 ? srcText.keyValue(ki) : srcText.value;
+        td.text = td.text.replace(new RegExp("\\b" + oldWord + "\\b", "gi"), newWord);
+        if (ki > 0) { srcText.setValueAtKey(ki, td); } else { srcText.setValue(td); }
+        app.endUndoGroup();
+        return "OK";
+    } catch (e) {
+        try { app.endUndoGroup(); } catch (_) {}
+        return "ERROR:" + e.message;
     }
 }

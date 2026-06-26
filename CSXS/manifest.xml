@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest Version="7.0"
     ExtensionBundleId="com.thinkingbox.lineup"
-    ExtensionBundleVersion="1.0.0"
+    ExtensionBundleVersion="1.5.0"
     ExtensionBundleName="Lineup">
   <ExtensionList>
-    <Extension Id="com.thinkingbox.lineup.panel" Version="1.0.0"/>
+    <Extension Id="com.thinkingbox.lineup.panel" Version="1.5.0"/>
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>

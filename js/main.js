@@ -13,7 +13,7 @@ function toggleSection(id) {
 }
 
 function restoreCollapsed() {
-    var ids = ['align','dist','anchor','ease','rigs','sort','autocrop','organize'];
+    var ids = ['align','dist','sizing','anchor','ease','rigs','sort','autocrop','organize','spell'];
     ids.forEach(function(id) {
         var stored;
         try { stored = localStorage.getItem('lineup-sec-' + id); } catch(e) {}
@@ -45,6 +45,165 @@ function hideToast() {
     var toast = document.getElementById('toast');
     if (toast) toast.classList.add('toast-hidden');
     clearTimeout(_toastTimer);
+}
+
+// ── Favorites ─────────────────────────────────────────────────────────────────
+
+var _favorites  = {};
+var _favCtx     = null;
+var _favCtxBtn  = null;
+
+var _FAV_STAR_SVG      = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6,0.8 7.4,4.4 11.2,4.7 8.4,7.2 9.3,11 6,9.1 2.7,11 3.6,7.2 0.8,4.7 4.6,4.4"/></svg>';
+var _FAV_STAR_SVG_FILL = '<svg viewBox="0 0 12 12" fill="currentColor" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6,0.8 7.4,4.4 11.2,4.7 8.4,7.2 9.3,11 6,9.1 2.7,11 3.6,7.2 0.8,4.7 4.6,4.4"/></svg>';
+
+function _loadFavorites() {
+    try { _favorites = JSON.parse(localStorage.getItem('lineup-favorites') || '{}'); } catch(e) { _favorites = {}; }
+}
+
+function _saveFavorites() {
+    try { localStorage.setItem('lineup-favorites', JSON.stringify(_favorites)); } catch(e) {}
+}
+
+function isFavorited(id) {
+    return !!_favorites[id];
+}
+
+function toggleFavorite(id) {
+    var adding = !_favorites[id];
+    if (adding) { _favorites[id] = 1; } else { delete _favorites[id]; }
+    _saveFavorites();
+    _renderFavBar();
+    _syncAllPickerStars();
+    _closeFavCtx();
+    if (adding) _showFavToast(id);
+}
+
+function _showFavToast(id) {
+    var btn   = document.querySelector('[data-fav-id="' + id + '"]:not([data-fav-clone])');
+    var label = btn ? (btn.title || 'Item') : 'Item';
+    var toast = document.getElementById('toast');
+    var msgEl = document.getElementById('toast-msg');
+    if (!toast || !msgEl) return;
+    msgEl.textContent = '★  ' + label + ' favorited';
+    toast.className = 'toast toast-fav';
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(hideToast, 2500);
+}
+
+function _renderFavBar() {
+    var bar  = document.getElementById('fav-bar');
+    var cont = document.getElementById('fav-bar-btns');
+    if (!bar || !cont) return;
+
+    var ids = Object.keys(_favorites);
+    if (ids.length === 0) {
+        bar.classList.add('fav-bar-hidden');
+        cont.innerHTML = '';
+        return;
+    }
+    bar.classList.remove('fav-bar-hidden');
+    cont.innerHTML = '';
+
+    ids.forEach(function(id) {
+        var src = document.querySelector('[data-fav-id="' + id + '"]:not([data-fav-clone])');
+        if (!src) return;
+        var clone = src.cloneNode(true);
+        clone.removeAttribute('id');
+        clone.removeAttribute('onclick');
+        clone.setAttribute('data-fav-clone', id);
+        clone.style.cssText = '';
+        clone.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var original = document.querySelector('[data-fav-id="' + id + '"]:not([data-fav-clone])');
+            if (original) original.click();
+        });
+        clone.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            if      (id === 'dist-grid')   _openGridPicker(e.clientX, e.clientY);
+            else if (id === 'dist-radial') _openRadialPicker(e.clientX, e.clientY);
+            else if (id === 'dist-z')      _openZPicker(e.clientX, e.clientY);
+            else if (id === 'dist-path')   _openPathPicker(e.clientX, e.clientY);
+            else                           _openFavCtx(clone, e.clientX, e.clientY);
+        });
+        cont.appendChild(clone);
+    });
+}
+
+function _syncAllPickerStars() {
+    var stars = document.querySelectorAll('[data-picker-star]');
+    for (var i = 0; i < stars.length; i++) {
+        var id     = stars[i].getAttribute('data-picker-star');
+        var active = isFavorited(id);
+        stars[i].classList.toggle('fav-active', active);
+        stars[i].innerHTML = active ? _FAV_STAR_SVG_FILL : _FAV_STAR_SVG;
+    }
+}
+
+function _makePickerStarBtn(favId) {
+    var btn    = document.createElement('button');
+    btn.className = 'picker-star-btn';
+    btn.setAttribute('data-picker-star', favId);
+    btn.title  = 'Favorite';
+    btn.type   = 'button';
+    var active = isFavorited(favId);
+    btn.innerHTML = active ? _FAV_STAR_SVG_FILL : _FAV_STAR_SVG;
+    if (active) btn.classList.add('fav-active');
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        toggleFavorite(favId);
+    });
+    return btn;
+}
+
+function _buildFavCtx() {
+    var el   = document.createElement('div');
+    el.className = 'fav-ctx';
+    var item = document.createElement('button');
+    item.className = 'fav-ctx-item';
+    item.type = 'button';
+    item.innerHTML = _FAV_STAR_SVG + '<span class="fav-ctx-lbl">Favorite</span>';
+    el.appendChild(item);
+    item.addEventListener('click', function() {
+        if (_favCtxBtn) toggleFavorite(_favCtxBtn.getAttribute('data-fav-id'));
+    });
+    document.body.appendChild(el);
+    return el;
+}
+
+function _openFavCtx(btn, x, y) {
+    if (!_favCtx) _favCtx = _buildFavCtx();
+    _favCtxBtn = btn;
+    var id     = btn.getAttribute('data-fav-id');
+    var active = isFavorited(id);
+    var item   = _favCtx.querySelector('.fav-ctx-item');
+    if (item) {
+        item.classList.toggle('fav-active', active);
+        item.querySelector('svg').setAttribute('fill', active ? 'currentColor' : 'none');
+        item.querySelector('.fav-ctx-lbl').textContent = active ? 'Unfavorite' : 'Favorite';
+    }
+    var vw = window.innerWidth, vh = window.innerHeight;
+    _favCtx.style.left = Math.min(x, vw - 152) + 'px';
+    _favCtx.style.top  = Math.min(y, vh - 42)  + 'px';
+    _favCtx.classList.add('visible');
+    setTimeout(function() {
+        document.addEventListener('mousedown', _favCtxOutside);
+        document.addEventListener('keydown',   _favCtxKey);
+    }, 0);
+}
+
+function _closeFavCtx() {
+    if (_favCtx) _favCtx.classList.remove('visible');
+    _favCtxBtn = null;
+    document.removeEventListener('mousedown', _favCtxOutside);
+    document.removeEventListener('keydown',   _favCtxKey);
+}
+
+function _favCtxOutside(e) {
+    if (_favCtx && !_favCtx.contains(e.target)) _closeFavCtx();
+}
+
+function _favCtxKey(e) {
+    if (e.key === 'Escape') _closeFavCtx();
 }
 
 // ── Generic evalScript wrapper ────────────────────────────────────────────────
@@ -88,14 +247,14 @@ function doAlign(idx) {
 // ── DISTRIBUTE ────────────────────────────────────────────────────────────────
 
 function doDist(horizontal) {
-    var mode    = selVal('distMode');
-    var spacing = numVal('distInput');
-    run('lineup_distribute(' + horizontal + ',' + mode + ',' + spacing + ')');
+    var mode = selVal('distMode');
+    // Key Layer mode always lines layers up back to back — no user-set spacing.
+    run('lineup_distribute(' + horizontal + ',' + mode + ',0)');
 }
 
 function doDistZ() {
     var mode    = selVal('distMode');
-    var spacing = numVal('distInput');
+    var spacing = 0; // Key Layer mode always lines layers up back to back
     var zStart  = parseFloat(document.getElementById('zStartInput').value);
     var zEnd    = parseFloat(document.getElementById('zEndInput').value);
     var even    = parseInt(document.getElementById('zEvenInput').value, 10);
@@ -109,14 +268,14 @@ function doDistZ() {
 
 function doDistPath() {
     var mode    = selVal('distMode');
-    var spacing = numVal('distInput');
-    var rotate  = chkVal('rotateCheck');
+    var spacing = numVal('pathSpacingInput');
+    var rotate  = chkVal('pathRotateCheck');
     run('lineup_pathDistribute(' + mode + ',' + spacing + ',' + rotate + ')');
 }
 
 function doDistRadial() {
     var mode    = selVal('distMode');
-    var spacing = numVal('distInput');
+    var spacing = 0; // Key Layer mode always lines layers up back to back
     var radius  = numVal('radialInput', 500);
     var rotate  = chkVal('rotateCheck');
     run('lineup_radialDistribute(' + mode + ',' + spacing + ',' + radius + ',' + rotate + ')');
@@ -141,6 +300,22 @@ function _syncAlignEdgesDim() {
     var h = parseFloat(document.getElementById('gridHPadInput').value);
     var v = parseFloat(document.getElementById('gridVPadInput').value);
     grp.classList.toggle('dimmed', !isNaN(h) && !isNaN(v));
+}
+
+// ── SIZING ────────────────────────────────────────────────────────────────────
+
+function doSizeMatch(mode) {
+    var sizeMode = selVal('sizeMode');
+    var crop     = selVal('sizeFitMode');
+    var move     = chkVal('sizeMoveCheck');
+    run('lineup_sizeMatch(' + mode + ',' + sizeMode + ',' + crop + ',' + move + ')');
+}
+
+function setSizeFitMode(val) {
+    document.getElementById('sizeFitMode').value = val;
+    var btns = document.querySelectorAll('#sizeFitSeg .fit-seg-btn');
+    btns.forEach(function(btn, i) { btn.classList.toggle('active', i === val); });
+    document.getElementById('sizeFitSlider').style.transform = 'translateX(' + (val * 100) + '%)';
 }
 
 // ── ANCHOR POINT ──────────────────────────────────────────────────────────────
@@ -212,6 +387,7 @@ var _gridPickerWInput   = null;
 var _gridPickerHInput   = null;
 var _gridPickerHPadInput = null;
 var _gridPickerVPadInput = null;
+var _gridPickerAlignCb   = null;
 
 function _buildGridPicker() {
     var el = document.createElement('div');
@@ -249,8 +425,37 @@ function _buildGridPicker() {
     top.appendChild(gpLbl('×'));
     top.appendChild(gpLbl('H'));
     top.appendChild(hInput);
+    var gpStarBtn = _makePickerStarBtn('dist-grid');
+    gpStarBtn.style.marginLeft = 'auto';
+    confirmBtn.style.marginLeft = '4px';
+    top.appendChild(gpStarBtn);
     top.appendChild(confirmBtn);
     el.appendChild(top);
+
+    // Align Edges sits up top, mirroring the hidden main-panel checkbox, so it
+    // doesn't interfere with hovering/clicking the grid cells below.
+    var alignRow = document.createElement('div');
+    alignRow.className = 'grid-picker-align-row';
+    var alignGroup = document.createElement('span');
+    alignGroup.id = 'alignEdgesGroup';
+    alignGroup.className = 'spacing-group';
+    var alignLabel = document.createElement('label');
+    alignLabel.className = 'check-label';
+    alignLabel.title = 'Align corner layers to composition/selection edges; distribute the rest evenly between them. Ignored on any axis where Gap is set manually.';
+    var alignCb = document.createElement('input');
+    alignCb.type = 'checkbox';
+    _gridPickerAlignCb = alignCb;
+    alignLabel.appendChild(alignCb);
+    alignLabel.appendChild(document.createTextNode(' Align Edges'));
+    alignGroup.appendChild(alignLabel);
+    alignRow.appendChild(alignGroup);
+    el.appendChild(alignRow);
+
+    alignCb.addEventListener('change', function() {
+        var mainEl = document.getElementById('alignEdgesCheck');
+        if (mainEl) mainEl.checked = alignCb.checked;
+        _syncAlignEdgesDim();
+    });
 
     // Gap row: small icon + input pairs that mirror the main-panel
     // gridHPadInput/gridVPadInput fields, kept in sync both ways. On its own
@@ -390,14 +595,18 @@ function _openGridPicker(x, y) {
     if (_gridPickerHPadInput) _gridPickerHPadInput.value = mainH ? mainH.value : '';
     if (_gridPickerVPadInput) _gridPickerVPadInput.value = mainV ? mainV.value : '';
 
+    var mainAlign = document.getElementById('alignEdgesCheck');
+    if (_gridPickerAlignCb) _gridPickerAlignCb.checked = mainAlign ? mainAlign.checked : false;
+
     // Position near cursor, clamp inside viewport
     var vw = window.innerWidth, vh = window.innerHeight;
-    var pw = 190, ph = 214;
+    var pw = 190, ph = 246;
     _gridPicker.style.left = Math.min(x + 4, vw - pw - 4) + 'px';
     _gridPicker.style.top  = Math.min(y + 4, vh - ph - 4) + 'px';
 
     _gridPicker.classList.add('visible');
     _syncAlignEdgesDim();
+    _syncAllPickerStars();
 
     setTimeout(function() {
         document.addEventListener('mousedown', _gridPickerOutside);
@@ -433,6 +642,8 @@ var _rpRadiusInput   = null;
 var _rpCircle        = null;
 var _rpCenterDot     = null;
 var _rpCompBg        = null;
+var _rpRotate        = false;
+var _rpRotateCb      = null;
 
 function _buildRadialPicker() {
     var el = document.createElement('div');
@@ -461,8 +672,28 @@ function _buildRadialPicker() {
     top.appendChild(rpLbl('Radius'));
     top.appendChild(inp);
     top.appendChild(rpLbl('px'));
+    var rpStarBtn = _makePickerStarBtn('dist-radial');
+    rpStarBtn.style.marginLeft = 'auto';
+    confirmBtn.style.marginLeft = '4px';
+    top.appendChild(rpStarBtn);
     top.appendChild(confirmBtn);
     el.appendChild(top);
+
+    // Rotate sits up top so it doesn't interfere with dragging in the preview below
+    var rotRow = document.createElement('div');
+    rotRow.className = 'radial-picker-rotate-row';
+    var rotLabel = document.createElement('label');
+    rotLabel.className = 'check-label';
+    rotLabel.title = 'Auto Rotate each layer outward along the radial angle';
+    var rotCb = document.createElement('input');
+    rotCb.type = 'checkbox';
+    _rpRotateCb = rotCb;
+    rotLabel.appendChild(rotCb);
+    rotLabel.appendChild(document.createTextNode(' Rotate'));
+    rotRow.appendChild(rotLabel);
+    el.appendChild(rotRow);
+
+    rotCb.addEventListener('change', function() { _rpRotate = rotCb.checked; });
 
     var preview = document.createElement('div');
     preview.className = 'radial-preview';
@@ -492,6 +723,7 @@ function _buildRadialPicker() {
 
     preview.appendChild(svg);
     el.appendChild(preview);
+
     document.body.appendChild(el);
 
     preview.addEventListener('mousemove', function(e) {
@@ -572,11 +804,16 @@ function _openRadialPicker(x, y) {
         _rpRadius = Math.max(1, parseFloat(document.getElementById('radialInput').value) || 500);
         _rpUpdateVisual();
 
+        var mainRotate = document.getElementById('rotateCheck');
+        _rpRotate = mainRotate ? mainRotate.checked : false;
+        if (_rpRotateCb) _rpRotateCb.checked = _rpRotate;
+
         var vw = window.innerWidth, vh = window.innerHeight;
-        var popW = 192, popH = 149;
+        var popW = 192, popH = 180;
         _radialPicker.style.left = Math.min(x + 4, vw - popW - 4) + 'px';
         _radialPicker.style.top  = Math.min(y + 4, vh - popH - 4) + 'px';
         _radialPicker.classList.add('visible');
+        _syncAllPickerStars();
 
         setTimeout(function() {
             document.addEventListener('mousedown', _radialPickerOutside);
@@ -602,6 +839,8 @@ function _radialPickerKey(e) {
 function _commitRadialPicker() {
     var r = Math.max(1, parseFloat(_rpRadiusInput.value) || 1);
     document.getElementById('radialInput').value = r;
+    var rotEl = document.getElementById('rotateCheck');
+    if (rotEl) rotEl.checked = _rpRotate;
     _closeRadialPicker();
 }
 
@@ -673,6 +912,10 @@ function _buildZPicker() {
     inputsRow.appendChild(spacer);
     inputsRow.appendChild(zpLbl('End'));
     inputsRow.appendChild(endInp);
+    var zpStarBtn = _makePickerStarBtn('dist-z');
+    zpStarBtn.style.marginLeft = '4px';
+    confirmBtn.style.marginLeft = '4px';
+    inputsRow.appendChild(zpStarBtn);
     inputsRow.appendChild(confirmBtn);
     el.appendChild(inputsRow);
 
@@ -873,6 +1116,7 @@ function _openZPicker(x, y) {
     _zPicker.style.left = Math.min(x + 4, vw - popW - 4) + 'px';
     _zPicker.style.top  = Math.min(y + 4, vh - popH - 4) + 'px';
     _zPicker.classList.add('visible');
+    _syncAllPickerStars();
 
     setTimeout(function() {
         document.addEventListener('mousedown', _zPickerOutside);
@@ -892,6 +1136,592 @@ function _zPickerOutside(e) {
 
 function _zPickerKey(e) {
     if (e.key === 'Escape') _closeZPicker();
+}
+
+// ── Path Picker ───────────────────────────────────────────────────────────────
+// Decorative sine-wave curve — not the actual selected layer's path, just a
+// stand-in for previewing spacing.
+
+var PATH_PW = 176, PATH_PH = 92;
+var _PP_X0 = 14, _PP_X1 = 162, _PP_CY = 46, _PP_AMP = 24, _PP_CYCLES = 2;
+
+var _pathPicker      = null;
+var _ppSpacing       = 0;
+var _ppRotate        = false;
+var _ppSpacingInput  = null;
+var _ppRotateCb      = null;
+var _ppHandle        = null;
+var _ppSquaresG      = null;
+var _ppPreviewEl     = null;
+var _ppSamples       = null;
+
+function _ppCurvePoint(t) {
+    var x = _PP_X0 + t * (_PP_X1 - _PP_X0);
+    var y = _PP_CY + _PP_AMP * Math.sin(t * _PP_CYCLES * 2 * Math.PI);
+    return { x: x, y: y };
+}
+
+function _ppBuildSamples() {
+    var pts = [], total = 0, steps = 160;
+    var prev = _ppCurvePoint(0);
+    pts.push({ x: prev.x, y: prev.y, len: 0 });
+    for (var i = 1; i <= steps; i++) {
+        var t = i / steps;
+        var p = _ppCurvePoint(t);
+        var dx = p.x - prev.x, dy = p.y - prev.y;
+        total += Math.sqrt(dx * dx + dy * dy);
+        pts.push({ x: p.x, y: p.y, len: total });
+        prev = p;
+    }
+    for (var i = 0; i < pts.length; i++) pts[i].frac = total > 0 ? pts[i].len / total : 0;
+    _ppSamples = pts;
+}
+
+function _ppCurveD() {
+    if (!_ppSamples) _ppBuildSamples();
+    var d = 'M' + _ppSamples[0].x.toFixed(1) + ',' + _ppSamples[0].y.toFixed(1);
+    for (var i = 2; i < _ppSamples.length; i += 2) {
+        d += ' L' + _ppSamples[i].x.toFixed(1) + ',' + _ppSamples[i].y.toFixed(1);
+    }
+    var last = _ppSamples[_ppSamples.length - 1];
+    d += ' L' + last.x.toFixed(1) + ',' + last.y.toFixed(1);
+    return d;
+}
+
+function _ppPointAtFrac(frac) {
+    if (!_ppSamples) _ppBuildSamples();
+    frac = Math.max(0, Math.min(1, frac));
+    for (var i = 1; i < _ppSamples.length; i++) {
+        if (_ppSamples[i].frac >= frac) {
+            var a = _ppSamples[i - 1], b = _ppSamples[i];
+            var span = b.frac - a.frac;
+            var f = span > 0 ? (frac - a.frac) / span : 0;
+            return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+        }
+    }
+    var last = _ppSamples[_ppSamples.length - 1];
+    return { x: last.x, y: last.y };
+}
+
+function _ppNearestFrac(mx, my) {
+    if (!_ppSamples) _ppBuildSamples();
+    var best = 0, bestD = Infinity;
+    for (var i = 0; i < _ppSamples.length; i++) {
+        var dx = _ppSamples[i].x - mx, dy = _ppSamples[i].y - my;
+        var d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = _ppSamples[i].frac; }
+    }
+    return best;
+}
+
+function _buildPathPicker() {
+    var el = document.createElement('div');
+    el.className = 'path-picker';
+
+    var top = document.createElement('div');
+    top.className = 'path-picker-top';
+
+    function ppLbl(txt) {
+        var s = document.createElement('span');
+        s.className = 'gp-lbl';
+        s.textContent = txt;
+        return s;
+    }
+
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = '0';
+    _ppSpacingInput = inp;
+
+    var confirmBtn = document.createElement('button');
+    confirmBtn.className = 'grid-picker-confirm';
+    confirmBtn.title = 'Confirm';
+    confirmBtn.innerHTML = '<svg viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,5.5 4.5,8.5 9.5,2.5"/></svg>';
+
+    top.appendChild(ppLbl('Spacing'));
+    top.appendChild(inp);
+    top.appendChild(ppLbl('%'));
+    var ppStarBtn = _makePickerStarBtn('dist-path');
+    ppStarBtn.style.marginLeft = 'auto';
+    confirmBtn.style.marginLeft = '4px';
+    top.appendChild(ppStarBtn);
+    top.appendChild(confirmBtn);
+    el.appendChild(top);
+
+    // Rotate sits above the preview so it doesn't interfere with curve-dragging below
+    var rotRow = document.createElement('div');
+    rotRow.className = 'path-picker-rotate-row';
+    var rotLabel = document.createElement('label');
+    rotLabel.className = 'check-label';
+    rotLabel.title = 'Rotate each layer to follow the path tangent (separate from Radial\'s Rotate)';
+    var rotCb = document.createElement('input');
+    rotCb.type = 'checkbox';
+    _ppRotateCb = rotCb;
+    rotLabel.appendChild(rotCb);
+    rotLabel.appendChild(document.createTextNode(' Rotate'));
+    rotRow.appendChild(rotLabel);
+    el.appendChild(rotRow);
+
+    rotCb.addEventListener('change', function() { _ppRotate = rotCb.checked; });
+
+    var preview = document.createElement('div');
+    preview.className = 'path-preview';
+    _ppPreviewEl = preview;
+
+    var NS  = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + PATH_PW + ' ' + PATH_PH);
+    svg.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%';
+
+    var curve = document.createElementNS(NS, 'path');
+    curve.setAttribute('d', _ppCurveD());
+    curve.setAttribute('fill', 'none');
+    curve.setAttribute('stroke', '#4a4a4a');
+    curve.setAttribute('stroke-width', '2');
+    curve.setAttribute('stroke-linecap', 'round');
+    curve.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(curve);
+
+    var squaresG = document.createElementNS(NS, 'g');
+    _ppSquaresG = squaresG;
+    svg.appendChild(squaresG);
+
+    var handle = document.createElementNS(NS, 'circle');
+    handle.setAttribute('r', '4.5');
+    handle.setAttribute('fill', '#2470e0');
+    handle.setAttribute('stroke', '#1e1e1e');
+    handle.setAttribute('stroke-width', '1.5');
+    _ppHandle = handle;
+    svg.appendChild(handle);
+
+    preview.appendChild(svg);
+    el.appendChild(preview);
+
+    document.body.appendChild(el);
+
+    function onCurveDrag(e) {
+        var rect = preview.getBoundingClientRect();
+        var mx = (e.clientX - rect.left) / rect.width  * PATH_PW;
+        var my = (e.clientY - rect.top)  / rect.height * PATH_PH;
+        _ppSpacing = _ppNearestFrac(mx, my) * 100;
+        _ppUpdateVisual();
+    }
+
+    preview.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        onCurveDrag(e);
+        function onMove(e2) { onCurveDrag(e2); }
+        function onUp() {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
+
+    inp.addEventListener('input', function() {
+        var v = parseFloat(inp.value);
+        if (!isNaN(v)) { _ppSpacing = Math.max(0, v); _ppUpdateVisual(); }
+    });
+    inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') _ppCommit();
+    });
+    inp.addEventListener('mousemove', function(e) { e.stopPropagation(); });
+
+    confirmBtn.addEventListener('click', _ppCommit);
+
+    return el;
+}
+
+function _ppUpdateVisual() {
+    if (_ppSpacingInput && document.activeElement !== _ppSpacingInput) {
+        _ppSpacingInput.value = Math.round(_ppSpacing * 10) / 10;
+    }
+
+    var frac = ((_ppSpacing % 100) + 100) % 100 / 100;
+    var hp = _ppPointAtFrac(frac);
+    if (_ppHandle) { _ppHandle.setAttribute('cx', hp.x); _ppHandle.setAttribute('cy', hp.y); }
+
+    // Squares illustrate the back-to-back wrap pattern at the current spacing %
+    if (_ppSquaresG) {
+        _ppSquaresG.innerHTML = '';
+        var NS = 'http://www.w3.org/2000/svg';
+        var n = 5, sz = 6;
+        for (var i = 0; i < n; i++) {
+            var f = (_ppSpacing <= 0) ? (i / n) : (((i * _ppSpacing) % 100) / 100);
+            var p = _ppPointAtFrac(f);
+            var sq = document.createElementNS(NS, 'rect');
+            sq.setAttribute('x', p.x - sz / 2);
+            sq.setAttribute('y', p.y - sz / 2);
+            sq.setAttribute('width', sz);
+            sq.setAttribute('height', sz);
+            sq.setAttribute('rx', 1.3);
+            sq.setAttribute('fill', i === 0 ? '#2470e0' : 'rgba(36,112,224,0.45)');
+            _ppSquaresG.appendChild(sq);
+        }
+    }
+}
+
+function _ppCommit() {
+    var s = document.getElementById('pathSpacingInput');
+    var r = document.getElementById('pathRotateCheck');
+    if (s) s.value = _ppSpacing;
+    if (r) r.checked = _ppRotate;
+    _closePathPicker();
+}
+
+function _openPathPicker(x, y) {
+    if (!_pathPicker) _pathPicker = _buildPathPicker();
+
+    var s = document.getElementById('pathSpacingInput');
+    var r = document.getElementById('pathRotateCheck');
+    _ppSpacing = s ? (parseFloat(s.value) || 0) : 0;
+    _ppRotate  = r ? r.checked : false;
+    if (_ppRotateCb) _ppRotateCb.checked = _ppRotate;
+
+    _ppUpdateVisual();
+
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var popW = 192, popH = 180;
+    _pathPicker.style.left = Math.min(x + 4, vw - popW - 4) + 'px';
+    _pathPicker.style.top  = Math.min(y + 4, vh - popH - 4) + 'px';
+    _pathPicker.classList.add('visible');
+    _syncAllPickerStars();
+
+    setTimeout(function() {
+        document.addEventListener('mousedown', _pathPickerOutside);
+        document.addEventListener('keydown',   _pathPickerKey);
+    }, 0);
+}
+
+function _closePathPicker() {
+    if (_pathPicker) _pathPicker.classList.remove('visible');
+    document.removeEventListener('mousedown', _pathPickerOutside);
+    document.removeEventListener('keydown',   _pathPickerKey);
+}
+
+function _pathPickerOutside(e) {
+    if (_pathPicker && !_pathPicker.contains(e.target)) _closePathPicker();
+}
+
+function _pathPickerKey(e) {
+    if (e.key === 'Escape') _closePathPicker();
+}
+
+// ── Properties Picker ────────────────────────────────────────────────────────
+// Flat list of every Z / Path / Radial / Grid setting as plain text/checkbox
+// inputs (no draggable previews). Edits write straight through to the same
+// hidden fields the individual right-click menus read from, so everything is
+// saved continuously — closing the popup (Escape or clicking outside) never
+// discards anything, unlike the confirm-gated drag pickers above.
+
+var _distPropsPicker  = null;
+var _alignPropsPicker = null;
+var _propsTextInputs  = [];
+var _propsCheckboxes  = [];
+var _propsSelects     = [];
+
+function _propsTextInput(mainId, placeholder, width) {
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    if (placeholder) inp.placeholder = placeholder;
+    if (width) inp.style.width = width + 'px';
+    inp.addEventListener('input', function() {
+        var raw   = inp.value;
+        var clean = raw.replace(/[^0-9.\-]/g, '');
+        clean = clean.replace(/(?!^)-/g, '');
+        var parts = clean.split('.');
+        if (parts.length > 2) clean = parts[0] + '.' + parts.slice(1).join('');
+        if (clean !== raw) inp.value = clean;
+        var el = document.getElementById(mainId);
+        if (el) el.value = inp.value;
+        if (mainId === 'gridHPadInput' || mainId === 'gridVPadInput') _syncAlignEdgesDim();
+    });
+    inp.addEventListener('mousemove', function(e) { e.stopPropagation(); });
+    inp._propsMainId = mainId;
+    _propsTextInputs.push(inp);
+    return inp;
+}
+
+function _propsCheckbox(mainId, inverted) {
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.addEventListener('change', function() {
+        var el = document.getElementById(mainId);
+        if (!el) return;
+        var on = inverted ? !cb.checked : cb.checked;
+        if (el.type === 'checkbox') el.checked = on; else el.value = on ? '1' : '0';
+        if (mainId === 'alignEdgesCheck') _syncAlignEdgesDim();
+    });
+    cb._propsMainId   = mainId;
+    cb._propsInverted = inverted;
+    _propsCheckboxes.push(cb);
+    return cb;
+}
+
+function _propsSelect(mainId, options) {
+    var sel = document.createElement('select');
+    options.forEach(function(opt) {
+        var o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = opt.label;
+        sel.appendChild(o);
+    });
+    sel.addEventListener('change', function() {
+        var el = document.getElementById(mainId);
+        if (el) el.value = sel.value;
+    });
+    sel.addEventListener('mousemove', function(e) { e.stopPropagation(); });
+    sel._propsMainId = mainId;
+    _propsSelects.push(sel);
+    return sel;
+}
+
+function _propsCloseBtn(closeFn) {
+    var btn = document.createElement('button');
+    btn.className = 'grid-picker-confirm';
+    btn.title = 'Close';
+    btn.innerHTML = '<svg viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,5.5 4.5,8.5 9.5,2.5"/></svg>';
+    btn.addEventListener('click', closeFn);
+    return btn;
+}
+
+function _propsHeaderRow(title, closeFn) {
+    var row = document.createElement('div');
+    row.className = 'props-header-row';
+    var h = document.createElement('span');
+    h.className = 'props-header-title';
+    h.textContent = title;
+    row.appendChild(h);
+    row.appendChild(_propsCloseBtn(closeFn));
+    return row;
+}
+
+function _propsCheckLabel(mainId, text, inverted) {
+    var label = document.createElement('label');
+    label.className = 'check-label';
+    label.appendChild(_propsCheckbox(mainId, inverted));
+    label.appendChild(document.createTextNode(' ' + text));
+    return label;
+}
+
+function _propsLbl(text) {
+    var s = document.createElement('span');
+    s.className = 'gp-lbl';
+    s.textContent = text;
+    return s;
+}
+
+function _propsVsep() {
+    var s = document.createElement('span');
+    s.className = 'vsep';
+    return s;
+}
+
+function _propsLine() {
+    var row = document.createElement('div');
+    row.className = 'props-line';
+    return row;
+}
+
+function _propsGapIcon(horizontal) {
+    var NS  = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 20 20');
+    svg.setAttribute('fill', 'currentColor');
+    svg.setAttribute('class', 'grid-picker-gap-icon');
+    svg.innerHTML = horizontal
+        ? '<path d="M3,4 L5,4 L5,16 L3,16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '<path d="M17,4 L15,4 L15,16 L17,16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '<rect x="9" y="9" width="2" height="2" rx="0.4"/>'
+        : '<path d="M4,3 L4,5 L16,5 L16,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '<path d="M4,17 L4,15 L16,15 L16,17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '<rect x="9" y="9" width="2" height="2" rx="0.4"/>';
+    return svg;
+}
+
+function _propsGroupLbl(text) {
+    var l = document.createElement('div');
+    l.className = 'props-group-lbl';
+    l.textContent = text;
+    return l;
+}
+
+function _buildDistPropsPicker() {
+    var el = document.createElement('div');
+    el.className = 'props-picker';
+
+    el.appendChild(_propsHeaderRow('All Distribute Settings', _closeDistPropsPicker));
+
+    el.appendChild(_propsGroupLbl('Radial'));
+    var rLine = _propsLine();
+    rLine.appendChild(_propsLbl('Radius'));
+    rLine.appendChild(_propsTextInput('radialInput', null, 50));
+    rLine.appendChild(_propsLbl('px'));
+    rLine.appendChild(_propsVsep());
+    rLine.appendChild(_propsCheckLabel('rotateCheck', 'Rotate'));
+    el.appendChild(rLine);
+
+    el.appendChild(_propsGroupLbl('Path'));
+    var pLine = _propsLine();
+    pLine.appendChild(_propsLbl('Spacing'));
+    pLine.appendChild(_propsTextInput('pathSpacingInput', null, 44));
+    pLine.appendChild(_propsLbl('%'));
+    pLine.appendChild(_propsVsep());
+    pLine.appendChild(_propsCheckLabel('pathRotateCheck', 'Rotate'));
+    el.appendChild(pLine);
+
+    el.appendChild(_propsGroupLbl('Grid'));
+    var gLine1 = _propsLine();
+    gLine1.appendChild(_propsTextInput('gridColsInput', null, 32));
+    gLine1.appendChild(_propsLbl('×'));
+    gLine1.appendChild(_propsTextInput('gridRowsInput', null, 32));
+    gLine1.appendChild(_propsVsep());
+    gLine1.appendChild(_propsCheckLabel('alignEdgesCheck', 'Align Edges'));
+    el.appendChild(gLine1);
+
+    var gLine2 = _propsLine();
+    gLine2.appendChild(_propsGapIcon(true));
+    gLine2.appendChild(_propsTextInput('gridHPadInput', 'Auto', 42));
+    gLine2.appendChild(_propsGapIcon(false));
+    gLine2.appendChild(_propsTextInput('gridVPadInput', 'Auto', 42));
+    el.appendChild(gLine2);
+
+    el.appendChild(_propsGroupLbl('Z Depth'));
+    var zLine1 = _propsLine();
+    zLine1.appendChild(_propsLbl('Start'));
+    zLine1.appendChild(_propsTextInput('zStartInput', null, 44));
+    zLine1.appendChild(_propsLbl('End'));
+    zLine1.appendChild(_propsTextInput('zEndInput', null, 44));
+    el.appendChild(zLine1);
+
+    var zLine2 = _propsLine();
+    zLine2.appendChild(_propsCheckLabel('zEvenInput', 'Step', true));
+    zLine2.appendChild(_propsTextInput('zStepInput', null, 44));
+    el.appendChild(zLine2);
+
+    document.body.appendChild(el);
+    return el;
+}
+
+function _propsRefreshValues() {
+    for (var i = 0; i < _propsTextInputs.length; i++) {
+        var inp = _propsTextInputs[i];
+        var el  = document.getElementById(inp._propsMainId);
+        if (el && document.activeElement !== inp) inp.value = el.value;
+    }
+    for (var j = 0; j < _propsCheckboxes.length; j++) {
+        var cb  = _propsCheckboxes[j];
+        var el2 = document.getElementById(cb._propsMainId);
+        if (!el2) continue;
+        var on = el2.type === 'checkbox' ? el2.checked : el2.value !== '0';
+        cb.checked = cb._propsInverted ? !on : on;
+    }
+    for (var k = 0; k < _propsSelects.length; k++) {
+        var sel = _propsSelects[k];
+        var el3 = document.getElementById(sel._propsMainId);
+        if (el3) sel.value = el3.value;
+    }
+}
+
+function toggleDistProps(e) {
+    if (_distPropsPicker && _distPropsPicker.classList.contains('visible')) {
+        _closeDistPropsPicker();
+    } else {
+        _openDistPropsPicker(e.clientX, e.clientY);
+    }
+}
+
+function _openDistPropsPicker(x, y) {
+    if (!_distPropsPicker) _distPropsPicker = _buildDistPropsPicker();
+    _propsRefreshValues();
+
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var popW = 230, popH = 310;
+    _distPropsPicker.style.left = Math.max(4, Math.min(x + 4, vw - popW - 4)) + 'px';
+    _distPropsPicker.style.top  = Math.max(4, Math.min(y + 4, vh - popH - 4)) + 'px';
+    _distPropsPicker.classList.add('visible');
+
+    setTimeout(function() {
+        document.addEventListener('mousedown', _distPropsPickerOutside);
+        document.addEventListener('keydown',   _distPropsPickerKey);
+    }, 0);
+}
+
+function _closeDistPropsPicker() {
+    if (_distPropsPicker) _distPropsPicker.classList.remove('visible');
+    document.removeEventListener('mousedown', _distPropsPickerOutside);
+    document.removeEventListener('keydown',   _distPropsPickerKey);
+}
+
+function _distPropsPickerOutside(e) {
+    var btn = document.getElementById('distPropsBtn');
+    if (_distPropsPicker && !_distPropsPicker.contains(e.target) && !(btn && btn.contains(e.target))) {
+        _closeDistPropsPicker();
+    }
+}
+
+function _distPropsPickerKey(e) {
+    if (e.key === 'Escape') _closeDistPropsPicker();
+}
+
+function _buildAlignPropsPicker() {
+    var el = document.createElement('div');
+    el.className = 'props-picker';
+
+    el.appendChild(_propsHeaderRow('All Align Settings', _closeAlignPropsPicker));
+
+    el.appendChild(_propsGroupLbl('Margin'));
+    var mLine = _propsLine();
+    mLine.appendChild(_propsTextInput('marginInput', null, 44));
+    mLine.appendChild(_propsSelect('pixelDropdown', [{ value: '0', label: 'px' }, { value: '1', label: '%' }]));
+    mLine.appendChild(_propsVsep());
+    mLine.appendChild(_propsCheckLabel('offsetCheck', 'Offset Keys'));
+    el.appendChild(mLine);
+
+    document.body.appendChild(el);
+    return el;
+}
+
+function toggleAlignProps(e) {
+    if (_alignPropsPicker && _alignPropsPicker.classList.contains('visible')) {
+        _closeAlignPropsPicker();
+    } else {
+        _openAlignPropsPicker(e.clientX, e.clientY);
+    }
+}
+
+function _openAlignPropsPicker(x, y) {
+    if (!_alignPropsPicker) _alignPropsPicker = _buildAlignPropsPicker();
+    _propsRefreshValues();
+
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var popW = 200, popH = 110;
+    _alignPropsPicker.style.left = Math.max(4, Math.min(x + 4, vw - popW - 4)) + 'px';
+    _alignPropsPicker.style.top  = Math.max(4, Math.min(y + 4, vh - popH - 4)) + 'px';
+    _alignPropsPicker.classList.add('visible');
+
+    setTimeout(function() {
+        document.addEventListener('mousedown', _alignPropsPickerOutside);
+        document.addEventListener('keydown',   _alignPropsPickerKey);
+    }, 0);
+}
+
+function _closeAlignPropsPicker() {
+    if (_alignPropsPicker) _alignPropsPicker.classList.remove('visible');
+    document.removeEventListener('mousedown', _alignPropsPickerOutside);
+    document.removeEventListener('keydown',   _alignPropsPickerKey);
+}
+
+function _alignPropsPickerOutside(e) {
+    var btn = document.getElementById('alignPropsBtn');
+    if (_alignPropsPicker && !_alignPropsPicker.contains(e.target) && !(btn && btn.contains(e.target))) {
+        _closeAlignPropsPicker();
+    }
+}
+
+function _alignPropsPickerKey(e) {
+    if (e.key === 'Escape') _closeAlignPropsPicker();
 }
 
 // ── LAYER SORT ────────────────────────────────────────────────────────────────
@@ -1985,6 +2815,22 @@ document.addEventListener('DOMContentLoaded', function() {
     _bcsInit();
     _brnInit();
 
+    // Favorites: load persisted state, render bar, wire up right-click context menus
+    _loadFavorites();
+    _renderFavBar();
+    var _pickerFavIds = { 'dist-z': 1, 'dist-path': 1, 'dist-radial': 1, 'dist-grid': 1 };
+    var _favBtns = document.querySelectorAll('[data-fav-id]:not([data-fav-clone])');
+    for (var _fi = 0; _fi < _favBtns.length; _fi++) {
+        (function(btn) {
+            var fid = btn.getAttribute('data-fav-id');
+            if (_pickerFavIds[fid]) return; // picker buttons get star inside their popup
+            btn.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                _openFavCtx(btn, e.clientX, e.clientY);
+            });
+        })(_favBtns[_fi]);
+    }
+
     var scaleEl = document.getElementById('scaleSlider');
     if (scaleEl) {
         scaleEl.addEventListener('input', function() {
@@ -1995,7 +2841,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Restrict numeric inputs
-    ['marginInput','distInput','radialInput','gridColsInput','gridRowsInput','gridHPadInput','gridVPadInput','autoCropPad'].forEach(function(id) {
+    ['marginInput','radialInput','gridColsInput','gridRowsInput','gridHPadInput','gridVPadInput','autoCropPad'].forEach(function(id) {
         var el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('input', function() {
@@ -2037,14 +2883,13 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Grey out Spacing when distMode is not Key Layer
-    var distModeEl   = document.getElementById('distMode');
-    var distInputEl  = document.getElementById('distInput');
-    var spacingGroup = document.getElementById('spacingGroup');
-    function syncDistInput() {
-        var disabled = (parseInt(distModeEl.value, 10) !== 2);
-        if (distInputEl)  distInputEl.disabled = disabled;
-        if (spacingGroup) spacingGroup.classList.toggle('dimmed', disabled);
+    // Path distribute button: right-click → spacing/rotation picker
+    var pathDistBtn = document.getElementById('pathDistBtn');
+    if (pathDistBtn) {
+        pathDistBtn.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            _openPathPicker(e.clientX, e.clientY);
+        });
     }
-    if (distModeEl) { distModeEl.addEventListener('change', syncDistInput); syncDistInput(); }
+
 });

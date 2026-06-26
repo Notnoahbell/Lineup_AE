@@ -25,6 +25,7 @@ xcopy /E /I /Q /Y "%~dp0CSXS" "%DEST%\CSXS" >nul
 xcopy /E /I /Q /Y "%~dp0host" "%DEST%\host" >nul
 xcopy /E /I /Q /Y "%~dp0css"  "%DEST%\css"  >nul
 xcopy /E /I /Q /Y "%~dp0js"   "%DEST%\js"   >nul
+xcopy /E /I /Q /Y "%~dp0data" "%DEST%\data" >nul
 copy  /Y          "%~dp0index.html" "%DEST%\index.html" >nul
 
 echo.
