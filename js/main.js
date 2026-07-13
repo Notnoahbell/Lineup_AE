@@ -348,7 +348,8 @@ function doAnchorClear() {
 }
 
 function doCreateNull() {
-    run('lineup_createNull()');
+    var mode = selVal('anchorMode');
+    run('lineup_createNull(' + mode + ')');
 }
 
 // ── EASE COPY ─────────────────────────────────────────────────────────────────
@@ -364,11 +365,11 @@ function doEaseCopy() {
 }
 
 function doEasePaste() {
-    run('lineup_easePaste()');
+    run('lineup_easePaste()', function(result) { showToast(result, 'info'); });
 }
 
 function doEaseValuePaste() {
-    run('lineup_easeValuePaste()');
+    run('lineup_easeValuePaste()', function(result) { showToast(result, 'info'); });
 }
 
 function doEaseClear() {
@@ -1785,6 +1786,563 @@ function doConsolidateProject() {
     });
 }
 
+function doLinkPropertyToController() {
+    var offset = chkVal('linkOffsetCheck');
+    run('lineup_linkPropertyToController(' + offset + ')', function(result) {
+        showToast(result, 'info');
+    });
+}
+
+// ── Project Structure ───────────────────────────────────────────────────────────
+
+var _structNodeSeq       = 0;
+var _structPresets       = [];   // persisted
+var _structActiveIdx     = 0;
+var _structEditPresets   = [];   // working copy, edited while the modal is open — discarded on Cancel
+var _structEditActiveIdx = 0;
+var _structCollapsed     = {};   // nodeId -> true, reset each time the modal opens
+
+var _STRUCT_FOLDER_SVG = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2,5.5 a1,1 0 0,1 1,-1 H7 L8.5,6 H17 a1,1 0 0,1 1,1 V15 a1,1 0 0,1 -1,1 H3 a1,1 0 0,1 -1,-1 Z"/></svg>';
+var _STRUCT_PLUS_SVG   = '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="5" y1="1.5" x2="5" y2="8.5"/><line x1="1.5" y1="5" x2="8.5" y2="5"/></svg>';
+var _STRUCT_X_SVG      = '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/><line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/></svg>';
+var _STRUCT_TRASH_SVG  = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><polyline points="3,5 4.5,12 9.5,12 11,5"/><line x1="2" y1="4" x2="12" y2="4"/><line x1="5.5" y1="4" x2="5.5" y2="2.5"/><line x1="8.5" y1="4" x2="8.5" y2="2.5"/><line x1="5.5" y1="2.5" x2="8.5" y2="2.5"/></svg>';
+var _STRUCT_GRIP_SVG   = '<svg viewBox="0 0 8 12" fill="currentColor"><circle cx="2" cy="1.5" r="1"/><circle cx="6" cy="1.5" r="1"/><circle cx="2" cy="6" r="1"/><circle cx="6" cy="6" r="1"/><circle cx="2" cy="10.5" r="1"/><circle cx="6" cy="10.5" r="1"/></svg>';
+var _STRUCT_CHEV_SVG   = '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2.5,3.5 5,6.5 7.5,3.5"/></svg>';
+
+// role is optional metadata carried on built-in Heist nodes so the host-side
+// sorter can still find e.g. "the PSD folder" after the user renames it —
+// custom folders (role: null) fall back to name-based matching in host.jsx.
+function _structMakeNode(name, role, children) {
+    return { id: 'n' + (_structNodeSeq++), name: name, role: role || null, children: children || [] };
+}
+
+function _structHeistTree() {
+    return [
+        _structMakeNode('1.COMPS', null, [
+            _structMakeNode('1.MASTER', null),
+            _structMakeNode('2.BUILD', null),
+            _structMakeNode('3.PRECOMPS', 'precomps')
+        ]),
+        _structMakeNode('2.ASSETS', null, [
+            _structMakeNode('3D_RENDERS', null),
+            _structMakeNode('AE_RENDERS', null),
+            _structMakeNode('ARTWORK', null, [
+                _structMakeNode('AI', 'ai'),
+                _structMakeNode('PSD', 'psd')
+            ]),
+            _structMakeNode('AUDIO', 'audio'),
+            _structMakeNode('FOOTAGE', 'footage'),
+            _structMakeNode('IMAGES', 'images')
+        ]),
+        _structMakeNode('3.IMPORTED', null, [
+            _structMakeNode('AE_PROJECTS', 'imported'),
+            _structMakeNode('C4D_SCENES', 'c4d')
+        ]),
+        _structMakeNode('4.REFERENCES', null, [
+            _structMakeNode('BOARDS', null),
+            _structMakeNode('OFFLINES', null),
+            _structMakeNode('STYLEFRAMES', null)
+        ])
+    ];
+}
+
+function _structHeistPreset() { return { name: 'Heist', tree: _structHeistTree() }; }
+
+function _structCloneTree(nodes) {
+    var out = [];
+    for (var i = 0; i < nodes.length; i++) {
+        out.push({ id: nodes[i].id, name: nodes[i].name, role: nodes[i].role, children: _structCloneTree(nodes[i].children || []) });
+    }
+    return out;
+}
+
+function _structClonePresets(presets) {
+    var out = [];
+    for (var i = 0; i < presets.length; i++) out.push({ name: presets[i].name, tree: _structCloneTree(presets[i].tree) });
+    return out;
+}
+
+// Persisted node ids restart from 0 each session — seed the counter past
+// whatever's already saved so newly-added nodes can't collide with them.
+function _structSeedSeq() {
+    var max = 0;
+    function walk(nodes) {
+        for (var i = 0; i < nodes.length; i++) {
+            var m = /^n(\d+)$/.exec(nodes[i].id);
+            if (m) { var n = parseInt(m[1], 10); if (n > max) max = n; }
+            walk(nodes[i].children || []);
+        }
+    }
+    for (var i = 0; i < _structPresets.length; i++) walk(_structPresets[i].tree);
+    _structNodeSeq = max + 1;
+}
+
+function _loadStructPresets() {
+    var raw = null;
+    try { raw = localStorage.getItem('lineup-structure-presets'); } catch(e) {}
+    var parsed = null;
+    if (raw) { try { parsed = JSON.parse(raw); } catch(e) {} }
+    if (parsed && parsed.presets && parsed.presets.length) {
+        _structPresets   = parsed.presets;
+        _structActiveIdx = (typeof parsed.activeIndex === 'number' && parsed.activeIndex < _structPresets.length) ? parsed.activeIndex : 0;
+    } else {
+        _structPresets   = [_structHeistPreset()];
+        _structActiveIdx = 0;
+    }
+    _structSeedSeq();
+}
+
+function _saveStructPresets() {
+    try {
+        localStorage.setItem('lineup-structure-presets', JSON.stringify({ presets: _structPresets, activeIndex: _structActiveIdx }));
+    } catch(e) {}
+}
+
+function openProjectStructure() {
+    if (!_structPresets.length) _loadStructPresets();
+    _structEditPresets   = _structClonePresets(_structPresets);
+    _structEditActiveIdx = Math.min(_structActiveIdx, _structEditPresets.length - 1);
+    _structCollapsed      = {};
+    var brk = document.getElementById('structBreakCheck');
+    if (brk) { try { brk.checked = localStorage.getItem('lineup-break-structure') === '1'; } catch(e) {} }
+    _structRenderTabs();
+    _structRenderTree();
+    document.getElementById('structOverlay').classList.remove('struct-hidden');
+}
+
+function closeProjectStructure() {
+    var el = document.getElementById('structOverlay');
+    if (el) el.classList.add('struct-hidden');
+}
+
+function _structRenderTabs() {
+    var bar = document.getElementById('structTabs');
+    if (!bar) return;
+    bar.innerHTML = '';
+    for (var i = 0; i < _structEditPresets.length; i++) {
+        (function(idx) {
+            var preset = _structEditPresets[idx];
+            var tab = document.createElement('button');
+            tab.type = 'button';
+            tab.className = 'struct-tab' + (idx === _structEditActiveIdx ? ' active' : '');
+
+            var lbl = document.createElement('span');
+            lbl.className = 'struct-tab-lbl';
+            lbl.textContent = preset.name;
+            lbl.title = preset.name + ' (double-click to rename)';
+            tab.appendChild(lbl);
+
+            var del = document.createElement('span');
+            del.className = 'struct-tab-del';
+            del.title = 'Delete preset';
+            del.innerHTML = _STRUCT_X_SVG;
+            tab.appendChild(del);
+
+            tab.addEventListener('click', function(e) {
+                if (e.target === del || del.contains(e.target)) return;
+                _structEditActiveIdx = idx;
+                _structRenderTabs();
+                _structRenderTree();
+            });
+            del.addEventListener('click', function(e) {
+                e.stopPropagation();
+                _structDeleteTab(idx);
+            });
+            lbl.addEventListener('dblclick', function(e) {
+                e.stopPropagation();
+                _structRenameTabStart(idx, lbl);
+            });
+
+            bar.appendChild(tab);
+        })(i);
+    }
+
+    var add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'struct-tab-add';
+    add.title = 'Add preset';
+    add.innerHTML = _STRUCT_PLUS_SVG;
+    add.addEventListener('click', _structAddPreset);
+    bar.appendChild(add);
+}
+
+function _structRenameTabStart(idx, lblEl) {
+    var preset = _structEditPresets[idx];
+    if (!preset) return;
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'struct-tab-lbl-input';
+    input.value = preset.name;
+    lblEl.parentNode.replaceChild(input, lblEl);
+    input.focus();
+    input.select();
+    function commit() {
+        var v = input.value.replace(/^\s+|\s+$/g, '');
+        preset.name = v || preset.name;
+        _structRenderTabs();
+        _structRenderTree();
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        else if (e.key === 'Escape') { e.preventDefault(); input.value = preset.name; input.blur(); }
+    });
+    input.addEventListener('click', function(e) { e.stopPropagation(); });
+}
+
+function _structDeleteTab(idx) {
+    _structEditPresets.splice(idx, 1);
+    if (_structEditPresets.length === 0) {
+        _structEditPresets.push(_structHeistPreset());
+        _structEditActiveIdx = 0;
+    } else if (idx < _structEditActiveIdx) {
+        _structEditActiveIdx--;
+    } else if (_structEditActiveIdx >= _structEditPresets.length) {
+        _structEditActiveIdx = _structEditPresets.length - 1;
+    }
+    _structRenderTabs();
+    _structRenderTree();
+}
+
+function _structUniqueName(base, names) {
+    var name = base, n = 2;
+    function taken(nm) { for (var i = 0; i < names.length; i++) if (names[i] === nm) return true; return false; }
+    while (taken(name)) { name = base + ' ' + n; n++; }
+    return name;
+}
+
+function _structAddPreset() {
+    var names = [];
+    for (var i = 0; i < _structEditPresets.length; i++) names.push(_structEditPresets[i].name);
+    var preset = { name: _structUniqueName('New Structure', names), tree: [] };
+    _structEditPresets.push(preset);
+    _structEditActiveIdx = _structEditPresets.length - 1;
+    _structRenderTabs();
+    _structRenderTree();
+    var lbl = document.querySelector('#structTabs .struct-tab.active .struct-tab-lbl');
+    if (lbl) _structRenameTabStart(_structEditActiveIdx, lbl);
+}
+
+function _structRenderTree() {
+    var box = document.getElementById('structTreeBox');
+    if (!box) return;
+    box.innerHTML = '';
+    var preset = _structEditPresets[_structEditActiveIdx];
+    if (!preset || preset.tree.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'struct-tree-empty';
+        empty.textContent = 'No folders yet — click "+ Add Folder" below.';
+        box.appendChild(empty);
+        return;
+    }
+    _structRenderNodes(preset.tree, 0, box);
+}
+
+function _structRenderNodes(nodes, depth, container) {
+    for (var i = 0; i < nodes.length; i++) {
+        (function(node) {
+            var hasKids = !!(node.children && node.children.length);
+
+            var row = document.createElement('div');
+            row.className = 'struct-node-row';
+            row.setAttribute('data-node-id', node.id);
+            row.style.marginLeft = (depth * 16) + 'px';
+
+            var handle = document.createElement('span');
+            handle.className = 'struct-node-handle';
+            handle.title = 'Drag to reorder or nest inside another folder';
+            handle.innerHTML = _STRUCT_GRIP_SVG;
+            handle.addEventListener('mousedown', function(e) { _structStartDrag(node.id, e); });
+            row.appendChild(handle);
+
+            var chevron = document.createElement('span');
+            chevron.className = 'struct-node-chevron' + (hasKids ? '' : ' struct-node-chevron-empty') + (_structCollapsed[node.id] ? ' collapsed' : '');
+            if (hasKids) {
+                chevron.innerHTML = _STRUCT_CHEV_SVG;
+                chevron.title = _structCollapsed[node.id] ? 'Expand' : 'Collapse';
+                chevron.addEventListener('click', function() {
+                    _structCollapsed[node.id] = !_structCollapsed[node.id];
+                    _structRenderTree();
+                });
+            }
+            row.appendChild(chevron);
+
+            var icon = document.createElement('span');
+            icon.className = 'struct-node-icon';
+            icon.innerHTML = _STRUCT_FOLDER_SVG;
+            row.appendChild(icon);
+
+            var lbl = document.createElement('span');
+            lbl.className = 'struct-node-lbl';
+            lbl.textContent = node.name;
+            lbl.title = 'Click to rename';
+            lbl.addEventListener('click', function() { _structRenameNodeStart(node.id, lbl); });
+            row.appendChild(lbl);
+
+            var spacer = document.createElement('span');
+            spacer.className = 'struct-node-spacer';
+            row.appendChild(spacer);
+
+            var addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'struct-node-btn';
+            addBtn.title = 'Add subfolder';
+            addBtn.innerHTML = _STRUCT_PLUS_SVG;
+            addBtn.addEventListener('click', function() { _structAddChildFolder(node.id); });
+            row.appendChild(addBtn);
+
+            var delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'struct-node-btn struct-node-del';
+            delBtn.title = 'Delete folder';
+            delBtn.innerHTML = _STRUCT_TRASH_SVG;
+            delBtn.addEventListener('click', function() { _structDeleteNode(node.id); });
+            row.appendChild(delBtn);
+
+            container.appendChild(row);
+            if (hasKids && !_structCollapsed[node.id]) {
+                _structRenderNodes(node.children, depth + 1, container);
+            }
+        })(nodes[i]);
+    }
+}
+
+function _structRenameNodeStart(nodeId, lblEl) {
+    var found = _structFindNode(nodeId);
+    if (!found) return;
+    var node = found.node;
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'struct-node-lbl-input';
+    input.value = node.name;
+    lblEl.parentNode.replaceChild(input, lblEl);
+    input.focus();
+    input.select();
+    function commit() {
+        var v = input.value.replace(/^\s+|\s+$/g, '');
+        node.name = v || node.name;
+        _structRenderTree();
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        else if (e.key === 'Escape') { e.preventDefault(); input.value = node.name; input.blur(); }
+    });
+}
+
+function _structFindNode(nodeId) {
+    var preset = _structEditPresets[_structEditActiveIdx];
+    if (!preset) return null;
+    function walk(nodes) {
+        for (var i = 0; i < nodes.length; i++) {
+            if (nodes[i].id === nodeId) return { node: nodes[i], parentArr: nodes, index: i };
+            var r = walk(nodes[i].children || []);
+            if (r) return r;
+        }
+        return null;
+    }
+    return walk(preset.tree);
+}
+
+function _structAddChildFolder(nodeId) {
+    var found = _structFindNode(nodeId);
+    if (!found) return;
+    if (!found.node.children) found.node.children = [];
+    var names = [];
+    for (var i = 0; i < found.node.children.length; i++) names.push(found.node.children[i].name);
+    var child = _structMakeNode(_structUniqueName('New Folder', names), null);
+    found.node.children.push(child);
+    _structRenderTree();
+}
+
+function _structAddRootFolder() {
+    var preset = _structEditPresets[_structEditActiveIdx];
+    if (!preset) return;
+    var names = [];
+    for (var i = 0; i < preset.tree.length; i++) names.push(preset.tree[i].name);
+    var node = _structMakeNode(_structUniqueName('New Folder', names), null);
+    preset.tree.push(node);
+    _structRenderTree();
+}
+
+function _structDeleteNode(nodeId) {
+    var found = _structFindNode(nodeId);
+    if (!found) return;
+    found.parentArr.splice(found.index, 1);
+    _structRenderTree();
+}
+
+// True if candidateId is somewhere inside ancestorId's own subtree — used to
+// block dropping a folder into itself or one of its own descendants.
+function _structIsDescendant(candidateId, ancestorId) {
+    var ancestor = _structFindNode(ancestorId);
+    if (!ancestor) return false;
+    function walk(nodes) {
+        for (var i = 0; i < nodes.length; i++) {
+            if (nodes[i].id === candidateId) return true;
+            if (walk(nodes[i].children || [])) return true;
+        }
+        return false;
+    }
+    return walk(ancestor.node.children || []);
+}
+
+// Moves nodeId out of its current spot and before/after/into targetId. Looks
+// targetId up fresh AFTER removing the dragged node so a same-parent reorder
+// (where removal shifts sibling indices) still lands in the right place.
+function _structMoveNode(nodeId, targetId, mode) {
+    var src = _structFindNode(nodeId);
+    if (!src) return;
+    src.parentArr.splice(src.index, 1);
+    var node = src.node;
+
+    var target = _structFindNode(targetId);
+    if (!target) { src.parentArr.splice(src.index, 0, node); return; }
+
+    if (mode === 'into') {
+        if (!target.node.children) target.node.children = [];
+        target.node.children.push(node);
+    } else {
+        var insertAt = target.index + (mode === 'after' ? 1 : 0);
+        target.parentArr.splice(insertAt, 0, node);
+    }
+    _structRenderTree();
+}
+
+function _structStartDrag(nodeId, startEvent) {
+    startEvent.preventDefault();
+    var box = document.getElementById('structTreeBox');
+    if (!box) return;
+
+    var rowEls = Array.prototype.slice.call(box.querySelectorAll('.struct-node-row'));
+    var rows = [];
+    for (var i = 0; i < rowEls.length; i++) {
+        rows.push({ el: rowEls[i], id: rowEls[i].getAttribute('data-node-id'), rect: rowEls[i].getBoundingClientRect() });
+    }
+
+    var dragIdx = -1, draggedRow = null, draggedRect = null;
+    for (var i = 0; i < rows.length; i++) if (rows[i].id === nodeId) { dragIdx = i; draggedRow = rows[i].el; draggedRect = rows[i].rect; }
+    if (!draggedRow) return;
+    var rowH = draggedRect.height;
+
+    // Floating preview clone that tracks the cursor — same treatment as the
+    // Settings section-reorder drag, so dragging a folder on top of another
+    // one to nest it reads the same way that reorder does.
+    var ghost = draggedRow.cloneNode(true);
+    ghost.className = 'struct-node-row struct-node-ghost';
+    ghost.style.cssText = [
+        'position:fixed',
+        'left:' + draggedRect.left + 'px',
+        'top:'  + draggedRect.top  + 'px',
+        'width:' + draggedRect.width + 'px',
+        'margin-left:0',
+        'pointer-events:none',
+        'z-index:2000'
+    ].join(';');
+    document.body.appendChild(ghost);
+
+    // Hide the original row in place — keeps its slot as a fixed gap that the
+    // other rows slide around, same technique as the Settings section drag.
+    draggedRow.style.visibility = 'hidden';
+
+    var startY = startEvent.clientY, originTop = draggedRect.top;
+    var lastTarget = null, lastMode = null;
+
+    function clearShifts() {
+        for (var i = 0; i < rows.length; i++) rows[i].el.style.transform = '';
+    }
+
+    // Only before/after (sibling reorder) opens a gap — "into" just highlights
+    // the target row itself since nothing is being inserted between siblings.
+    function applyShifts(insertIdx) {
+        for (var i = 0; i < rows.length; i++) {
+            if (i === dragIdx) continue;
+            var dy = 0;
+            if (insertIdx > dragIdx && i > dragIdx && i < insertIdx) dy = -rowH;
+            if (insertIdx <= dragIdx && i >= insertIdx && i < dragIdx) dy = rowH;
+            rows[i].el.style.transform = dy ? 'translateY(' + dy + 'px)' : '';
+        }
+    }
+
+    function onMove(ev) {
+        ghost.style.top = (originTop + ev.clientY - startY) + 'px';
+
+        if (lastTarget) lastTarget.classList.remove('drag-over-before', 'drag-over-after', 'drag-over-into');
+        lastTarget = null; lastMode = null;
+
+        var targetIdx = -1, mode = null;
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i].rect;
+            if (ev.clientY < r.top || ev.clientY > r.bottom) continue;
+            if (i === dragIdx || _structIsDescendant(rows[i].id, nodeId)) break;
+            // Thin edges reorder as a sibling; the wide middle band nests the
+            // dragged folder inside whatever row it's dropped on top of.
+            var frac = (ev.clientY - r.top) / r.height;
+            mode = frac < 0.2 ? 'before' : (frac > 0.8 ? 'after' : 'into');
+            targetIdx = i;
+            break;
+        }
+
+        if (targetIdx === -1) { clearShifts(); return; }
+
+        rows[targetIdx].el.classList.add('drag-over-' + mode);
+        lastTarget = rows[targetIdx].el; lastMode = mode;
+
+        if (mode === 'into') clearShifts();
+        else applyShifts(mode === 'after' ? targetIdx + 1 : targetIdx);
+    }
+
+    function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        var targetEl = lastTarget, mode = lastMode;
+        if (lastTarget) lastTarget.classList.remove('drag-over-before', 'drag-over-after', 'drag-over-into');
+        clearShifts();
+        ghost.remove();
+        draggedRow.style.visibility = '';
+        if (targetEl && mode) {
+            _structMoveNode(nodeId, targetEl.getAttribute('data-node-id'), mode);
+        }
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+}
+
+function _structRestoreDefault() {
+    for (var i = 0; i < _structEditPresets.length; i++) {
+        if (_structEditPresets[i].name === 'Heist') {
+            _structEditPresets[i].tree = _structHeistTree();
+            _structEditActiveIdx = i;
+            _structRenderTabs();
+            _structRenderTree();
+            return;
+        }
+    }
+    _structEditPresets.push(_structHeistPreset());
+    _structEditActiveIdx = _structEditPresets.length - 1;
+    _structRenderTabs();
+    _structRenderTree();
+}
+
+function applyProjectStructure() {
+    var preset = _structEditPresets[_structEditActiveIdx];
+    if (!preset) return;
+    var breakStructure = chkVal('structBreakCheck');
+
+    _structPresets   = _structClonePresets(_structEditPresets);
+    _structActiveIdx = _structEditActiveIdx;
+    _saveStructPresets();
+    try { localStorage.setItem('lineup-break-structure', breakStructure ? '1' : '0'); } catch(e) {}
+
+    var treeJson = JSON.stringify(preset.tree);
+    var escaped  = treeJson.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    closeProjectStructure();
+    run("lineup_configureProjectStructure('" + escaped + "'," + breakStructure + ")", function(result) {
+        showToast(result, 'info');
+    });
+}
+
 // ── SHAPE RIGS ────────────────────────────────────────────────────────────────
 
 function doRig()       { run('lineup_rig()'); }
@@ -2891,5 +3449,8 @@ document.addEventListener('DOMContentLoaded', function() {
             _openPathPicker(e.clientX, e.clientY);
         });
     }
+
+    // Project Structure: load persisted presets so the modal has data ready
+    _loadStructPresets();
 
 });

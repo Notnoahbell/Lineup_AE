@@ -940,14 +940,35 @@ function lineup_anchorPaste() {
 
 function lineup_anchorClear() { _anchorClipboard = null; return "ok"; }
 
-function lineup_createNull() {
+function lineup_createNull(anchorMode) {
     try {
         var comp = app.project.activeItem;
         if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
         app.beginUndoGroup("Create Null");
         var layers = comp.selectedLayers;
-        var x = _anchorClipboard ? _anchorClipboard.anchor[0] : comp.width/2;
-        var y = _anchorClipboard ? _anchorClipboard.anchor[1] : comp.height/2;
+
+        var x, y;
+        if (_anchorClipboard) {
+            x = _anchorClipboard.anchor[0]; y = _anchorClipboard.anchor[1];
+        } else if (anchorMode === 0 && layers.length > 0) {
+            // Object: center of the (topmost-in-timeline) selected layer's own bounds.
+            var b = getLayerCompBounds(layers[0], comp);
+            x = (b.left + b.right) / 2; y = (b.top + b.bottom) / 2;
+        } else if (anchorMode === 1 && layers.length > 0) {
+            // Selection: center of the combined bounding box of all selected layers.
+            var minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+            for (var i=0; i<layers.length; i++) {
+                var bb = getLayerCompBounds(layers[i], comp);
+                if (bb.left   < minX) minX = bb.left;
+                if (bb.top    < minY) minY = bb.top;
+                if (bb.right  > maxX) maxX = bb.right;
+                if (bb.bottom > maxY) maxY = bb.bottom;
+            }
+            x = (minX + maxX) / 2; y = (minY + maxY) / 2;
+        } else {
+            x = comp.width/2; y = comp.height/2;
+        }
+
         var nl = comp.layers.addNull();
         nl.name = "Null";
         nl.position.setValue([x, y]);
@@ -965,6 +986,45 @@ function lineup_createNull() {
 }
 
 // ── EASE COPY ─────────────────────────────────────────────────────────────────
+
+// KeyframeEase arrays are per-dimension (Position on a 3D layer has 3, Opacity has
+// 1, etc). Pasting ease copied from one property onto a differently-dimensioned
+// property must resize to fit, or setTemporalEaseAtKey throws (silently swallowed
+// by the caller's catch) and the target keeps whatever default ease it already had
+// instead of the copied curve. Broadcasts a 1-dim source across all target dims,
+// and otherwise pads/truncates by repeating the last value.
+function adaptEaseDims(arr, dimN) {
+    if (!arr || arr.length === 0 || !dimN || arr.length === dimN) return arr;
+    var out = [];
+    for (var d=0; d<dimN; d++) out.push(arr[d < arr.length ? d : arr.length-1]);
+    return out;
+}
+
+// Applies a copied ease template entry to one target keyframe. Order matters:
+// setTemporalEaseAtKey force-promotes both sides of the key to Bezier as a side
+// effect (that's the AE API, not a bug here), so it has to run FIRST; the real
+// interpolation type — which may be Hold or Linear on one or both sides — is
+// (re)applied AFTER, which is what actually restores Hold/Linear. Doing it in the
+// old order (type, then ease) let the ease call silently re-promote a just-set
+// Hold side back to Bezier, and skipping the ease call for any non-Bezier side (as
+// a previous fix did) lost the real ease on the side that *was* Bezier too.
+function applyPastedEase(prop, keyIdx, src) {
+    if (src.inEase && src.outEase) {
+        var dimN = 0;
+        try { dimN = prop.keyInTemporalEase(keyIdx).length; } catch (e) {}
+        var inE = adaptEaseDims(src.inEase, dimN), outE = adaptEaseDims(src.outEase, dimN);
+        try { prop.setTemporalEaseAtKey(keyIdx, inE, outE); } catch (e) {}
+    }
+    prop.setInterpolationTypeAtKey(keyIdx, src.inType, src.outType);
+}
+
+function pluralize(count, singular, plural) { return count + " " + (count===1 ? singular : (plural || singular + "s")); }
+
+function formatPasteSummary(easings, properties, layers) {
+    if (easings === 0) return "No matching keyframe selection to paste onto";
+    return pluralize(easings, "easing") + " pasted on " + pluralize(properties, "property", "properties")
+        + " on " + pluralize(layers, "layer");
+}
 
 function lineup_easeCopy() {
     try {
@@ -1022,35 +1082,45 @@ function lineup_easePaste() {
         if (!_easeClipboard) return "ERROR: No easing copied";
         var n=_easeClipboard.length, layers=comp.selectedLayers;
 
-        function collectRefs(pg, out) {
+        // Grouped per-property (not flattened across the whole layer) so that
+        // pasting onto several properties at once — e.g. Position + Scale, each
+        // with the same number of selected keys as the clipboard — applies the
+        // template to each property independently instead of requiring the
+        // layer's total selected-key count to match n.
+        function collectRefGroups(pg, out) {
             for (var i=1; i<=pg.numProperties; i++) {
                 var p; try { p=pg.property(i); } catch(e){ continue; }
                 if (p.propertyType===PropertyType.PROPERTY) {
                     if (p.numKeys>0 && p.selectedKeys.length>0) {
-                        var sel=p.selectedKeys;
-                        for (var k=0; k<sel.length; k++) out.push({prop:p, keyIdx:sel[k]});
+                        var sel=p.selectedKeys, grp=[];
+                        for (var k=0; k<sel.length; k++) grp.push({prop:p, keyIdx:sel[k]});
+                        out.push(grp);
                     }
                 } else if (p.propertyType===PropertyType.NAMED_GROUP || p.propertyType===PropertyType.INDEXED_GROUP) {
-                    collectRefs(p, out);
+                    collectRefGroups(p, out);
                 }
             }
         }
 
+        var easingsPasted=0, propertiesPasted=0, layersPasted=0;
         app.beginUndoGroup("Paste Easing");
         for (var l=0; l<layers.length; l++) {
-            var targets=[]; collectRefs(layers[l], targets);
-            if (targets.length !== n) continue;
-            for (var t=0; t<targets.length; t++) {
-                var ref=targets[t], src=_easeClipboard[t];
-                try {
-                    ref.prop.setInterpolationTypeAtKey(ref.keyIdx, src.inType, src.outType);
-                    var notLin = src.inType!==KeyframeInterpolationType.LINEAR && src.outType!==KeyframeInterpolationType.LINEAR;
-                    if (notLin && src.inEase && src.outEase) ref.prop.setTemporalEaseAtKey(ref.keyIdx, src.inEase, src.outEase);
-                } catch(e) {}
+            var groups=[]; collectRefGroups(layers[l], groups);
+            var layerHit=false;
+            for (var g=0; g<groups.length; g++) {
+                var targets=groups[g];
+                if (targets.length !== n) continue;
+                for (var t=0; t<targets.length; t++) {
+                    var ref=targets[t], src=_easeClipboard[t];
+                    try { applyPastedEase(ref.prop, ref.keyIdx, src); easingsPasted++; } catch(e) {}
+                }
+                propertiesPasted++;
+                layerHit=true;
             }
+            if (layerHit) layersPasted++;
         }
         app.endUndoGroup();
-        return "ok";
+        return formatPasteSummary(easingsPasted, propertiesPasted, layersPasted);
     } catch (err) {
         try { app.endUndoGroup(); } catch(e) {}
         return "ERROR: " + err.toString();
@@ -1064,36 +1134,44 @@ function lineup_easeValuePaste() {
         if (!_easeClipboard) return "ERROR: No easing copied";
         var n=_easeClipboard.length, layers=comp.selectedLayers;
 
-        function collectRefs(pg, out) {
+        function collectRefGroups(pg, out) {
             for (var i=1; i<=pg.numProperties; i++) {
                 var p; try { p=pg.property(i); } catch(e){ continue; }
                 if (p.propertyType===PropertyType.PROPERTY) {
                     if (p.numKeys>0 && p.selectedKeys.length>0) {
-                        var sel=p.selectedKeys;
-                        for (var k=0; k<sel.length; k++) out.push({prop:p, keyIdx:sel[k]});
+                        var sel=p.selectedKeys, grp=[];
+                        for (var k=0; k<sel.length; k++) grp.push({prop:p, keyIdx:sel[k]});
+                        out.push(grp);
                     }
                 } else if (p.propertyType===PropertyType.NAMED_GROUP || p.propertyType===PropertyType.INDEXED_GROUP) {
-                    collectRefs(p, out);
+                    collectRefGroups(p, out);
                 }
             }
         }
 
+        var easingsPasted=0, propertiesPasted=0, layersPasted=0;
         app.beginUndoGroup("Paste Ease + Value");
         for (var l=0; l<layers.length; l++) {
-            var targets=[]; collectRefs(layers[l], targets);
-            if (targets.length !== n) continue;
-            for (var t=0; t<targets.length; t++) {
-                var ref=targets[t], src=_easeClipboard[t];
-                try {
-                    if (src.value !== null && src.value !== undefined) ref.prop.setValueAtKey(ref.keyIdx, src.value);
-                    ref.prop.setInterpolationTypeAtKey(ref.keyIdx, src.inType, src.outType);
-                    var notLin = src.inType!==KeyframeInterpolationType.LINEAR && src.outType!==KeyframeInterpolationType.LINEAR;
-                    if (notLin && src.inEase && src.outEase) ref.prop.setTemporalEaseAtKey(ref.keyIdx, src.inEase, src.outEase);
-                } catch(e) {}
+            var groups=[]; collectRefGroups(layers[l], groups);
+            var layerHit=false;
+            for (var g=0; g<groups.length; g++) {
+                var targets=groups[g];
+                if (targets.length !== n) continue;
+                for (var t=0; t<targets.length; t++) {
+                    var ref=targets[t], src=_easeClipboard[t];
+                    try {
+                        if (src.value !== null && src.value !== undefined) ref.prop.setValueAtKey(ref.keyIdx, src.value);
+                        applyPastedEase(ref.prop, ref.keyIdx, src);
+                        easingsPasted++;
+                    } catch(e) {}
+                }
+                propertiesPasted++;
+                layerHit=true;
             }
+            if (layerHit) layersPasted++;
         }
         app.endUndoGroup();
-        return "ok";
+        return formatPasteSummary(easingsPasted, propertiesPasted, layersPasted);
     } catch (err) {
         try { app.endUndoGroup(); } catch(e) {}
         return "ERROR: " + err.toString();
@@ -2037,6 +2115,297 @@ function lineup_organizeProject() {
         if (footageMerged > 0) parts.push(footageMerged + " footage item" + (footageMerged === 1 ? "" : "s"));
         if (totalMerged   > 0) parts.push(totalMerged   + " composition"  + (totalMerged   === 1 ? "" : "s"));
         return parts.length > 0 ? "Merged " + parts.join(" and ") + "." : "No duplicates found.";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch(e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// ── PROJECT STRUCTURE ─────────────────────────────────────────────────────────
+
+// Extension -> target-bucket key. Only file types AE can actually hold as a
+// FootageItem are listed; anything else is left where it is rather than guessed at.
+var STRUCTURE_EXT_MAP = {
+    psd:"PSD", psb:"PSD",
+    ai:"AI", eps:"AI",
+    jpg:"IMG", jpeg:"IMG", png:"IMG", gif:"IMG", bmp:"IMG", tif:"IMG", tiff:"IMG",
+    tga:"IMG", webp:"IMG", svg:"IMG", exr:"IMG", dpx:"IMG", hdr:"IMG",
+    mov:"FOOTAGE", mp4:"FOOTAGE", avi:"FOOTAGE", mxf:"FOOTAGE", mkv:"FOOTAGE",
+    wmv:"FOOTAGE", m4v:"FOOTAGE", webm:"FOOTAGE", mpg:"FOOTAGE", mpeg:"FOOTAGE",
+    m2v:"FOOTAGE", r3d:"FOOTAGE", braw:"FOOTAGE",
+    wav:"AUDIO", mp3:"AUDIO", aif:"AUDIO", aiff:"AUDIO", m4a:"AUDIO", wma:"AUDIO",
+    ogg:"AUDIO", flac:"AUDIO",
+    c4d:"C4D"
+};
+
+function itemsInFolder(folder) {
+    var out = [];
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var it = app.project.item(i);
+        try { if (it.parentFolder === folder) out.push(it); } catch(e) {}
+    }
+    return out;
+}
+
+function findChildFolder(parent, name) {
+    var kids = itemsInFolder(parent);
+    for (var i = 0; i < kids.length; i++) {
+        if (kids[i] instanceof FolderItem && kids[i].name === name) return kids[i];
+    }
+    return null;
+}
+
+function footageExt(fi) {
+    try {
+        var fs = fi.mainSource;
+        if (fs && fs instanceof FileSource && fs.file) {
+            var m = fs.file.name.match(/\.([a-zA-Z0-9]+)$/);
+            if (m) return m[1].toLowerCase();
+        }
+    } catch(e) {}
+    return null;
+}
+
+// Folders drawn from a preset's tree carry an explicit "role" only when the
+// panel created them as one of Heist's built-ins (see _structMakeNode in
+// main.js) — that's what lets the sorter keep finding "the PSD folder" etc.
+// even after the user renames that node. Anything else (every folder in a
+// custom preset, or a Heist node the user re-typed a brand new child under)
+// has no role, so it's matched here by name instead — same keywords, so
+// naming a custom folder "PSD" or "Audio" gets the same routing for free.
+var STRUCTURE_ROLE_NAME_MAP = {
+    precomps:"precomps", precomp:"precomps",
+    psd:"psd", psds:"psd",
+    ai:"ai",
+    images:"images", image:"images", stills:"images", still:"images",
+    footage:"footage", video:"footage", videos:"footage",
+    audio:"audio", sfx:"audio", sound:"audio",
+    c4d_scenes:"c4d", c4d:"c4d",
+    ae_projects:"imported", imported:"imported"
+};
+
+function structureRoleKey(name) {
+    return name.toLowerCase()
+        .replace(/^\d+[.\-_\s]*/, "")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+}
+
+// Walks a parsed preset tree, creating/reusing folders under `parent` (reusing
+// by exact name match, so re-applying the same preset is idempotent). Depth-0
+// folders are collected into topFolders (used to tell "part of this structure"
+// apart from a pre-existing foreign folder); every folder's role — explicit or
+// name-inferred — is recorded into roleFolders (first match wins on collision).
+function buildStructureTree(nodes, parent, roleFolders, topFolders, isTop) {
+    for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i], name = (n && n.name ? String(n.name) : "");
+        if (!name) continue;
+        var folder = findChildFolder(parent, name);
+        if (!folder) {
+            folder = app.project.items.addFolder(name);
+            folder.parentFolder = parent;
+        }
+        if (isTop) topFolders.push(folder);
+        var role = n.role || STRUCTURE_ROLE_NAME_MAP[structureRoleKey(name)];
+        if (role && !roleFolders[role]) roleFolders[role] = folder;
+        if (n.children && n.children.length) buildStructureTree(n.children, folder, roleFolders, topFolders, false);
+    }
+}
+
+function lineup_configureProjectStructure(treeJson, breakStructure) {
+    try {
+        var tree;
+        try { tree = JSON.parse(treeJson); } catch(e) { return "ERROR: Invalid structure data."; }
+        if (!tree || !tree.length) return "ERROR: This preset has no folders — add at least one before applying.";
+
+        app.beginUndoGroup("Configure Project Structure");
+
+        var roleFolders = {}, topFolders = [];
+        buildStructureTree(tree, app.project.rootFolder, roleFolders, topFolders, true);
+
+        var fPre    = roleFolders.precomps;
+        var fAeProj = roleFolders.imported;
+        var DEST = {
+            PSD: roleFolders.psd, AI: roleFolders.ai, IMG: roleFolders.images,
+            FOOTAGE: roleFolders.footage, AUDIO: roleFolders.audio, C4D: roleFolders.c4d
+        };
+
+        function sortItem(it) {
+            if (it instanceof CompItem) {
+                if (!fPre) return false;
+                it.parentFolder = fPre; return true;
+            }
+            if (it instanceof FootageItem) {
+                var ext = footageExt(it), cat = ext ? STRUCTURE_EXT_MAP[ext] : null;
+                if (!cat || !DEST[cat]) return false;
+                it.parentFolder = DEST[cat];
+                return true;
+            }
+            return false;
+        }
+
+        // Recursively pulls every Comp/Footage item out of a foreign folder tree,
+        // sorts each one into its proper bucket, then deletes folders left empty
+        // behind it. Items we can't classify (no matching extension, or a role
+        // this preset doesn't have a folder for) are left in place, which also
+        // leaves their containing folder un-deleted — nothing unclassified is
+        // ever silently dropped.
+        function unpackFolder(folder) {
+            var count = 0, kids = itemsInFolder(folder);
+            for (var i = 0; i < kids.length; i++) {
+                var kid = kids[i];
+                if (kid instanceof FolderItem) count += unpackFolder(kid);
+                else if (sortItem(kid)) count++;
+            }
+            try { if (itemsInFolder(folder).length === 0) folder.remove(); } catch(e) {}
+            return count;
+        }
+
+        var topItems = itemsInFolder(app.project.rootFolder);
+        var foreignFolders = [];
+        for (var i = 0; i < topItems.length; i++) {
+            var it = topItems[i];
+            if (it instanceof FolderItem) {
+                var known = false;
+                for (var s = 0; s < topFolders.length; s++) if (topFolders[s] === it) { known = true; break; }
+                if (!known) foreignFolders.push(it);
+            }
+        }
+
+        var brokenCount = 0, movedFolders = 0, leftFolders = 0;
+        if (breakStructure) {
+            for (var i = 0; i < foreignFolders.length; i++) brokenCount += unpackFolder(foreignFolders[i]);
+        } else if (fAeProj) {
+            for (var i = 0; i < foreignFolders.length; i++) { foreignFolders[i].parentFolder = fAeProj; movedFolders++; }
+        } else {
+            leftFolders = foreignFolders.length;
+        }
+
+        var movedComps = 0, movedAssets = 0;
+        var rootItems = itemsInFolder(app.project.rootFolder);
+        for (var i = 0; i < rootItems.length; i++) {
+            var it = rootItems[i];
+            if (it instanceof FolderItem) continue;
+            if (sortItem(it)) { if (it instanceof CompItem) movedComps++; else movedAssets++; }
+        }
+
+        app.endUndoGroup();
+
+        var sortedTotal = movedComps + movedAssets + brokenCount;
+        if (sortedTotal === 0 && foreignFolders.length === 0) {
+            return "Created folder structure — nothing loose to sort.";
+        }
+        var msg = "Sorted " + pluralize(sortedTotal, "item") + " into folders";
+        if (breakStructure) {
+            if (foreignFolders.length > 0) msg += "; broke apart " + pluralize(foreignFolders.length, "existing folder");
+        } else if (movedFolders > 0) {
+            msg += "; moved " + pluralize(movedFolders, "existing folder") + " into the imported folder";
+        } else if (leftFolders > 0) {
+            msg += "; left " + pluralize(leftFolders, "existing folder") + " as-is (this preset has no \"imported\" folder)";
+        }
+        return msg;
+    } catch (err) {
+        try { app.endUndoGroup(); } catch(e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// ── LINK PROPERTY TO CONTROLLER ───────────────────────────────────────────────
+
+// Climbs parentProperty links from a Property up to the Layer that owns it.
+function ownerLayer(prop) {
+    var p = prop;
+    while (p && !(p instanceof Layer)) p = p.parentProperty;
+    return p;
+}
+
+// Spatial properties (Position, Anchor Point) can be split into per-axis
+// followers in the timeline; a linked expression has to assign a single
+// combined array, so merge them back into one property first.
+function collapseSeparatedDims(prop) {
+    if (!prop.dimensionsSeparated) return;
+    var n = prop.value.length, vals = [];
+    for (var d=0; d<n; d++) vals.push(prop.getSeparationFollower(d).value);
+    prop.dimensionsSeparated = false;
+    while (prop.numKeys > 0) prop.removeKey(1);
+    prop.setValue(vals);
+}
+
+function lineup_linkPropertyToController(offset) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
+        var layers = comp.selectedLayers;
+        if (!layers || layers.length < 2) return "ERROR: Select at least 2 layers with the same property selected.";
+
+        var selProps = comp.selectedProperties, props = [];
+        for (var i=0; i<selProps.length; i++) if (selProps[i].propertyType === PropertyType.PROPERTY) props.push(selProps[i]);
+        if (props.length === 0) return "ERROR: Select a property (e.g. Rotation, Opacity, Position) on the selected layers.";
+
+        var targets = [];
+        for (var i=0; i<layers.length; i++) {
+            var lyr = layers[i], found = null, matchCount = 0;
+            for (var j=0; j<props.length; j++) {
+                if (ownerLayer(props[j]) === lyr) { matchCount++; if (!found) found = props[j]; }
+            }
+            if (matchCount === 0) return "ERROR: Select the same property on every selected layer.";
+            if (matchCount > 1) return "ERROR: Select only one property across all selected layers.";
+            targets.push({layer: lyr, prop: found});
+        }
+
+        var refName = targets[0].prop.matchName;
+        for (var i=1; i<targets.length; i++) {
+            if (targets[i].prop.matchName !== refName) return "ERROR: Select the same property on every selected layer.";
+        }
+
+        var refProp = targets[0].prop, pvt = refProp.propertyValueType;
+        var controlMatchName, valIdx=1;
+        if (pvt === PropertyValueType.COLOR) controlMatchName = "ADBE Color Control";
+        else if (pvt === PropertyValueType.TwoD || pvt === PropertyValueType.TwoD_SPATIAL) controlMatchName = "ADBE Point Control";
+        else if (pvt === PropertyValueType.OneD && refProp.unitsText === "degrees") controlMatchName = "ADBE Angle Control";
+        else if (pvt === PropertyValueType.OneD) controlMatchName = "ADBE Slider Control";
+        else return "ERROR: Unsupported property type for linking.";
+
+        app.beginUndoGroup("Link Property to Controller");
+
+        for (var i=0; i<targets.length; i++) {
+            if (targets[i].prop.dimensionsSeparated) collapseSeparatedDims(targets[i].prop);
+        }
+
+        var propLabel = refProp.name;
+        var nullName = propLabel + " Controller", sfx=2, taken=true;
+        while (taken) {
+            taken=false;
+            for (var li=1; li<=comp.numLayers; li++) {
+                if (comp.layer(li).name===nullName) { nullName=propLabel+" Controller "+sfx++; taken=true; break; }
+            }
+        }
+
+        var nullLayer = comp.layers.addNull();
+        nullLayer.name = nullName;
+
+        var fx = nullLayer.property("ADBE Effect Parade").addProperty(controlMatchName);
+        fx.name = propLabel;
+        var baseValue = targets[0].prop.value;
+        fx.property(valIdx).setValue(baseValue);
+
+        var safeNull = nullName.replace(/"/g, '\\"'), safeFx = propLabel.replace(/"/g, '\\"');
+        var ctrlRef = 'thisComp.layer("'+safeNull+'").effect("'+safeFx+'")('+valIdx+')';
+
+        for (var i=0; i<targets.length; i++) {
+            var prop = targets[i].prop, expr = ctrlRef;
+            if (offset) {
+                var own = prop.value, diff;
+                if (typeof own === "number") diff = own - baseValue;
+                else { diff=[]; for (var d=0; d<own.length; d++) diff.push(own[d] - baseValue[d]); }
+                expr += (typeof diff === "number") ? (' + ' + diff) : (' + [' + diff.join(",") + ']');
+            }
+            prop.expression = expr + ';';
+            prop.expressionEnabled = true;
+        }
+
+        app.endUndoGroup();
+        return "Linked \""+propLabel+"\" on "+targets.length+" layers to \""+nullName+"\"";
     } catch (err) {
         try { app.endUndoGroup(); } catch(e) {}
         return "ERROR: " + err.toString();

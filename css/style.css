@@ -548,8 +548,8 @@ input[type="checkbox"]:checked::after {
 
 .anchor-grid {
     display: grid;
-    grid-template-columns: repeat(3, 38px);
-    grid-template-rows: repeat(3, 38px);
+    grid-template-columns: repeat(3, 42px);
+    grid-template-rows: repeat(3, 42px);
     gap: 5px;
     background: #131313;
     border: 1px solid #2c2c2c;
@@ -559,7 +559,7 @@ input[type="checkbox"]:checked::after {
 }
 
 .anchor-btn {
-    width: 38px; height: 38px;
+    width: 42px; height: 42px;
     display: flex; align-items: center; justify-content: center;
     background: #202020;
     border: none;
@@ -571,7 +571,7 @@ input[type="checkbox"]:checked::after {
 }
 .anchor-btn:hover  { background: #2e2e2e; color: #F9F9F4; }
 .anchor-btn:active { background: var(--bg-btn-act); color: #fff; }
-.anchor-btn svg    { width: 24px; height: 24px; pointer-events: none; transition: transform 0.03s linear; }
+.anchor-btn svg    { width: 26px; height: 26px; pointer-events: none; transition: transform 0.03s linear; }
 .anchor-btn:hover svg { transform: scale(1.09); }
 
 .anchor-btn-center { background: #202020; }
@@ -625,6 +625,15 @@ input[type="checkbox"]:checked::after {
     display: flex;
     align-items: center;
     gap: 5px;
+}
+
+.cp-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border: 1px solid #2c2c2c;
+    border-radius: 7px;
+    padding: 6px;
 }
 
 .cp-btn {
@@ -1191,6 +1200,48 @@ input.gap-inline-input {
 }
 .toast-close:hover { opacity: 1; }
 
+/* ── Update banner ────────────────────────────────────────────────────────── */
+
+.update-banner {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 10px;
+    background: #123154;
+    border-bottom: 1px solid #2f7dc0;
+    color: #bfe0f5;
+    font-size: 11px;
+}
+.update-banner.update-banner-hidden { display: none; }
+
+.update-banner-icon { width: 14px; height: 14px; flex-shrink: 0; }
+
+.update-banner-text { flex: 1; }
+
+.update-banner-btn {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #fff;
+    border-radius: 5px;
+    padding: 3px 9px;
+    font-size: 11px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.update-banner-btn:hover { background: #3680ea; border-color: #3680ea; }
+
+.update-banner-close {
+    background: none;
+    border: none;
+    color: #bfe0f5;
+    cursor: pointer;
+    padding: 0 2px;
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+.update-banner-close:hover { opacity: 1; }
+.update-banner-close svg { width: 9px; height: 9px; pointer-events: none; }
+
 /* ── Footer ───────────────────────────────────────────────────────────────── */
 
 .footer {
@@ -1424,6 +1475,7 @@ input.gap-inline-input {
 /* ── Batch Comp Settings overlay ──────────────────────────────────────────── */
 
 .bcs-hidden { display: none !important; }
+.struct-hidden { display: none !important; }
 
 /* The panel itself defaults to 280px wide (220px minimum, per the manifest) and
    html/body clip overflow — a fixed-width modal wider than that would render
@@ -1448,6 +1500,237 @@ input.gap-inline-input {
     color: #fff;
 }
 .btn.dirty:hover { background: #3680ea; border-color: #3680ea; }
+
+/* Always-blue primary action button (Project Structure's Apply) */
+.btn.btn-blue {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.btn.btn-blue:hover { background: #3680ea; border-color: #3680ea; }
+
+/* ── Project Structure modal ─────────────────────────────────────────────────── */
+
+.struct-modal {
+    width: calc(100vw - 20px);
+    max-width: 420px;
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
+    box-sizing: border-box;
+}
+
+.struct-body { gap: 8px; }
+
+.struct-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #272727;
+}
+
+.struct-tab {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: #232323;
+    border: 1px solid #323232;
+    border-radius: 5px;
+    padding: 4px 6px 4px 9px;
+    font-size: 11px;
+    color: #a0a0a0;
+    cursor: pointer;
+    max-width: 140px;
+}
+.struct-tab:hover { border-color: #4a4a4a; color: #e0e0e0; }
+.struct-tab.active { background: rgba(36,112,224,0.16); border-color: var(--accent); color: #cfe0fb; }
+
+.struct-tab-lbl {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 96px;
+}
+.struct-tab-lbl-input {
+    width: 90px;
+    background: #131313;
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    color: #F9F9F4;
+    font-size: 11px;
+    padding: 1px 3px;
+    outline: none;
+}
+
+.struct-tab-del {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    color: #6a6a6a;
+    flex-shrink: 0;
+}
+.struct-tab-del:hover { background: rgba(192,50,50,0.25); color: #e07070; }
+.struct-tab-del svg { width: 8px; height: 8px; pointer-events: none; }
+
+.struct-tab-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px; height: 22px;
+    background: none;
+    border: 1px dashed #3a3a3a;
+    border-radius: 5px;
+    color: #787878;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+}
+.struct-tab-add:hover { border-color: var(--accent); color: #8ac0ff; background: rgba(36,112,224,0.12); }
+.struct-tab-add svg { width: 11px; height: 11px; pointer-events: none; }
+
+.struct-tree-box {
+    border: 1px solid #2c2c2c;
+    border-radius: 8px;
+    padding: 4px;
+    min-height: 64px;
+    max-height: 260px;
+    overflow-y: auto;
+    background: #161616;
+}
+
+.struct-tree-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 16px 8px;
+    color: #5a5a5a;
+    font-size: 11px;
+}
+
+.struct-node-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 4px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    transition: transform 0.12s ease;
+}
+.struct-node-row:hover { background: #202020; }
+.struct-node-row:hover .struct-node-btn,
+.struct-node-row:hover .struct-node-handle { opacity: 1; }
+
+.struct-node-row.drag-over-before { border-top-color: var(--accent); }
+.struct-node-row.drag-over-after  { border-bottom-color: var(--accent); }
+.struct-node-row.struct-node-ghost {
+    background: #262626;
+    opacity: 0.85;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.55);
+}
+.struct-node-ghost .struct-node-handle,
+.struct-node-ghost .struct-node-btn { opacity: 0; }
+.struct-node-row.drag-over-into   { background: rgba(36,112,224,0.22); }
+
+.struct-node-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px; height: 18px;
+    color: #3a3a3a;
+    cursor: grab;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: color 0.03s linear, opacity 0.06s linear;
+}
+.struct-node-handle:hover  { color: #787878; }
+.struct-node-handle:active { cursor: grabbing; }
+.struct-node-handle svg { width: 7px; height: 11px; pointer-events: none; }
+
+.struct-node-chevron {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px; height: 14px;
+    flex-shrink: 0;
+    color: #787878;
+    cursor: pointer;
+    transition: transform 0.14s ease;
+}
+.struct-node-chevron.collapsed { transform: rotate(-90deg); }
+.struct-node-chevron-empty { cursor: default; }
+.struct-node-chevron svg { width: 8px; height: 8px; pointer-events: none; }
+
+.struct-node-icon {
+    width: 13px; height: 13px;
+    color: #6a8fc0;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+.struct-node-lbl {
+    font-size: 11.5px;
+    color: #cfcfcf;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+.struct-node-row:hover .struct-node-lbl {
+    color: #F9F9F4;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: #6a6a6a;
+    text-underline-offset: 2px;
+}
+.struct-node-lbl-input {
+    flex: 1;
+    min-width: 0;
+    background: #101010;
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    color: #F9F9F4;
+    font-size: 11.5px;
+    padding: 1px 3px;
+    outline: none;
+}
+
+.struct-node-spacer { flex: 1; }
+
+.struct-node-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px; height: 18px;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    color: #787878;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.06s linear;
+}
+.struct-node-btn:hover { background: #2c2c2c; color: #e0e0e0; }
+.struct-node-btn.struct-node-del:hover { background: rgba(192,50,50,0.25); color: #e07070; }
+.struct-node-btn svg { width: 10px; height: 10px; pointer-events: none; }
+
+.struct-add-root {
+    margin-top: 6px;
+}
+
+.struct-actions-row {
+    justify-content: space-between;
+    margin-top: 4px;
+}
+.struct-actions-row-right {
+    display: flex;
+    gap: 6px;
+}
 
 /* Frame / Time group boxes, side by side instead of stacked. Frame gets a bit more
    width than Time so the W/H scrub fields and lock button fit on one line
