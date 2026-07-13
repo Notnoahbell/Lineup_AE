@@ -52,13 +52,18 @@
 
     // Decides whether to show/hide the banner for a given "latest release"
     // result — called both from the cheap cached value (instant) and again
-    // once a fresh network check comes back.
-    function _evaluateBanner(latest) {
+    // once a fresh network check comes back. A forced check (the Settings
+    // button) always shows it regardless of a prior dismissal — otherwise
+    // dismissing the banner once made "Check for Updates" a permanent no-op
+    // for that version, with zero feedback that anything happened.
+    function _evaluateBanner(latest, force) {
         if (!latest || !_localVersion) return;
         if (_compareVersions(latest.version, _localVersion) <= 0) { _hideBanner(); return; }
-        var dismissed = null;
-        try { dismissed = localStorage.getItem(LS_DISMISSED); } catch (e) {}
-        if (dismissed === latest.version) return;
+        if (!force) {
+            var dismissed = null;
+            try { dismissed = localStorage.getItem(LS_DISMISSED); } catch (e) {}
+            if (dismissed === latest.version) return;
+        }
         _showBanner(latest);
     }
 
@@ -116,7 +121,7 @@
             if (settingsVerEl) settingsVerEl.textContent = 'Version ' + localVer;
 
             var cached = _readCachedLatest();
-            if (cached) _evaluateBanner(cached);
+            if (cached) _evaluateBanner(cached, force);
 
             var stale = !cached || (Date.now() - (cached.checkedAt || 0) > CHECK_INTERVAL_MS);
             if (!force && !stale) return;
@@ -127,7 +132,7 @@
                     return;
                 }
                 _writeCachedLatest(latest);
-                _evaluateBanner(latest);
+                _evaluateBanner(latest, force);
                 if (force && _compareVersions(latest.version, localVer) <= 0) {
                     showToast("You're on the latest version (v" + localVer + ")", 'info');
                 }
@@ -138,7 +143,20 @@
     window.downloadUpdate = function () {
         var banner = document.getElementById('updateBanner');
         var url = banner ? banner.getAttribute('data-latest-url') : '';
-        if (url && typeof cs !== 'undefined') cs.openURLInDefaultBrowser(url);
+        if (!url) { showToast('No download link found — try Check for Updates again.'); return; }
+
+        // CSInterface.openURLInDefaultBrowser swallows its own errors (empty
+        // catch), so a failed native call looks identical to a successful
+        // one from here — fall back to a plain window.open, and only report
+        // failure (with the raw link) if neither path is even available.
+        var attempted = false;
+        if (typeof window.__adobe_cep__ !== 'undefined' && typeof cs !== 'undefined') {
+            try { cs.openURLInDefaultBrowser(url); attempted = true; } catch (e) {}
+        }
+        try { window.open(url, '_blank'); attempted = true; } catch (e) {}
+
+        if (attempted) showToast('Opening download in your browser…', 'info');
+        else showToast("Couldn't open a browser — copy this link: " + url);
     };
 
     window.dismissUpdateBanner = function () {
