@@ -140,23 +140,50 @@
         });
     };
 
+    // Selects text in a throwaway textarea and copies it via the legacy
+    // execCommand path — the modern Clipboard API needs a "secure context"
+    // that a file:// panel may not qualify as, so this is the one clipboard
+    // method that reliably works from a CEP panel regardless.
+    function _copyText(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+        return ok;
+    }
+
+    // Both CSInterface.openURLInDefaultBrowser and window.open swallow their
+    // own failures (the former has an empty catch inside it; the latter just
+    // returns null with no exception), so neither can reliably tell us
+    // whether a browser actually opened — on a locked-down machine (registry
+    // writes already need extra handling in install_win.cmd) both can fail
+    // silently. Attempt them as a convenience, but always also show the link
+    // in the banner itself so there's a fallback that isn't relying on either.
     window.downloadUpdate = function () {
         var banner = document.getElementById('updateBanner');
+        var text   = document.getElementById('updateBannerText');
         var url = banner ? banner.getAttribute('data-latest-url') : '';
         if (!url) { showToast('No download link found — try Check for Updates again.'); return; }
 
-        // CSInterface.openURLInDefaultBrowser swallows its own errors (empty
-        // catch), so a failed native call looks identical to a successful
-        // one from here — fall back to a plain window.open, and only report
-        // failure (with the raw link) if neither path is even available.
-        var attempted = false;
         if (typeof window.__adobe_cep__ !== 'undefined' && typeof cs !== 'undefined') {
-            try { cs.openURLInDefaultBrowser(url); attempted = true; } catch (e) {}
+            try { cs.openURLInDefaultBrowser(url); } catch (e) {}
         }
-        try { window.open(url, '_blank'); attempted = true; } catch (e) {}
+        try { window.open(url, '_blank'); } catch (e) {}
 
-        if (attempted) showToast('Opening download in your browser…', 'info');
-        else showToast("Couldn't open a browser — copy this link: " + url);
+        if (text) text.textContent = "If your browser didn't open: " + url + ' (or click Copy Link)';
+    };
+
+    window.copyUpdateLink = function () {
+        var banner = document.getElementById('updateBanner');
+        var url = banner ? banner.getAttribute('data-latest-url') : '';
+        if (!url) { showToast('No download link found — try Check for Updates again.'); return; }
+        showToast(_copyText(url) ? 'Link copied — paste it into your browser.' : ('Copy failed — link: ' + url), 'info');
     };
 
     window.dismissUpdateBanner = function () {

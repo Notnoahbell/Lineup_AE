@@ -1204,6 +1204,7 @@ input.gap-inline-input {
 
 .update-banner {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 7px;
     padding: 7px 10px;
@@ -1216,7 +1217,11 @@ input.gap-inline-input {
 
 .update-banner-icon { width: 14px; height: 14px; flex-shrink: 0; }
 
-.update-banner-text { flex: 1; }
+.update-banner-text {
+    flex: 1;
+    min-width: 100%;
+    word-break: break-all;
+}
 
 .update-banner-btn {
     background: var(--accent);
@@ -1229,6 +1234,13 @@ input.gap-inline-input {
     flex-shrink: 0;
 }
 .update-banner-btn:hover { background: #3680ea; border-color: #3680ea; }
+
+.update-banner-btn-ghost {
+    background: none;
+    border: 1px solid #2f7dc0;
+    color: #bfe0f5;
+}
+.update-banner-btn-ghost:hover { background: rgba(47,125,192,0.25); border-color: #2f7dc0; }
 
 .update-banner-close {
     background: none;

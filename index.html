@@ -18,6 +18,7 @@
   </svg>
   <span class="update-banner-text" id="updateBannerText">A new version is available</span>
   <button class="update-banner-btn" onclick="downloadUpdate()">Download</button>
+  <button class="update-banner-btn update-banner-btn-ghost" onclick="copyUpdateLink()">Copy Link</button>
   <button class="update-banner-close" onclick="dismissUpdateBanner()" title="Dismiss">
     <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
       <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
@@ -785,7 +786,7 @@
     <div class="footer-brand">
       <img src="heist_icon_32.png" class="footer-logo" alt="">
       <span class="footer-name">Heist Lineup</span>
-      <span class="footer-version" id="footerVersion">v1.7.3</span>
+      <span class="footer-version" id="footerVersion">v1.7.4</span>
     </div>
     <div class="footer-actions">
     <button class="settings-btn" onclick="openHelp()" title="Help">
@@ -833,7 +834,7 @@
       </div>
       <p class="settings-section-lbl" style="margin-top:4px">About</p>
       <div class="ctrl-row" style="justify-content:space-between">
-        <span class="lbl" id="settingsVersionLbl">Version 1.7.3</span>
+        <span class="lbl" id="settingsVersionLbl">Version 1.7.4</span>
         <button class="btn" onclick="checkForUpdates(true)">Check for Updates</button>
       </div>
     </div>
