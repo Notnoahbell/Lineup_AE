@@ -74,16 +74,21 @@
         xhr.send();
     }
 
+    // cb(latest, errorReason) — errorReason is null on success, otherwise a
+    // short human-readable string distinguishing "no release published yet"
+    // (404 — expected until the first Release is drafted) from an actual
+    // network/connectivity failure, since those need very different fixes.
     function _fetchLatestRelease(cb) {
         var xhr = new XMLHttpRequest();
         xhr.open('GET', 'https://api.github.com/repos/' + REPO + '/releases/latest', true);
         xhr.onreadystatechange = function () {
             if (xhr.readyState !== 4) return;
-            if (xhr.status !== 200) { cb(null); return; }
+            if (xhr.status === 404) { cb(null, 'no releases published yet'); return; }
+            if (xhr.status !== 200) { cb(null, 'GitHub returned status ' + xhr.status); return; }
             var data;
-            try { data = JSON.parse(xhr.responseText); } catch (e) { cb(null); return; }
+            try { data = JSON.parse(xhr.responseText); } catch (e) { cb(null, 'bad response from GitHub'); return; }
             var tag = (data.tag_name || '').replace(/^v/i, '');
-            if (!tag) { cb(null); return; }
+            if (!tag) { cb(null, 'release has no tag'); return; }
             // Prefer a packaged asset (.zxp/.zip) if the release has one; fall
             // back to the release page itself.
             var url = data.html_url;
@@ -92,9 +97,9 @@
                     if (/\.(zxp|zip)$/i.test(data.assets[i].name || '')) { url = data.assets[i].browser_download_url; break; }
                 }
             }
-            cb({ version: tag, url: url, checkedAt: Date.now() });
+            cb({ version: tag, url: url, checkedAt: Date.now() }, null);
         };
-        xhr.onerror = function () { cb(null); };
+        xhr.onerror = function () { cb(null, 'no connection to GitHub'); };
         xhr.send();
     }
 
@@ -116,9 +121,9 @@
             var stale = !cached || (Date.now() - (cached.checkedAt || 0) > CHECK_INTERVAL_MS);
             if (!force && !stale) return;
 
-            _fetchLatestRelease(function (latest) {
+            _fetchLatestRelease(function (latest, errorReason) {
                 if (!latest) {
-                    if (force) showToast('Could not check for updates — no connection to GitHub.');
+                    if (force) showToast('Could not check for updates — ' + (errorReason || 'unknown error') + '.');
                     return;
                 }
                 _writeCachedLatest(latest);
