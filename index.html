@@ -35,6 +35,44 @@
   </button>
 </div>
 
+<!-- ── UPDATE INSTALL CONFIRM (manual "Check for Updates" result) ──────────── -->
+<div id="updateConfirmOverlay" class="settings-overlay update-confirm-hidden" onclick="dismissInstallConfirm()">
+  <div class="settings-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#6cc0ff">
+        <path d="M8,10.5 V2.5"/>
+        <polyline points="5,7.5 8,10.5 11,7.5"/>
+        <path d="M2.5,10.5 V12.3 A1.2,1.2 0 0,0 3.7,13.5 H12.3 A1.2,1.2 0 0,0 13.5,12.3 V10.5"/>
+      </svg>
+      <span class="settings-title">Update Available</span>
+      <button class="settings-close" onclick="dismissInstallConfirm()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="settings-body">
+      <p class="update-confirm-text" id="updateConfirmText">A new version is available.</p>
+      <div class="ctrl-row update-confirm-actions" id="updateConfirmActions">
+        <button class="btn" onclick="dismissInstallConfirm()">Not Now</button>
+        <button class="update-banner-btn" onclick="confirmInstallUpdate()">
+          <svg class="update-banner-btn-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6,1.5 V7.8"/>
+            <polyline points="3.2,5 6,7.8 8.8,5"/>
+            <path d="M2,9.5 H10"/>
+          </svg>
+          Update
+        </button>
+      </div>
+      <div class="update-progress-wrap update-progress-hidden" id="updateConfirmProgressWrap">
+        <div class="update-progress-text" id="updateConfirmProgressText">Installing update…</div>
+        <div class="update-progress-bar"><div class="update-progress-bar-fill" id="updateConfirmProgressFill"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="panel-content">
 
   <!-- ── FAVORITES BAR (always at top, hidden when empty) ─────────────────── -->
@@ -1590,10 +1628,10 @@
   <button class="toast-close" onclick="hideToast()">✕</button>
 </div>
 
-<script src="js/CSInterface.js"></script>
+<script src="js/CSInterface.js?v=2"></script>
 <script src="js/main.js"></script>
 <script src="js/spellcheck.js?v=13"></script>
 <script src="js/find.js?v=1"></script>
-<script src="js/update.js?v=6"></script>
+<script src="js/update.js?v=9"></script>
 </body>
 </html>

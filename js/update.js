@@ -16,6 +16,7 @@
     var DEBUG_FORCE_SHOW_BANNER = false;
 
     var _localVersion = null;
+    var _installing = false; // true while the confirm dialog's install is running — blocks dismissal
 
     function _parseManifestVersion(xml) {
         var m = /ExtensionBundleVersion="([^"]+)"/.exec(xml);
@@ -56,22 +57,92 @@
         if (banner) banner.classList.add('update-banner-hidden');
     }
 
-    // Decides whether to show/hide the banner for a given "latest release"
-    // result — called both from the cheap cached value (instant) and again
-    // once a fresh network check comes back. A forced check (the Settings
-    // button) always shows it regardless of a prior dismissal — otherwise
-    // dismissing the banner once made "Check for Updates" a permanent no-op
-    // for that version, with zero feedback that anything happened.
-    function _evaluateBanner(latest, force) {
+    // Decides whether to show/hide the passive banner for a given "latest
+    // release" result. Only used by the background check now — a manual
+    // "Check for Updates" click uses _showInstallConfirm instead, which
+    // always prompts regardless of a prior dismissal.
+    function _evaluateBanner(latest) {
         if (!latest || !_localVersion) return;
         if (_compareVersions(latest.version, _localVersion) <= 0) { _hideBanner(); return; }
-        if (!force) {
-            var dismissed = null;
-            try { dismissed = localStorage.getItem(LS_DISMISSED); } catch (e) {}
-            if (dismissed === latest.version) return;
-        }
+        var dismissed = null;
+        try { dismissed = localStorage.getItem(LS_DISMISSED); } catch (e) {}
+        if (dismissed === latest.version) return;
         _showBanner(latest);
     }
+
+    // The manual "Check for Updates" result: instead of the passive
+    // dismissible banner, ask the user directly whether to install now.
+    function _showInstallConfirm(latest) {
+        var overlay = document.getElementById('updateConfirmOverlay');
+        var text    = document.getElementById('updateConfirmText');
+        if (!overlay || !text) return;
+
+        // "Check for Updates" lives inside the Settings modal — both share
+        // the same .settings-overlay z-index, so Settings (later in the DOM)
+        // would otherwise sit on top and hide this dialog entirely.
+        if (typeof closeSettings === 'function') closeSettings();
+
+        _installing = false;
+        var actions      = document.getElementById('updateConfirmActions');
+        var progressWrap = document.getElementById('updateConfirmProgressWrap');
+        var progressFill = document.getElementById('updateConfirmProgressFill');
+        if (actions) actions.classList.remove('update-progress-hidden');
+        if (progressWrap) progressWrap.classList.add('update-progress-hidden');
+        if (progressFill) progressFill.style.width = '0%';
+
+        text.textContent = 'Lineup v' + latest.version + ' is available (you have v' + _localVersion + '). Install it now?';
+        overlay.setAttribute('data-latest-version', latest.version);
+        overlay.setAttribute('data-latest-url', latest.url || '');
+        overlay.setAttribute('data-latest-zip', latest.zipUrl || '');
+        overlay.classList.remove('update-confirm-hidden');
+    }
+
+    function _hideInstallConfirm() {
+        var overlay = document.getElementById('updateConfirmOverlay');
+        if (overlay) overlay.classList.add('update-confirm-hidden');
+    }
+
+    window.dismissInstallConfirm = function () {
+        if (_installing) return; // no backing out mid-install
+        _hideInstallConfirm();
+    };
+
+    // "Update" on the confirm dialog. When Node's available, installs right
+    // inside the dialog — swap the Not Now/Update buttons for a progress bar,
+    // run the download/extract/copy, then force a reload. Without Node (or
+    // no zip to install), there's nothing to show progress for, so just fall
+    // back to opening the release in a browser via the banner, as before.
+    window.confirmInstallUpdate = function () {
+        var overlay = document.getElementById('updateConfirmOverlay');
+        var version = overlay ? overlay.getAttribute('data-latest-version') : '';
+        var url     = overlay ? overlay.getAttribute('data-latest-url') : '';
+        var zipUrl  = overlay ? overlay.getAttribute('data-latest-zip') : '';
+
+        if (!_nodeAvailable() || !zipUrl) {
+            _hideInstallConfirm();
+            _showBanner({ version: version, url: url, zipUrl: zipUrl });
+            _openInBrowser(url, document.getElementById('updateBannerText'));
+            return;
+        }
+
+        _installing = true;
+        var actions      = document.getElementById('updateConfirmActions');
+        var progressWrap = document.getElementById('updateConfirmProgressWrap');
+        var progressText = document.getElementById('updateConfirmProgressText');
+        var progressFill = document.getElementById('updateConfirmProgressFill');
+        if (actions) actions.classList.add('update-progress-hidden');
+        if (progressWrap) progressWrap.classList.remove('update-progress-hidden');
+
+        _installUpdate(zipUrl, progressText, function (pct) {
+            if (progressFill) progressFill.style.width = pct + '%';
+        }, function () {
+            // Install failed — showToast already explained why; let the
+            // user close the dialog and try again instead of being stuck.
+            _installing = false;
+            if (actions) actions.classList.remove('update-progress-hidden');
+            if (progressWrap) progressWrap.classList.add('update-progress-hidden');
+        });
+    };
 
     function _loadLocalVersion(cb) {
         var xhr = new XMLHttpRequest();
@@ -142,7 +213,11 @@
             }
 
             var cached = _readCachedLatest();
-            if (cached) _evaluateBanner(cached, force);
+            // A manual "Check for Updates" always hits the network fresh
+            // (below) and confirms via a modal instead of the passive
+            // banner — showing the banner from stale cached data first
+            // would just be a banner immediately superseded by the modal.
+            if (!force && cached) _evaluateBanner(cached);
 
             var stale = !cached || (Date.now() - (cached.checkedAt || 0) > CHECK_INTERVAL_MS);
             if (!force && !stale) return;
@@ -153,8 +228,12 @@
                     return;
                 }
                 _writeCachedLatest(latest);
-                _evaluateBanner(latest, force);
-                if (force && _compareVersions(latest.version, localVer) <= 0) {
+
+                if (!force) { _evaluateBanner(latest); return; }
+
+                if (_compareVersions(latest.version, localVer) > 0) {
+                    _showInstallConfirm(latest);
+                } else {
                     showToast("You're on the latest version (v" + localVer + ")", 'info');
                 }
             });
@@ -210,10 +289,21 @@
         req.on('error', function (err) { cb(err); });
     }
 
-    function _downloadToFile(url, destPath, cb) {
+    // onProgress(pct) reports 0-100 based on bytes received vs. Content-Length
+    // when GitHub sends one; if it doesn't, progress just stays put until the
+    // download finishes rather than guessing.
+    function _downloadToFile(url, destPath, onProgress, cb) {
         var fs = require('fs');
         _httpsGetFollowingRedirects(url, function (err, res) {
             if (err) { cb(err); return; }
+            var total = parseInt(res.headers['content-length'], 10) || 0;
+            var received = 0;
+            if (total > 0 && typeof onProgress === 'function') {
+                res.on('data', function (chunk) {
+                    received += chunk.length;
+                    onProgress(Math.min(70, Math.round((received / total) * 70)));
+                });
+            }
             var file = fs.createWriteStream(destPath);
             res.pipe(file);
             file.on('finish', function () { file.close(function () { cb(null); }); });
@@ -282,14 +372,25 @@
     // extension.
     var INSTALL_FOLDERS = ['CSXS', 'host', 'css', 'js', 'data'];
 
-    function _installUpdate(zipUrl, text) {
+    // onProgress(pct) gets called with a 0-100 milestone as each phase
+    // (download/extract/copy) advances; onError(err) fires instead of the
+    // rest of the chain running whenever a phase fails, after showToast has
+    // already explained why, so a caller with its own UI (the confirm
+    // dialog) can revert out of its "installing" state.
+    function _installUpdate(zipUrl, text, onProgress, onError) {
         var fs = require('fs');
         var os = require('os');
         var path = require('path');
 
+        function setProgress(pct) { if (typeof onProgress === 'function') onProgress(pct); }
+        function fail(msg) {
+            showToast(msg);
+            if (typeof onError === 'function') onError(msg);
+        }
+
         var extDir = cs.getSystemPath(SystemPath.EXTENSION);
         if (!extDir || !/CEP[\\\/]extensions/i.test(extDir)) {
-            showToast('Could not safely locate the installed extension folder — download it manually instead.');
+            fail('Could not safely locate the installed extension folder — download it manually instead.');
             return false;
         }
 
@@ -298,18 +399,21 @@
         var extractDir = path.join(tmpRoot, 'extracted');
 
         try { _mkdirp(tmpRoot); } catch (e) {
-            showToast('Could not create a temp folder for the update.');
+            fail('Could not create a temp folder for the update.');
             return false;
         }
 
         if (text) text.textContent = 'Downloading update…';
-        _downloadToFile(zipUrl, zipPath, function (err) {
-            if (err) { showToast('Download failed — ' + err.message); return; }
+        setProgress(2);
+        _downloadToFile(zipUrl, zipPath, setProgress, function (err) {
+            if (err) { fail('Download failed — ' + err.message); return; }
 
             if (text) text.textContent = 'Installing update…';
+            setProgress(75);
             try { _mkdirp(extractDir); } catch (e) {}
             _extractZip(zipPath, extractDir, function (err2) {
-                if (err2) { showToast('Could not extract the update — ' + err2.message); return; }
+                if (err2) { fail('Could not extract the update — ' + err2.message); return; }
+                setProgress(88);
 
                 try {
                     var rootEntries = fs.readdirSync(extractDir);
@@ -324,14 +428,15 @@
                     var indexSrc = path.join(sourceRoot, 'index.html');
                     if (fs.existsSync(indexSrc)) fs.writeFileSync(path.join(extDir, 'index.html'), fs.readFileSync(indexSrc));
                 } catch (copyErr) {
-                    showToast('Install failed while copying files — ' + copyErr.message);
+                    fail('Install failed while copying files — ' + copyErr.message);
                     return;
                 }
 
                 try { _removeRecursive(tmpRoot); } catch (e) {}
 
+                setProgress(100);
                 if (text) text.textContent = 'Update installed — reloading…';
-                setTimeout(function () { window.location.reload(); }, 500);
+                setTimeout(function () { window.location.reload(true); }, 500);
             });
         });
         return true;

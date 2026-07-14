@@ -58,7 +58,16 @@ CSInterface.prototype.evalScript = function (script, callback) {
 };
 
 CSInterface.prototype.getSystemPath = function (pathType) {
-    try { return window.__adobe_cep__.getSystemPath(pathType); } catch (e) { return ""; }
+    try {
+        var raw = decodeURI(window.__adobe_cep__.getSystemPath(pathType));
+        // The native bridge returns a file:// URI, not a plain path —
+        // file:///Users/... on mac/linux, file:///C:/... on Windows. Strip
+        // the scheme so callers get something fs/path can use directly;
+        // a bare "file://" strip on Windows would leave a stray leading
+        // slash before the drive letter, so detect that case separately.
+        if (/^file:\/\/\/[A-Za-z]:/.test(raw)) return raw.replace(/^file:\/\/\//, '');
+        return raw.replace(/^file:\/\//, '');
+    } catch (e) { return ""; }
 };
 
 CSInterface.prototype.getHostEnvironment = function () {

@@ -1342,6 +1342,45 @@ input.gap-inline-input {
     z-index: 1000;
 }
 .settings-hidden { display: none !important; }
+.update-confirm-hidden { display: none !important; }
+
+.update-confirm-text {
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-dim);
+    padding: 2px 2px 6px;
+}
+
+.update-confirm-actions { justify-content: flex-end; gap: 6px; }
+
+.update-progress-hidden { display: none !important; }
+
+.update-progress-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 2px 2px 4px;
+}
+
+.update-progress-text {
+    font-size: 11px;
+    color: var(--text-dim);
+}
+
+.update-progress-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: #2a2a2a;
+    overflow: hidden;
+}
+
+.update-progress-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.25s ease;
+}
 
 .settings-modal {
     background: #1e1e1e;
