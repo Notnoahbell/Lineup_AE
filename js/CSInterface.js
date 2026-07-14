@@ -82,7 +82,7 @@ CSInterface.prototype.removeEventListener = function (type, listener, obj) {
 };
 
 CSInterface.prototype.openURLInDefaultBrowser = function (url) {
-    try { window.__adobe_cep__.openURLInDefaultBrowser(url); } catch (e) {}
+    try { window.cep.util.openURLInDefaultBrowser(url); } catch (e) {}
 };
 
 CSInterface.prototype.resizeContent = function (width, height) {

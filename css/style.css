@@ -1204,55 +1204,73 @@ input.gap-inline-input {
 
 .update-banner {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 7px;
-    padding: 7px 10px;
-    background: #123154;
-    border-bottom: 1px solid #2f7dc0;
-    color: #bfe0f5;
+    gap: 8px;
+    padding: 8px 10px;
+    background: linear-gradient(135deg, #17385f, #0e2947);
+    border-bottom: 1px solid rgba(74, 163, 232, 0.35);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+    color: #cfe7fa;
     font-size: 11px;
 }
 .update-banner.update-banner-hidden { display: none; }
 
-.update-banner-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.update-banner-icon-wrap {
+    width: 21px;
+    height: 21px;
+    border-radius: 50%;
+    background: rgba(74, 163, 232, 0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.update-banner-icon { width: 12px; height: 12px; color: #6cc0ff; }
 
 .update-banner-text {
     flex: 1;
-    min-width: 100%;
-    word-break: break-all;
+    min-width: 0;
+    color: #eef6ff;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .update-banner-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     background: var(--accent);
     border: 1px solid var(--accent);
     color: #fff;
     border-radius: 5px;
-    padding: 3px 9px;
+    padding: 3px 10px;
     font-size: 11px;
+    font-weight: 600;
     cursor: pointer;
     flex-shrink: 0;
+    transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
 }
 .update-banner-btn:hover { background: #3680ea; border-color: #3680ea; }
+.update-banner-btn:active { transform: scale(0.96); }
 
-.update-banner-btn-ghost {
-    background: none;
-    border: 1px solid #2f7dc0;
-    color: #bfe0f5;
-}
-.update-banner-btn-ghost:hover { background: rgba(47,125,192,0.25); border-color: #2f7dc0; }
+.update-banner-btn-icon { width: 10px; height: 10px; flex-shrink: 0; }
 
 .update-banner-close {
     background: none;
     border: none;
-    color: #bfe0f5;
+    border-radius: 4px;
+    color: #9cc3e0;
     cursor: pointer;
-    padding: 0 2px;
+    padding: 4px;
     flex-shrink: 0;
-    opacity: 0.7;
+    opacity: 0.75;
 }
-.update-banner-close:hover { opacity: 1; }
-.update-banner-close svg { width: 9px; height: 9px; pointer-events: none; }
+.update-banner-close:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
+.update-banner-close svg { width: 9px; height: 9px; pointer-events: none; display: block; }
 
 /* ── Footer ───────────────────────────────────────────────────────────────── */
 
