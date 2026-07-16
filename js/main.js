@@ -2,6 +2,314 @@
 
 var cs = new CSInterface();
 
+// ── Tabs (Home / Tools / Settings) ─────────────────────────────────────────────
+
+function switchTab(name) {
+    ['home', 'tools', 'settings'].forEach(function(n) {
+        var panel = document.getElementById(n === 'home' ? 'panel-content' : 'tab-' + n);
+        if (panel) panel.classList.toggle('active', n === name);
+        var btn = document.getElementById('tabBtn-' + n);
+        if (btn) btn.classList.toggle('active', n === name);
+    });
+    try { localStorage.setItem('lineup-active-tab', name); } catch(e) {}
+
+    // Refresh the Classic Sections list whenever Settings comes into view —
+    // hidden state may have changed via Compact's editor since it was last
+    // rendered, and this is cheap enough to just rebuild unconditionally.
+    if (name === 'settings') {
+        var clsBlock = document.getElementById('classicSettingsBlock');
+        if (clsBlock && clsBlock.style.display !== 'none') _renderClassicSettingsList();
+    }
+}
+
+function restoreActiveTab() {
+    var name;
+    try { name = localStorage.getItem('lineup-active-tab'); } catch(e) {}
+    if (name === 'tools' || name === 'settings') switchTab(name);
+}
+
+// ── Home layout ──────────────────────────────────────────────────────────────
+// Compact's bento boards are two separate 6-column CSS Grids: #homeTopGroup
+// (Anchor, Quick Actions, and the Favorite slot — see _favApplyLayout) and
+// #homeGrid (Align / Distribute / Sizing / Auto Crop / Sort / Quick Actions
+// 2 / Spell Check / Ease Copy, user-reorderable via the Bottom Layout edit
+// mode — see _blApplyLayout). --home-anchor-unit, set on #homeTopGroup,
+// keeps rowspan-1 boxes there sized to half of Anchor's own rendered
+// height, since Anchor's size changes with panel width/zoom.
+
+function _homeBoxes() {
+    return Array.prototype.slice.call(document.querySelectorAll('#homeTopGroup .tool-box[data-block-id], #homeGrid .tool-box[data-block-id]'));
+}
+
+// Sums each child of Anchor's own tool-body (icon grid, divider, mode-line
+// row) rather than reading the tool-body's own rendered height, which can
+// be stretched taller by a tall neighbor sharing its grid row-track.
+// Narrow stack lays these children out as a row instead (grid left,
+// controls right — see the CSS), so summing them there would wildly
+// overstate the natural height; the tallest child is the real height in
+// that layout, same as any other row of same-height-cross-axis items.
+function _anchorNaturalHeight() {
+    var toolBox = document.querySelector('.tool-box[data-block-id="anchor"]');
+    var body    = document.querySelector('.tool-body[data-block-id="anchor"]');
+    if (!toolBox || !body) return 0;
+    var boxCs = getComputedStyle(toolBox);
+    var padding = (parseFloat(boxCs.paddingTop) || 0) + (parseFloat(boxCs.paddingBottom) || 0);
+
+    if (_narrowStack) {
+        var max = 0;
+        Array.prototype.forEach.call(body.children, function(child) {
+            var h = child.getBoundingClientRect().height;
+            if (h > max) max = h;
+        });
+        return max + padding;
+    }
+
+    var gap = parseFloat(getComputedStyle(body).rowGap) || 0;
+    var total = 0;
+    Array.prototype.forEach.call(body.children, function(child, i) {
+        if (i > 0) total += gap;
+        total += child.getBoundingClientRect().height;
+    });
+    total += padding;
+    return total;
+}
+
+function _syncAnchorRowUnit() {
+    var grid = document.getElementById('homeTopGroup');
+    var h = _anchorNaturalHeight();
+    if (grid && h > 0) grid.style.setProperty('--home-anchor-unit', (h / 2) + 'px');
+}
+
+// Watches #homeTopGroup's width so a panel resize or zoom change re-derives
+// Anchor's height immediately; fires once on observe with the current size.
+function _initAnchorRowUnit() {
+    var grid = document.getElementById('homeTopGroup');
+    if (!grid || typeof ResizeObserver === 'undefined') return;
+    new ResizeObserver(function() { _syncAnchorRowUnit(); }).observe(grid);
+}
+
+// ── Narrow stack ─────────────────────────────────────────────────────────────
+// Below NARROW_STACK_THRESHOLD, every widget — including the top group
+// (Anchor/Quick Actions/Favorite) — renders full width and stacks, no more
+// half-width pairs. Purely a display-time override: _blApplyLayout (see
+// below) still computes each widget's real stored span from _blGetRows()
+// first and only forces it to 6 afterward when _narrowStack is on, so
+// nothing here ever touches what's actually saved — widening back past the
+// threshold re-applies the original pairing untouched. The top group's own
+// stacking is handled in CSS alone (#homeToolGrid.narrow-stack #homeTopGroup
+// .tool-box), since it isn't part of the rows/pack system at all.
+var NARROW_STACK_THRESHOLD = 330;
+var _narrowStack = false;
+
+function _syncNarrowStack() {
+    var grid = document.getElementById('homeToolGrid');
+    if (!grid) return;
+    var isNarrow = grid.getBoundingClientRect().width < NARROW_STACK_THRESHOLD;
+    if (isNarrow === _narrowStack) return;
+    _narrowStack = isNarrow;
+    grid.classList.toggle('narrow-stack', isNarrow);
+    _blApplyLayout(); // re-syncs quickactions2's placeholders too (see its tail)
+    // _blApplyLayout only re-syncs quickactions2 (it's the one that's
+    // actually part of that rows/pack system) — the original top-group bar
+    // needs the same nudge directly, since its own shape just changed too.
+    var qaMainGrid = document.getElementById(QA_INSTANCES.main.gridId);
+    if (qaMainGrid) _qaSyncAddTiles('main', qaMainGrid);
+    // #homeTopGroup's own ResizeObserver (see _initAnchorRowUnit) reacts to
+    // ITS width changing, not to Anchor's children re-flowing from column
+    // to row internally — that reflow is a same-tick side effect of this
+    // same resize, not a further size change of #homeTopGroup itself, so
+    // it may never re-fire on its own. Recomputing here directly is what
+    // actually picks up _anchorNaturalHeight's now-narrow-aware reading.
+    _syncAnchorRowUnit();
+}
+
+function _initNarrowStack() {
+    var grid = document.getElementById('homeToolGrid');
+    if (!grid || typeof ResizeObserver === 'undefined') return;
+    new ResizeObserver(function() { _syncNarrowStack(); }).observe(grid);
+}
+
+// ── Layout mode (Compact / Classic) ──────────────────────────────────────────
+// Compact is the bento peg-board above (#homeGrid); Classic is the original
+// collapsible-section layout (#homeClassic, its sibling in the markup). Both
+// drive the exact same underlying controls: each tool's actual guts live in
+// one .tool-body[data-block-id] node, physically relocated between its
+// Compact tool-box and its Classic section-body whenever the mode switches —
+// so nothing here ever needs two copies of an id or an onclick handler.
+var CLASSIC_BLOCK_IDS = ['anchor', 'organize', 'ease', 'align', 'distribute', 'sizing', 'autocrop', 'sort'];
+
+function setLayoutMode(mode) {
+    if (mode !== 'classic') mode = 'compact';
+    try { localStorage.setItem('lineup-layout-mode', mode); } catch(e) {}
+    _applyLayoutMode(mode);
+}
+
+function restoreLayoutMode() {
+    var mode;
+    try { mode = localStorage.getItem('lineup-layout-mode'); } catch(e) {}
+    _applyLayoutMode(mode === 'classic' ? 'classic' : 'compact');
+}
+
+function _applyLayoutMode(mode) {
+    var isClassic   = mode === 'classic';
+    var compactGrid = document.getElementById('homeGrid');
+    var compactTop  = document.getElementById('homeTopGroup');
+    var classicGrid = document.getElementById('homeClassic');
+    var clsBlock    = document.getElementById('classicSettingsBlock');
+
+    CLASSIC_BLOCK_IDS.forEach(function(id) {
+        var body = document.querySelector('.tool-body[data-block-id="' + id + '"]');
+        if (!body) return;
+        if (isClassic) {
+            var target = document.querySelector('#homeClassic .section-body[data-body-for="' + id + '"]');
+            if (target && body.parentElement !== target) target.appendChild(body);
+        } else if (id === 'organize') {
+            // Compact never shows Organize's original controls — it has its
+            // own independent, freely-customizable Quick Actions widget
+            // instead (#sec-quick-actions, see _renderQuickActions), which
+            // shares no markup with Classic's Organize section. The
+            // original body just sits stashed here, unused, so Classic can
+            // still relocate and show it exactly as before.
+            var stash = document.getElementById('sec-organize-original');
+            if (stash && body.parentElement !== stash) stash.appendChild(body);
+        } else {
+            var box = document.querySelector('.tool-box[data-block-id="' + id + '"]');
+            if (!box || body.parentElement === box) return;
+            box.appendChild(body);
+        }
+    });
+
+    // Null/Copy-Paste has no Compact home of its own (it's permanently
+    // hidden there, kept in #sec-nullcp) — in Classic it docks beside the
+    // Anchor grid instead, matching the original layout. Runs after the
+    // loop above so #anchorRow (part of Anchor's own relocated tool-body)
+    // is already wherever it needs to be for this call.
+    var nullcp = document.querySelector('.cp-panel[data-block-id="nullcp"]');
+    var anchorRow = document.getElementById('anchorRow');
+    if (nullcp && anchorRow) {
+        var nullcpHome = isClassic ? anchorRow : document.getElementById('sec-nullcp');
+        if (nullcpHome && nullcp.parentElement !== nullcpHome) nullcpHome.appendChild(nullcp);
+    }
+
+    if (compactGrid) compactGrid.style.display = isClassic ? 'none' : '';
+    if (compactTop)   compactTop.style.display  = isClassic ? 'none' : '';
+    if (classicGrid) classicGrid.style.display = isClassic ? '' : 'none';
+    if (clsBlock)     clsBlock.style.display    = isClassic ? '' : 'none';
+
+    // The Favorite slot only exists in Compact — Classic already moved
+    // everything above into its own section-bodies, nothing left to do here.
+    if (!isClassic) _favApplyLayout();
+
+    document.querySelectorAll('.layout-mode-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+    });
+
+    _applySharedHiddenState();
+    if (isClassic) _renderClassicSettingsList();
+}
+
+// ── Classic section collapse/expand ──────────────────────────────────────────
+
+function toggleClassicSection(id) {
+    var hdr  = document.querySelector('#cls-' + id + ' .section-hdr');
+    var body = document.querySelector('#cls-' + id + ' .section-body');
+    if (!hdr || !body) return;
+    var collapsed = body.classList.toggle('hidden');
+    hdr.classList.toggle('collapsed', collapsed);
+    try { localStorage.setItem('lineup-cls-sec-' + id, collapsed ? '1' : '0'); } catch(e) {}
+}
+
+function restoreClassicCollapsed() {
+    CLASSIC_BLOCK_IDS.forEach(function(id) {
+        var stored;
+        try { stored = localStorage.getItem('lineup-cls-sec-' + id); } catch(e) {}
+        if (stored === '1') {
+            var hdr  = document.querySelector('#cls-' + id + ' .section-hdr');
+            var body = document.querySelector('#cls-' + id + ' .section-body');
+            if (hdr)  hdr.classList.add('collapsed');
+            if (body) body.classList.add('hidden');
+        }
+    });
+}
+
+// ── Shared hidden-module state ───────────────────────────────────────────────
+// Single source of truth for "which tools are hidden," set from Classic's
+// Sections list and applied to both layouts — hiding something there hides
+// it in Compact's fixed grid too.
+
+function _getHiddenBlockIds() {
+    var ids;
+    try { ids = JSON.parse(localStorage.getItem('lineup-hidden-blocks')); } catch(e) {}
+    return Array.isArray(ids) ? ids : [];
+}
+
+function _commitHiddenBlockIds(ids) {
+    try { localStorage.setItem('lineup-hidden-blocks', JSON.stringify(ids)); } catch(e) {}
+    _applySharedHiddenState();
+}
+
+function _applySharedHiddenState() {
+    var hidden = _getHiddenBlockIds();
+    _homeBoxes().forEach(function(box) {
+        var id = box.getAttribute('data-block-id');
+        box.classList.toggle('home-hidden', hidden.indexOf(id) !== -1);
+    });
+    CLASSIC_BLOCK_IDS.forEach(function(id) {
+        var sec = document.getElementById('cls-' + id);
+        if (sec) sec.classList.toggle('sec-hidden', hidden.indexOf(id) !== -1);
+    });
+}
+
+// ── High Contrast Mode ──────────────────────────────────────────────────────────
+
+function toggleHighContrast(on) {
+    document.body.classList.toggle('high-contrast', !!on);
+    try { localStorage.setItem('lineup-high-contrast', on ? '1' : '0'); } catch(e) {}
+}
+
+function restoreHighContrast() {
+    var on;
+    try { on = localStorage.getItem('lineup-high-contrast') === '1'; } catch(e) { on = false; }
+    if (on) {
+        document.body.classList.add('high-contrast');
+        var chk = document.getElementById('highContrastCheck');
+        if (chk) chk.checked = true;
+    }
+}
+
+// ── Tools search + filter groups ─────────────────────────────────────────────────
+
+var _toolsFilter = 'all';
+
+function setToolsFilter(name) {
+    _toolsFilter = name;
+    var btns = document.querySelectorAll('.tools-filter-btn');
+    for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle('active', btns[i].getAttribute('data-filter') === name);
+    }
+    applyToolsFilter();
+}
+
+function applyToolsFilter() {
+    var input = document.getElementById('toolsSearchInput');
+    var q = input ? input.value.trim().toLowerCase() : '';
+    var tiles = document.querySelectorAll('.tools-grid-btn');
+    for (var i = 0; i < tiles.length; i++) {
+        var tile = tiles[i];
+        var title = (tile.getAttribute('title') || '').toLowerCase();
+        var group = tile.getAttribute('data-group') || '';
+        var matchesGroup  = _toolsFilter === 'all' || group === _toolsFilter;
+        var matchesSearch = q.length === 0 || title.indexOf(q) !== -1;
+        tile.classList.toggle('tools-grid-btn-hidden', !(matchesGroup && matchesSearch));
+    }
+}
+
+function initToolsSearch() {
+    var input = document.getElementById('toolsSearchInput');
+    if (!input) return;
+    input.addEventListener('input', applyToolsFilter);
+}
+
 // ── Section toggle ────────────────────────────────────────────────────────────
 
 function toggleSection(id) {
@@ -247,9 +555,10 @@ function doAlign(idx) {
 // ── DISTRIBUTE ────────────────────────────────────────────────────────────────
 
 function doDist(horizontal) {
-    var mode = selVal('distMode');
+    var mode       = selVal('distMode');
+    var offsetKeys = chkVal('distOffsetCheck');
     // Key Layer mode always lines layers up back to back — no user-set spacing.
-    run('lineup_distribute(' + horizontal + ',' + mode + ',0)');
+    run('lineup_distribute(' + horizontal + ',' + mode + ',0,' + offsetKeys + ')');
 }
 
 function doDistZ() {
@@ -313,9 +622,6 @@ function doSizeMatch(mode) {
 
 function setSizeFitMode(val) {
     document.getElementById('sizeFitMode').value = val;
-    var btns = document.querySelectorAll('#sizeFitSeg .fit-seg-btn');
-    btns.forEach(function(btn, i) { btn.classList.toggle('active', i === val); });
-    document.getElementById('sizeFitSlider').style.transform = 'translateX(' + (val * 100) + '%)';
 }
 
 // ── ANCHOR POINT ──────────────────────────────────────────────────────────────
@@ -357,10 +663,10 @@ function doCreateNull() {
 function doEaseCopy() {
     run('lineup_easeCopy()', function(result) {
         if (result && result.length > 0) {
-            document.getElementById('easeDisplay').textContent = result;
+            document.querySelector('#easeDisplay .ease-display-text').textContent = result;
             document.getElementById('easePasteBtn').disabled = false;
-            document.getElementById('easeValueBtn').disabled = false;
         }
+        _easePreviewFetch();
     });
 }
 
@@ -368,16 +674,176 @@ function doEasePaste() {
     run('lineup_easePaste()', function(result) { showToast(result, 'info'); });
 }
 
-function doEaseValuePaste() {
-    run('lineup_easeValuePaste()', function(result) { showToast(result, 'info'); });
-}
-
+// The display box now doubles as its own clear button (see #easeDisplay in
+// index.html) — textContent is set on the nested .ease-display-text span,
+// not the div itself, since the div also holds the hover-only trash icon svg.
 function doEaseClear() {
     run('lineup_easeClear()', function() {
-        document.getElementById('easeDisplay').textContent = '—';
+        document.querySelector('#easeDisplay .ease-display-text').textContent = '—';
         document.getElementById('easePasteBtn').disabled = true;
-        document.getElementById('easeValueBtn').disabled = true;
+        _easePreviewRender(null);
     });
+}
+
+// ── Ease preview (live curve + speed graph) ─────────────────────────────────
+// Only ever visible at half width (see the CSS on .ease-preview) — a value
+// curve with a dot at each copied keyframe, plus a speed (velocity) graph
+// beneath it that can dip negative wherever the interpolation temporarily
+// reverses (e.g. a strong ease-out overshoot). Reconstructs the same
+// speed/influence -> bezier handles AE's own graph editor uses (see
+// _easeSegmentSamples), sampling each segment as a parametric curve rather
+// than trying to invert time -> value, which sidesteps needing to solve the
+// cubic for a given time. Multi-dimensional properties (Position, Scale,
+// etc.) collapse to their first dimension — one representative curve rather
+// than plotting several.
+var EASE_PREVIEW_SAMPLES = 24; // per segment
+var EASE_PREVIEW_W = 200;
+var EASE_PREVIEW_H = 100;
+
+// host.jsx's ExtendScript engine keeps _easeClipboard alive for the whole
+// AE session — this is how a freshly (re)loaded panel picks back up
+// whatever was already copied before it loaded.
+function _easePreviewFetch() {
+    run('lineup_easeGetClipboard()', function(result) {
+        var data = null;
+        try { data = JSON.parse(result); } catch(e) {}
+        _easePreviewRender(Array.isArray(data) ? data : null);
+    });
+}
+
+function _easeBezierPoint(p0, p1, p2, p3, u) {
+    var mu = 1 - u;
+    return mu*mu*mu*p0 + 3*mu*mu*u*p1 + 3*mu*u*u*p2 + u*u*u*p3;
+}
+function _easeBezierDeriv(p0, p1, p2, p3, u) {
+    var mu = 1 - u;
+    return 3*mu*mu*(p1 - p0) + 6*mu*u*(p2 - p1) + 3*u*u*(p3 - p2);
+}
+
+// A keyframe's dimension-0 value, whether it was copied as a plain number
+// (Opacity, Rotation) or a per-dimension array (Position, Scale, ...).
+function _easeDim0(v) {
+    if (Array.isArray(v)) return v.length ? v[0] : 0;
+    return typeof v === 'number' ? v : 0;
+}
+
+// Samples between two consecutive copied keyframes as {t, v, speed} triples
+// — t/v walk the parametric bezier directly (exact, no time->value
+// inversion needed) and speed is dv/dt = (dv/du)/(dt/du) at that point,
+// which is what can legitimately go negative on a strong overshoot.
+function _easeSegmentSamples(kA, kB) {
+    var tA = kA.time, tB = kB.time, dt = tB - tA;
+    if (!(typeof tA === 'number' && typeof tB === 'number' && dt > 0)) return [];
+    var vA = _easeDim0(kA.value), vB = _easeDim0(kB.value);
+    var out = [];
+
+    if (kA.outType === 'hold') {
+        for (var i = 0; i <= EASE_PREVIEW_SAMPLES; i++) {
+            out.push({ t: tA + (i / EASE_PREVIEW_SAMPLES) * dt, v: vA, speed: 0 });
+        }
+        return out;
+    }
+    if (kA.outType === 'linear' && kB.inType === 'linear') {
+        var linSpeed = (vB - vA) / dt;
+        for (var j = 0; j <= EASE_PREVIEW_SAMPLES; j++) {
+            var uu = j / EASE_PREVIEW_SAMPLES;
+            out.push({ t: tA + uu * dt, v: vA + (vB - vA) * uu, speed: linSpeed });
+        }
+        return out;
+    }
+
+    // Bezier (or Bezier mixed with Linear on one side) — reconstruct the
+    // handle positions from speed/influence the same way AE does; a
+    // missing/non-Bezier side falls back to a neutral 1/3 influence, 0 speed.
+    var outE = (kA.outEase && kA.outEase[0]) || { speed: 0, influence: 100 / 3 };
+    var inE  = (kB.inEase  && kB.inEase[0])  || { speed: 0, influence: 100 / 3 };
+    var t1 = tA + (outE.influence / 100) * dt;
+    var v1 = vA + outE.speed * (t1 - tA);
+    var t2 = tB - (inE.influence / 100) * dt;
+    var v2 = vB - inE.speed * (tB - t2);
+
+    for (var k = 0; k <= EASE_PREVIEW_SAMPLES; k++) {
+        var u = k / EASE_PREVIEW_SAMPLES;
+        var t = _easeBezierPoint(tA, t1, t2, tB, u);
+        var v = _easeBezierPoint(vA, v1, v2, vB, u);
+        var dtdu = _easeBezierDeriv(tA, t1, t2, tB, u);
+        var dvdu = _easeBezierDeriv(vA, v1, v2, vB, u);
+        out.push({ t: t, v: v, speed: Math.abs(dtdu) > 1e-6 ? (dvdu / dtdu) : 0 });
+    }
+    return out;
+}
+
+function _easePreviewRender(data) {
+    var box = document.getElementById('easePreview');
+    if (!box) return;
+    var keys = Array.isArray(data) ? data.filter(function(k) { return typeof k.time === 'number'; }) : [];
+    keys.sort(function(a, b) { return a.time - b.time; });
+
+    if (keys.length < 2) {
+        box.classList.add('is-empty');
+        return;
+    }
+    box.classList.remove('is-empty');
+
+    var segments = [];
+    for (var i = 0; i < keys.length - 1; i++) segments.push(_easeSegmentSamples(keys[i], keys[i + 1]));
+
+    var allSamples = [].concat.apply([], segments);
+    if (!allSamples.length) { box.classList.add('is-empty'); return; }
+
+    var tMin = keys[0].time, tMax = keys[keys.length - 1].time, tSpan = (tMax - tMin) || 1;
+    var vMin = Infinity, vMax = -Infinity, speedAbsMax = 0;
+    allSamples.forEach(function(s) {
+        if (s.v < vMin) vMin = s.v;
+        if (s.v > vMax) vMax = s.v;
+        if (Math.abs(s.speed) > speedAbsMax) speedAbsMax = Math.abs(s.speed);
+    });
+    var vSpan = (vMax - vMin) || 1;
+
+    var VALUE_TOP = 4, VALUE_H = EASE_PREVIEW_H * 0.55;
+    var SPEED_MID = EASE_PREVIEW_H * 0.78, SPEED_H = EASE_PREVIEW_H * 0.2;
+
+    function xOf(t) { return ((t - tMin) / tSpan) * EASE_PREVIEW_W; }
+    function yOfValue(v) { return VALUE_TOP + VALUE_H - ((v - vMin) / vSpan) * VALUE_H; }
+    function yOfSpeed(s) { return speedAbsMax > 0 ? (SPEED_MID - (s / speedAbsMax) * SPEED_H) : SPEED_MID; }
+
+    var valuePath = '';
+    allSamples.forEach(function(s, i) {
+        valuePath += (i === 0 ? 'M' : 'L') + xOf(s.t).toFixed(2) + ',' + yOfValue(s.v).toFixed(2) + ' ';
+    });
+
+    function speedAreaPath(clampFn) {
+        var d = 'M' + xOf(allSamples[0].t).toFixed(2) + ',' + SPEED_MID.toFixed(2) + ' ';
+        allSamples.forEach(function(s) {
+            d += 'L' + xOf(s.t).toFixed(2) + ',' + yOfSpeed(clampFn(s.speed)).toFixed(2) + ' ';
+        });
+        d += 'L' + xOf(allSamples[allSamples.length - 1].t).toFixed(2) + ',' + SPEED_MID.toFixed(2) + ' Z';
+        return d;
+    }
+
+    var zeroLine = document.getElementById('easePreviewZeroLine');
+    if (zeroLine) {
+        zeroLine.setAttribute('y1', SPEED_MID); zeroLine.setAttribute('y2', SPEED_MID);
+        zeroLine.setAttribute('x2', EASE_PREVIEW_W);
+    }
+    var valueEl = document.getElementById('easePreviewValuePath');
+    if (valueEl) valueEl.setAttribute('d', valuePath.trim());
+    var posEl = document.getElementById('easePreviewSpeedPos');
+    if (posEl) posEl.setAttribute('d', speedAreaPath(function(s) { return Math.max(0, s); }));
+    var negEl = document.getElementById('easePreviewSpeedNeg');
+    if (negEl) negEl.setAttribute('d', speedAreaPath(function(s) { return Math.min(0, s); }));
+
+    var pointsG = document.getElementById('easePreviewPoints');
+    if (pointsG) {
+        pointsG.innerHTML = '';
+        keys.forEach(function(k) {
+            var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            c.setAttribute('cx', xOf(k.time).toFixed(2));
+            c.setAttribute('cy', yOfValue(_easeDim0(k.value)).toFixed(2));
+            c.setAttribute('r', 2.4);
+            pointsG.appendChild(c);
+        });
+    }
 }
 
 // ── Grid Picker ───────────────────────────────────────────────────────────────
@@ -1727,20 +2193,15 @@ function _alignPropsPickerKey(e) {
 
 // ── LAYER SORT ────────────────────────────────────────────────────────────────
 
-function doSort() {
-    var propIdx   = selVal('sortProp');
-    var axisIdx   = selVal('sortAxis');
-    var descend   = document.getElementById('sortDirCheck').checked ? 0 : 1;
-    var groupNull = chkVal('sortGroup');
-    run('lineup_sortLayers(' + propIdx + ',' + axisIdx + ',' + descend + ',' + groupNull + ')');
-}
-
-function setSortProp(val) {
-    document.getElementById('sortProp').value = val;
-    var btns = document.querySelectorAll('#sortPropSeg .seg-btn');
-    btns.forEach(function(btn, i) { btn.classList.toggle('active', i === val); });
-    document.getElementById('segSlider').style.transform = 'translateX(' + (val * 100) + '%)';
-    syncSortAxis();
+// descend is passed directly from whichever of the two direction buttons
+// was clicked (0 = ascending, 1 = descending) rather than read from a
+// separate toggle's stored state. The Group-into-a-null option was removed
+// as an unnecessary control — lineup_sortLayers still accepts it, so this
+// just always passes 0 (its old default/unchecked state).
+function doSort(descend) {
+    var propIdx = selVal('sortProp');
+    var axisIdx = selVal('sortAxis');
+    run('lineup_sortLayers(' + propIdx + ',' + axisIdx + ',' + descend + ',0)');
 }
 
 function syncSortAxis() {
@@ -1766,6 +2227,1360 @@ function doMaskCrop() {
     var pad    = numVal('autoCropPad');
     var expand = chkVal('autoCropExpand');
     run('lineup_maskCrop(' + pad + ',' + expand + ')');
+}
+
+// ── Quick Actions (Compact-only, customizable) ───────────────────────────────
+// A freely editable icon grid — add or remove any tool from the Tools tab
+// catalog. Independent of Classic's Organize section (which keeps its own
+// fixed controls, stashed at #sec-organize-original while Compact is
+// active — see the 'organize' special case in _applyLayoutMode); the two
+// share no markup, so customizing one never touches the other.
+//
+// Generalized to support more than one bar — QA_INSTANCES holds one entry
+// per grid (storage key + DOM id + its own default pins), keyed by the id
+// _blApplyLayout uses for the widget as a whole ('main' for the original
+// bar up top, 'quickactions2' for the second one addable down in Bottom
+// Layout). Every function below takes that key as its first argument.
+//
+// _editMode is the single flag driving BOTH this and Bottom Layout's
+// drag-reorder (see _toggleEditMode) — one pencil, one board-editing
+// state, both editable at once.
+
+var QA_INSTANCES = {
+    main: {
+        storageKey: 'lineup-quick-actions',
+        gridId: 'quickActionsGrid',
+        defaultIds: ['duplicateCompDeep', 'consolidateProject', 'projectStructure', 'batchCompSettings', 'batchRename', 'compExport']
+    },
+    quickactions2: {
+        storageKey: 'lineup-quick-actions-2',
+        gridId: 'quickActionsGrid2',
+        defaultIds: []
+    }
+};
+var QA_MAX         = 6; // 'main' bar only — fixed size, always a 3-wide, 2-row cap (3x2), never 3x3
+var _editMode        = false;
+
+// 'main' (top group) keeps the same 3x2 cap (3 cols, 2 rows) — same shape
+// quickactions2 uses at half width, never the taller 3x3/9 it briefly had —
+// except narrow-stack, which forces the whole top group (including this
+// bar) full width, where it switches to 6-wide/one-line same as
+// quickactions2 does there.
+// 'quickactions2' lives in Bottom Layout and can be docked full-width (6 cols,
+// capped at one row) or half-width (3 cols, capped at two rows) — either way
+// that caps out at 6 tiles, so switching between them never truncates pins.
+function _qaGridShape(instKey) {
+    if (instKey !== 'quickactions2') return _narrowStack ? { cols: 6, max: QA_MAX } : { cols: 3, max: QA_MAX };
+    // The Favorite slot matches whatever shape this bar would have if
+    // simply docked at that same width in Bottom Layout (see the CSS): 3x2
+    // normally, since the slot itself is always half-width of the top
+    // group, or 6-wide/one-line once narrow-stack forces the whole top
+    // group (and so the slot) full width instead.
+    if (document.querySelector('#sec-favorite .fav-page[data-fav-id="quickactions2"]')) {
+        return _narrowStack ? { cols: 6, max: 6 } : { cols: 3, max: 6 };
+    }
+    var box = _blBoxEl(instKey);
+    var span = box ? box.getAttribute('data-span') : '3';
+    return span === '6' ? { cols: 6, max: 6 } : { cols: 3, max: 6 };
+}
+var _qaPopover       = null;
+var _qaPopoverInput  = null;
+var _qaPopoverGrid   = null;
+
+// Every tool that can be pinned — the Tools tab's own tiles, cloned rather
+// than duplicated by hand so Quick Actions can never drift out of sync with
+// what's actually available there. Shared by every bar instance.
+function _qaCatalog() {
+    return Array.prototype.slice.call(document.querySelectorAll('#tab-tools .tools-grid-btn[data-tool-id]'));
+}
+
+function _qaGetPinned(instKey) {
+    var inst = QA_INSTANCES[instKey];
+    var ids;
+    try { ids = JSON.parse(localStorage.getItem(inst.storageKey)); } catch(e) {}
+    if (!Array.isArray(ids)) ids = inst.defaultIds.slice();
+    var validIds = _qaCatalog().map(function(t) { return t.getAttribute('data-tool-id'); });
+    return ids.filter(function(id) { return validIds.indexOf(id) !== -1; }).slice(0, _qaGridShape(instKey).max); // drop stale ids + enforce this bar's cap
+}
+
+function _qaSavePinned(instKey, ids) {
+    try { localStorage.setItem(QA_INSTANCES[instKey].storageKey, JSON.stringify(ids)); } catch(e) {}
+}
+
+var _qaCloneSeq = 0;
+
+// A couple of catalog icons (e.g. Scan All Compositions) use an internal
+// SVG <mask id="..."> referenced via url(#id) — cloneNode duplicates that
+// id verbatim, and once two elements share an id, url(#id) resolution
+// becomes ambiguous (usually snapping to whichever copy comes first in the
+// document), breaking the icon on whichever tile got cloned. Renaming both
+// ends of the reference the same way on every clone avoids that.
+function _qaCloneCatalogTile(source) {
+    var clone = source.cloneNode(true);
+    var mask = clone.querySelector('mask[id]');
+    if (mask) {
+        var oldId = mask.id;
+        var newId = oldId + '-qa' + (_qaCloneSeq++);
+        mask.id = newId;
+        Array.prototype.forEach.call(clone.querySelectorAll('[mask]'), function(el) {
+            if (el.getAttribute('mask') === 'url(#' + oldId + ')') el.setAttribute('mask', 'url(#' + newId + ')');
+        });
+    }
+    return clone;
+}
+
+// One Quick Actions tile — same icon/title/onclick as its Tools-tab source,
+// icon-only (label stripped), plus the edit-mode remove badge.
+function _qaBuildTile(instKey, id) {
+    var source = _qaCatalog().filter(function(t) { return t.getAttribute('data-tool-id') === id; })[0];
+    if (!source) return null;
+    var tile = _qaCloneCatalogTile(source);
+    tile.classList.remove('tools-grid-btn');
+    tile.classList.add('quick-actions-btn');
+    tile.removeAttribute('data-group');
+    var lbl = tile.querySelector('span');
+    if (lbl) lbl.remove();
+
+    var removeBtn = document.createElement('span');
+    removeBtn.className = 'quick-actions-remove';
+    removeBtn.title = 'Remove from Quick Actions';
+    removeBtn.innerHTML = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="6.3" fill="#1c1c1c" stroke="#3a3a3a" stroke-width="1"/><line x1="4.8" y1="4.8" x2="9.2" y2="9.2"/><line x1="9.2" y1="4.8" x2="4.8" y2="9.2"/></svg>';
+    removeBtn.onclick = function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        _qaRemove(instKey, id);
+    };
+    tile.appendChild(removeBtn);
+    return tile;
+}
+
+function _qaCreateAddTile(instKey) {
+    var addTile = document.createElement('button');
+    addTile.className = 'quick-actions-add-tile';
+    addTile.title = 'Add a Quick Action';
+    addTile.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/></svg>';
+    addTile.onclick = function() { _qaOpenAddPopover(instKey, this); };
+    return addTile;
+}
+
+// How many total slots (real + placeholder) should be visible for a given
+// pinned count — reveals one row at a time (matching the bar's current
+// column count/cap, see _qaGridShape) rather than showing the whole grid's
+// worth of empty "+" tiles up front. A pinned count that exactly fills a row
+// invites the NEXT row; otherwise it just completes the row already in progress.
+function _qaAddTileTarget(pinnedCount, shape) {
+    if (pinnedCount >= shape.max) return shape.max;
+    if (pinnedCount % shape.cols === 0) return Math.min(shape.max, pinnedCount + shape.cols);
+    return Math.min(shape.max, Math.ceil(pinnedCount / shape.cols) * shape.cols);
+}
+
+// Adds/removes add-tile placeholders (never touches real tiles) so the
+// grid always shows exactly _qaAddTileTarget's count — used after any
+// change that could shift how many should be visible (entering/leaving
+// edit mode, a real tile being added/removed, or the bar's span changing).
+function _qaSyncAddTiles(instKey, grid) {
+    var shape = _qaGridShape(instKey);
+    // Only the 1x6 (single-row) shape reads as one connected bar, like
+    // every other tool's .btn-group-wide — the 3-wide 2-row shape keeps
+    // its tiles as individually bordered/gapped squares as normal.
+    grid.classList.toggle('qa-grid-1x6', shape.cols === 6);
+    var pinnedCount = grid.querySelectorAll('.quick-actions-btn').length;
+    var target = _editMode ? _qaAddTileTarget(pinnedCount, shape) : pinnedCount;
+    var have = grid.querySelectorAll('.quick-actions-add-tile').length;
+    var need = target - pinnedCount - have;
+    for (var i = 0; i < need; i++) grid.appendChild(_qaCreateAddTile(instKey));
+    for (var j = 0; j < -need; j++) {
+        var current = grid.querySelectorAll('.quick-actions-add-tile');
+        if (!current.length) break;
+        grid.removeChild(current[current.length - 1]);
+    }
+}
+
+// Only rebuilds the real tiles from scratch when the pinned SET has
+// actually changed (i.e. the very first render, at page load) — _qaAdd/
+// _qaRemove already patch the grid directly and keep it in sync, so by
+// the time entering/leaving edit mode calls this again, the existing
+// tiles already match _qaGetPinned() exactly. Wiping and replaying their
+// pop-in animation anyway on every toggle (even though nothing about them
+// changed) was what made switching edit mode on/off feel jumpy — now only
+// the add-tile placeholders get added/removed, and real tiles are left
+// completely alone.
+function _renderQuickActions(instKey) {
+    var grid = document.getElementById(QA_INSTANCES[instKey].gridId);
+    if (!grid) return;
+    var pinned = _qaGetPinned(instKey);
+    var existingIds = Array.prototype.map.call(grid.querySelectorAll('.quick-actions-btn'), function(t) {
+        return t.getAttribute('data-tool-id');
+    });
+    var samePinned = existingIds.length === pinned.length && existingIds.every(function(id, i) { return id === pinned[i]; });
+
+    if (!samePinned) {
+        grid.innerHTML = '';
+        pinned.forEach(function(id) {
+            var tile = _qaBuildTile(instKey, id);
+            if (tile) {
+                tile.classList.add('qa-anim-mode-switch');
+                grid.appendChild(tile);
+            }
+        });
+    }
+
+    // Reveals add-tile placeholders one row at a time (see
+    // _qaAddTileTarget) rather than the full 3x3 worth up front — also
+    // handles clearing them all out when leaving edit mode.
+    _qaSyncAddTiles(instKey, grid);
+}
+
+// Renders every registered bar — called whenever edit mode toggles, since
+// both bars' dashed/+ state depends on it.
+function _renderAllQuickActions() {
+    Object.keys(QA_INSTANCES).forEach(function(instKey) { _renderQuickActions(instKey); });
+}
+
+// The single entry point for the whole board's edit mode — both Quick
+// Actions bars' dashed tiles and Bottom Layout's drag-reorder/add-remove
+// all switch on together, no more separate pencils.
+function _toggleEditMode() {
+    _editMode = !_editMode;
+    var grid = document.getElementById('homeToolGrid');
+    if (grid) grid.classList.toggle('board-editing', _editMode);
+    var editBtn = document.getElementById('quickActionsEditBtn');
+    if (editBtn) editBtn.classList.toggle('active', _editMode);
+    var bar = document.getElementById('editModeBar');
+    if (_editMode) {
+        _editSnapshot = _captureEditSnapshot();
+        if (bar) bar.classList.remove('edit-mode-bar-hidden');
+        setTimeout(function() { document.addEventListener('mousedown', _editModeOutside); }, 0);
+    } else {
+        _editSnapshot = null;
+        if (bar) bar.classList.add('edit-mode-bar-hidden');
+        document.removeEventListener('mousedown', _editModeOutside);
+        _qaCloseAddPopover();
+        _blCloseAddPopover();
+    }
+    _renderAllQuickActions();
+    _blRenderAddRow();
+}
+
+// ── Edit mode bar (Save / Cancel / Restore to Default) ──────────────────────
+// Every edit already saves live to localStorage the moment it happens
+// (Quick Actions x2, Bottom Layout, Favorites) — there's no pending/draft
+// state to commit. So Save is just "exit, keep what's there"; Cancel
+// reverts to a snapshot of those same keys taken the moment edit mode was
+// entered, and Restore resets them to their built-in defaults — both swap
+// localStorage wholesale and re-render, rather than undoing each step.
+var EDIT_SNAPSHOT_KEYS = ['lineup-quick-actions', 'lineup-quick-actions-2', 'lineup-bottom-layout', 'lineup-favorite-widgets'];
+var _editSnapshot = null;
+
+function _captureEditSnapshot() {
+    var snap = {};
+    EDIT_SNAPSHOT_KEYS.forEach(function(key) {
+        try { snap[key] = localStorage.getItem(key); } catch(e) { snap[key] = null; }
+    });
+    return snap;
+}
+
+function _restoreEditSnapshot(snap) {
+    EDIT_SNAPSHOT_KEYS.forEach(function(key) {
+        try {
+            if (snap[key] === null) localStorage.removeItem(key);
+            else localStorage.setItem(key, snap[key]);
+        } catch(e) {}
+    });
+}
+
+// _favApplyLayout already calls _blApplyLayout at its end, so this alone
+// covers all three subsystems without redundant passes.
+function _refreshAllEditableWidgets() {
+    _renderAllQuickActions();
+    _favApplyLayout();
+}
+
+function _editModeSaveClick() {
+    if (_editMode) _toggleEditMode();
+}
+
+function _editModeCancelClick() {
+    if (!_editMode || !_editSnapshot) return;
+    _restoreEditSnapshot(_editSnapshot);
+    _refreshAllEditableWidgets();
+    _toggleEditMode();
+}
+
+// Resets Quick Actions (both bars), Bottom Layout, and Favorites to their
+// defaults, then exits edit mode — a full "start over" command, not just
+// another edit to keep tweaking.
+function _editModeRestoreClick() {
+    if (!_editMode) return;
+    _qaCloseAddPopover();
+    _blCloseAddPopover();
+    EDIT_SNAPSHOT_KEYS.forEach(function(key) {
+        try { localStorage.removeItem(key); } catch(e) {}
+    });
+    _refreshAllEditableWidgets();
+    _toggleEditMode();
+}
+
+// Clicking anywhere outside either Quick Actions widget, the currently
+// pinned Bottom Layout boxes, and either add popover exits edit mode —
+// everything else on the board is pointer-events:none while editing
+// anyway, so there's nothing meaningful to click there besides "I'm done".
+// The pencil button itself is also excluded — it lives in the footer,
+// well outside either widget, so without this a click on it would first
+// get caught here (toggling edit mode off, since mousedown fires before
+// click) and then immediately re-toggled back on by the button's own
+// onclick, netting out to no change at all.
+function _editModeOutside(e) {
+    var editBtn = document.getElementById('quickActionsEditBtn');
+    if (editBtn && editBtn.contains(e.target)) return;
+    // Save/Cancel/Restore live in the bar at the top of the panel, well
+    // outside either widget area — same double-toggle risk as the pencil
+    // button above (each already calls _toggleEditMode/_editModeCancelClick
+    // etc. itself via its own onclick).
+    var editBar = document.getElementById('editModeBar');
+    if (editBar && editBar.contains(e.target)) return;
+    if (_qaPopover && _qaPopover.contains(e.target)) return;
+    if (_blPopover && _blPopover.contains(e.target)) return;
+    var mainQaBox = document.getElementById('sec-quick-actions');
+    if (mainQaBox && mainQaBox.contains(e.target)) return;
+    var favBox = document.getElementById('sec-favorite');
+    if (favBox && favBox.contains(e.target)) return;
+    // Covers the second Quick Actions bar too when it's pinned — it's just
+    // another Bottom Layout box (data-block-id="quickactions2") as far as
+    // this check is concerned.
+    var insideBlBox = _blPinnedIds().some(function(id) {
+        var el = _blBoxEl(id);
+        return el && el.contains(e.target);
+    });
+    if (insideBlBox) return;
+    if (_blAddRowEl && _blAddRowEl.contains(e.target)) return;
+    _toggleEditMode();
+}
+
+// Patches the grid in place rather than calling _renderQuickActions, so
+// only the removed tile's slot changes — the rest don't replay their
+// entrance animation.
+function _qaRemove(instKey, id) {
+    _qaSavePinned(instKey, _qaGetPinned(instKey).filter(function(x) { return x !== id; }));
+
+    var grid = document.getElementById(QA_INSTANCES[instKey].gridId);
+    if (!grid) return;
+    var tile = grid.querySelector('.quick-actions-btn[data-tool-id="' + id + '"]');
+    if (tile) grid.removeChild(tile);
+    // Placeholder count may need to shrink back down a whole row, not
+    // just lose one slot — _qaSyncAddTiles handles that either way.
+    _qaSyncAddTiles(instKey, grid);
+}
+
+// Patches the grid in place rather than calling _renderQuickActions — only
+// the newly-pinned tile animates in (with a small bounce, see
+// .qa-anim-bounce-in); the rest of the grid doesn't reload/rescale.
+function _qaAdd(instKey, id) {
+    var ids = _qaGetPinned(instKey);
+    if (ids.length >= _qaGridShape(instKey).max) return; // bar's full — the popover shouldn't even be reachable here, but belt and suspenders
+    if (ids.indexOf(id) === -1) ids.push(id);
+    _qaSavePinned(instKey, ids);
+    _qaCloseAddPopover();
+
+    var grid = document.getElementById(QA_INSTANCES[instKey].gridId);
+    if (!grid) return;
+    var tile = _qaBuildTile(instKey, id);
+    if (tile) {
+        tile.classList.add('qa-anim-bounce-in');
+        var firstAddTile = grid.querySelector('.quick-actions-add-tile');
+        if (firstAddTile) grid.insertBefore(tile, firstAddTile);
+        else grid.appendChild(tile);
+    }
+    // Filling the last slot in a row can reveal a whole new row of
+    // placeholders rather than just losing one — _qaSyncAddTiles handles
+    // that either way.
+    _qaSyncAddTiles(instKey, grid);
+}
+
+// ── Add-tool popover — a mini version of the Tools tab: a search input and
+// a scrollable grid of every not-yet-pinned tool, cloned from the same
+// catalog tiles Quick Actions itself pulls from. Bottom Layout's own
+// add-widget popover (see _blBuildPopover) reuses the same .qa-add-*
+// classes for a consistent look, but keeps separate DOM/state since the
+// two list completely different kinds of things.
+
+function _qaBuildPopover() {
+    var el = document.createElement('div');
+    el.className = 'qa-add-popover';
+
+    var searchRow = document.createElement('div');
+    searchRow.className = 'qa-add-search-row';
+    // A plain span with an innerHTML svg STRING, not document.createElement('svg')
+    // — that creates the element in the wrong (HTML, not SVG) namespace, so
+    // none of its child shapes render. Every other dynamically-built icon in
+    // this file goes through createElementNS instead; this is simpler still.
+    var icon = document.createElement('span');
+    icon.className = 'qa-add-search-icon';
+    icon.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="6"/><line x1="13" y1="13" x2="17.5" y2="17.5"/></svg>';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'qa-add-search-input';
+    input.placeholder = 'Search…';
+    input.addEventListener('input', _qaFilterPopover);
+    searchRow.appendChild(icon);
+    searchRow.appendChild(input);
+    el.appendChild(searchRow);
+
+    var grid = document.createElement('div');
+    grid.className = 'qa-add-grid';
+    el.appendChild(grid);
+
+    document.body.appendChild(el);
+    _qaPopoverInput = input;
+    _qaPopoverGrid  = grid;
+    return el;
+}
+
+function _qaFilterPopover() {
+    var q = _qaPopoverInput.value.trim().toLowerCase();
+    var tiles = _qaPopoverGrid.querySelectorAll('.qa-add-tile');
+    for (var i = 0; i < tiles.length; i++) {
+        var title = (tiles[i].getAttribute('title') || '').toLowerCase();
+        tiles[i].classList.toggle('qa-add-tile-hidden', q.length > 0 && title.indexOf(q) === -1);
+    }
+}
+
+function _qaOpenAddPopover(instKey, anchorEl) {
+    if (!_qaPopover) _qaPopover = _qaBuildPopover();
+
+    var pinned = _qaGetPinned(instKey);
+    _qaPopoverGrid.innerHTML = '';
+    _qaCatalog().forEach(function(source) {
+        var id = source.getAttribute('data-tool-id');
+        if (pinned.indexOf(id) !== -1) return;
+        var tile = _qaCloneCatalogTile(source);
+        tile.classList.remove('tools-grid-btn');
+        tile.classList.add('qa-add-tile');
+        tile.removeAttribute('data-group');
+        tile.onclick = function() { _qaAdd(instKey, id); };
+        _qaPopoverGrid.appendChild(tile);
+    });
+    if (_qaPopoverInput) _qaPopoverInput.value = '';
+
+    var rect = anchorEl.getBoundingClientRect();
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var pw = 220, ph = 230;
+    _qaPopover.style.left = Math.max(4, Math.min(rect.left, vw - pw - 4)) + 'px';
+    _qaPopover.style.top  = Math.min(rect.bottom + 4, vh - ph - 4) + 'px';
+    _qaPopover.classList.add('visible');
+    if (_qaPopoverInput) _qaPopoverInput.focus();
+
+    setTimeout(function() {
+        document.addEventListener('mousedown', _qaPopoverOutside);
+        document.addEventListener('keydown', _qaPopoverKey);
+    }, 0);
+}
+
+function _qaCloseAddPopover() {
+    if (_qaPopover) _qaPopover.classList.remove('visible');
+    document.removeEventListener('mousedown', _qaPopoverOutside);
+    document.removeEventListener('keydown', _qaPopoverKey);
+}
+
+function _qaPopoverOutside(e) {
+    if (_qaPopover && !_qaPopover.contains(e.target) && !e.target.closest('.quick-actions-add-tile')) {
+        _qaCloseAddPopover();
+    }
+}
+
+function _qaPopoverKey(e) {
+    if (e.key === 'Escape') _qaCloseAddPopover();
+}
+
+// ── BOTTOM LAYOUT (Align / Distribute / Sizing / Auto Crop / Sort) ─────────────
+// A second customization scope alongside Quick Actions — separate data/
+// storage, but both switch on together under the one _editMode/pencil (see
+// _toggleEditMode). This one is a fixed set of 5 boxes (no add/remove) that
+// can be reordered, docking side-by-side into half-width pairs purely by
+// where you drop them — there is no separate full/half toggle. Layout is
+// stored as an ordered list of rows: a row is either one id (full-line) or
+// two ids (a half+half pair). Width is entirely derived from which kind of
+// row a box is in (see _blPack), so dragging a box out of a pair
+// automatically leaves its former partner alone as a full-line row, and
+// dragging a box onto the side edge of a lone full-line box automatically
+// docks them into a pair.
+
+var BL_STORAGE_KEY = 'lineup-bottom-layout';
+// Everything that CAN live in the bottom bento grid — pinned/order is
+// stored separately (_blGetRows), so not every catalog entry has to be
+// shown at once. label/icon here are only used to build the add-widget
+// popover (see _blOpenAddPopover); the icon is cloned straight off each
+// box's own .qa-collapse-icon rather than duplicated by hand.
+var BL_CATALOG = [
+    { id: 'align',         label: 'Align' },
+    { id: 'distribute',    label: 'Distribute' },
+    { id: 'sizing',        label: 'Sizing' },
+    { id: 'autocrop',      label: 'Auto Crop' },
+    { id: 'sort',          label: 'Layer Sort' },
+    { id: 'quickactions2', label: 'Quick Actions (2nd Bar)' },
+    { id: 'spellcheck',    label: 'Spell Check' },
+    { id: 'ease',          label: 'Ease Copy' }
+];
+var BL_CATALOG_IDS = BL_CATALOG.map(function(c) { return c.id; });
+var BL_DEFAULT_ROWS = [ ['align'], ['distribute'], ['sizing', 'autocrop'], ['sort'] ];
+
+var _blDrag = null; // non-null while a drag is in progress
+
+function _blBoxEl(id) {
+    return document.querySelector('#homeGrid .tool-box[data-block-id="' + id + '"]');
+}
+
+// A row is 1-2 ids, each a valid catalog id appearing at most once —
+// anything else (duplicate, unknown id, stale format) is rejected
+// wholesale rather than partially repaired, falling back to the default
+// arrangement. Unlike the original fixed-5 version, rows don't have to
+// cover every catalog id — entries left out are simply not pinned.
+function _blRowsValid(rows) {
+    if (!Array.isArray(rows)) return false;
+    var seen = [];
+    for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        if (!Array.isArray(row) || row.length < 1 || row.length > 2) return false;
+        for (var j = 0; j < row.length; j++) {
+            if (BL_CATALOG_IDS.indexOf(row[j]) === -1 || seen.indexOf(row[j]) !== -1) return false;
+            seen.push(row[j]);
+        }
+    }
+    return true;
+}
+
+function _blGetRows() {
+    var saved;
+    try { saved = JSON.parse(localStorage.getItem(BL_STORAGE_KEY)); } catch(e) {}
+    if (_blRowsValid(saved)) return saved;
+    return BL_DEFAULT_ROWS.map(function(row) { return row.slice(); });
+}
+
+function _blSaveRows(rows) {
+    try { localStorage.setItem(BL_STORAGE_KEY, JSON.stringify(rows)); } catch(e) {}
+}
+
+// Flat, ordered list of every id currently pinned (shown) — the dynamic
+// equivalent of the old fixed BL_IDS constant.
+function _blPinnedIds() {
+    var ids = [];
+    _blGetRows().forEach(function(row) { row.forEach(function(id) { ids.push(id); }); });
+    return ids;
+}
+
+// Catalog entries not currently pinned — what the add-widget popover lists.
+function _blAvailableIds() {
+    var pinned = _blPinnedIds();
+    return BL_CATALOG_IDS.filter(function(id) { return pinned.indexOf(id) === -1; });
+}
+
+// A row with 2 ids renders as span 3 + span 3; a row with 1 id renders as
+// span 6 — there's no stored "preference" to fall out of sync with this.
+function _blPack(rows) {
+    var out = [];
+    rows.forEach(function(row) {
+        if (row.length === 2) {
+            out.push({ id: row[0], span: 3 });
+            out.push({ id: row[1], span: 3 });
+        } else {
+            out.push({ id: row[0], span: 6 });
+        }
+    });
+    return out;
+}
+
+// Sets each PINNED box's rendered data-span and moves it to the end of
+// #homeGrid in row order — .tool-col uses sparse (non-dense) auto-flow, so
+// DOM order is what actually determines visual position; this is what
+// makes reordering deterministic instead of leaving it to grid
+// auto-placement to guess where gaps should be backfilled. Everything in
+// the catalog that ISN'T pinned gets .bl-unpinned (display:none) instead —
+// it stays in the DOM (so its icon can still be cloned for the add
+// popover, and so re-adding it doesn't need to rebuild anything) but takes
+// up no grid space.
+function _blApplyLayout(rows) {
+    rows = rows || _blGetRows();
+    var grid = document.getElementById('homeGrid');
+    if (!grid) return;
+    var spanById = {};
+    _blPack(rows).forEach(function(entry) {
+        spanById[entry.id] = entry.span; // the real stored span — _narrowStack only overrides what's rendered, never this
+        var box = _blBoxEl(entry.id);
+        if (!box) return;
+        box.classList.remove('bl-unpinned');
+        box.setAttribute('data-span', _narrowStack ? 6 : entry.span);
+        grid.appendChild(box);
+    });
+    BL_CATALOG_IDS.forEach(function(id) {
+        if (spanById[id]) return;
+        var box = _blBoxEl(id);
+        if (box) box.classList.add('bl-unpinned');
+    });
+    _blRenderAddRow();
+    // quickactions2's placeholder count depends on its column count (see
+    // _qaGridShape), which just changed along with its span above.
+    var qa2Grid = document.getElementById(QA_INSTANCES.quickactions2.gridId);
+    if (qa2Grid) _qaSyncAddTiles('quickactions2', qa2Grid);
+}
+
+function _blCaptureRects(ids) {
+    var map = {};
+    ids.forEach(function(id) {
+        var el = _blBoxEl(id);
+        if (el) map[id] = el.getBoundingClientRect();
+    });
+    return map;
+}
+
+// FLIP: after a reflow, snap each box back to where it visually was via an
+// inverse transform, then transition that transform away to '' — reads as
+// the boxes smoothly sliding/resizing into their new positions.
+function _blPlayFlip(ids, oldRects) {
+    ids.forEach(function(id) {
+        var el = _blBoxEl(id);
+        var old = oldRects[id];
+        if (!el || !old) return;
+        var neu = el.getBoundingClientRect();
+        var dx = old.left - neu.left;
+        var dy = old.top - neu.top;
+        if (!dx && !dy) return;
+        el.style.transition = 'none';
+        el.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+        void el.offsetWidth; // force reflow so the transition below actually starts from here
+        el.style.transition = 'transform 0.12s cubic-bezier(0.4, 0, 0.2, 1)';
+        el.style.transform = '';
+    });
+}
+
+// Rows with `id` removed — a row that loses its only id disappears, a pair
+// row that loses one id becomes a single (i.e. its old partner
+// automatically reverts to full-line, no separate "un-dock" step needed).
+function _blRemoveFromRows(rows, id) {
+    var out = [];
+    rows.forEach(function(row) {
+        var filtered = row.filter(function(x) { return x !== id; });
+        if (filtered.length) out.push(filtered);
+    });
+    return out;
+}
+
+// Finds whichever .bl-draggable box is actually under the cursor, using
+// real hit-testing (elementFromPoint) rather than nearest-by-distance —
+// exact and unambiguous, unlike Euclidean "nearest box", which could
+// waver between two adjacent boxes right at their shared border. The
+// dragged box itself is pointer-events:none while held (see
+// .bl-dragging-source) so this always sees through it to whatever's
+// actually underneath.
+function _blTargetFromPoint(x, y) {
+    var el = document.elementFromPoint(x, y);
+    while (el && el !== document.body) {
+        if (el.classList && el.classList.contains('bl-draggable')) return el;
+        el = el.parentElement;
+    }
+    return null;
+}
+
+// Resolves exactly one of 4 zones relative to a specific target widget —
+// no dead zone at all, every point over a widget resolves to something:
+//  - top ~25% of its height -> insert a new full-line row above it
+//  - bottom ~25% -> insert a new full-line row below it
+//  - remaining middle, left half -> dock to its left (if it has room)
+//  - remaining middle, right half -> dock to its right (if it has room)
+// Narrow stack (see _narrowStack) drops the dock-left/right half entirely —
+// every widget renders full width there regardless of its real stored
+// pairing, so a left/right split would be previewing a dock that couldn't
+// possibly show as anything but full-width anyway. Every point just
+// resolves to before/after off a plain 50/50 vertical split instead.
+function _blZoneForTarget(targetBox, baseline, clientX, clientY) {
+    var targetId = targetBox.getAttribute('data-block-id');
+    var rowIdx = -1, canDock = false;
+    baseline.forEach(function(row, i) {
+        if (row.indexOf(targetId) !== -1) { rowIdx = i; canDock = row.length === 1; }
+    });
+    if (rowIdx === -1) return null;
+
+    var r = targetBox.getBoundingClientRect();
+
+    if (_narrowStack) {
+        var narrowMid = (r.top + r.bottom) / 2;
+        return { targetId: targetId, rowIdx: rowIdx, mode: clientY < narrowMid ? 'before' : 'after' };
+    }
+
+    var topBand = r.top + r.height * 0.25;
+    var bottomBand = r.bottom - r.height * 0.25;
+
+    if (clientY < topBand) return { targetId: targetId, rowIdx: rowIdx, mode: 'before' };
+    if (clientY > bottomBand) return { targetId: targetId, rowIdx: rowIdx, mode: 'after' };
+
+    // Already paired (no room to dock) — the vertical middle just falls
+    // to whichever half, above/below, is closer.
+    if (!canDock) {
+        var rowCenter = (r.top + r.bottom) / 2;
+        return { targetId: targetId, rowIdx: rowIdx, mode: clientY < rowCenter ? 'before' : 'after' };
+    }
+
+    var midX = r.left + r.width / 2;
+    return { targetId: targetId, rowIdx: rowIdx, mode: clientX < midX ? 'dock-left' : 'dock-right' };
+}
+
+function _blRowsFromCandidate(baseline, draggedId, candidate) {
+    if (!candidate) return null;
+    var rows = baseline.map(function(row) { return row.slice(); });
+    if (candidate.mode === 'dock-left' || candidate.mode === 'dock-right') {
+        rows[candidate.rowIdx] = candidate.mode === 'dock-left' ? [draggedId, candidate.targetId] : [candidate.targetId, draggedId];
+    } else {
+        rows.splice(candidate.mode === 'after' ? candidate.rowIdx + 1 : candidate.rowIdx, 0, [draggedId]);
+    }
+    return rows;
+}
+
+var _blIndicatorEl = null;
+function _blIndicator() {
+    if (!_blIndicatorEl) {
+        _blIndicatorEl = document.createElement('div');
+        _blIndicatorEl.className = 'bl-drop-indicator';
+        document.body.appendChild(_blIndicatorEl);
+    }
+    return _blIndicatorEl;
+}
+
+// The rect of whichever row sits at baseline[rowIdx] — either id in a
+// paired row shares the same top/bottom by construction, so the first is
+// enough. Returns null past either end (no neighboring row there).
+function _blRowRect(baseline, rowIdx) {
+    if (rowIdx < 0 || rowIdx >= baseline.length) return null;
+    var el = _blBoxEl(baseline[rowIdx][0]);
+    return el ? el.getBoundingClientRect() : null;
+}
+
+// Pure visual feedback with zero effect on layout — nothing else on the
+// board moves until you actually drop, so there's no moving-target fight
+// to land a dock. Two looks depending on what the candidate means:
+//  - dock-left/right: a dashed box over the half of the target widget
+//    that the dragged box would actually occupy (the target itself will
+//    shrink into the other half) — reads as "your box goes here" rather
+//    than an abstract line. Transitions left/width so switching sides on
+//    the same widget slides rather than snaps.
+//  - before/after: a plain dashed line, 90% of the full grid width and
+//    centered, regardless of the target's own current width — the
+//    inserted row is always full-line even when the target you're
+//    hovering is itself only half-width. Positioned at the true midpoint
+//    between the two rows on either side of the gap (falling back to a
+//    fixed offset past the target's own edge only at the very top/bottom
+//    of the board, where there's no neighboring row) — hovering the
+//    bottom band of row N and the top band of row N+1 refer to the exact
+//    same gap, so both now land the line in the exact same spot instead
+//    of two slightly different heights depending on which row's edge you
+//    happened to be closer to.
+function _blShowIndicator(targetBox, candidate, baseline) {
+    var mode = candidate.mode;
+    var el = _blIndicator();
+    var r = targetBox.getBoundingClientRect();
+    el.style.display = 'block';
+
+    if (mode === 'dock-left' || mode === 'dock-right') {
+        el.className = 'bl-drop-indicator bl-drop-indicator-box';
+        var halfWidth = (r.width - 10) / 2; // same half-width math .bl-pack uses (10 = grid gap)
+        el.style.top    = r.top + 'px';
+        el.style.height = r.height + 'px';
+        el.style.width  = halfWidth + 'px';
+        el.style.left   = (mode === 'dock-left' ? r.left : r.right - halfWidth) + 'px';
+    } else {
+        el.className = 'bl-drop-indicator bl-drop-indicator-line';
+        var gridRect = document.getElementById('homeGrid').getBoundingClientRect();
+        var lineWidth = gridRect.width * 0.95;
+        var THICK = 6;
+        el.style.left   = (gridRect.left + gridRect.width * 0.025) + 'px';
+        el.style.width  = lineWidth + 'px';
+        el.style.height = THICK + 'px';
+
+        var neighborRect = mode === 'before'
+            ? _blRowRect(baseline, candidate.rowIdx - 1)
+            : _blRowRect(baseline, candidate.rowIdx + 1);
+        var centerY;
+        if (mode === 'before') {
+            centerY = neighborRect ? (neighborRect.bottom + r.top) / 2 : r.top - 6;
+        } else {
+            centerY = neighborRect ? (r.bottom + neighborRect.top) / 2 : r.bottom + 6;
+        }
+        el.style.top = (centerY - THICK / 2) + 'px'; // centered on the computed gap midpoint
+    }
+}
+
+function _blHideIndicator() {
+    if (_blIndicatorEl) _blIndicatorEl.style.display = 'none';
+}
+
+// Strips id attributes from a subtree — the ghost is a deep clone of the
+// real box (buttons, selects, inputs and all, so it looks identical while
+// floating), and cloneNode duplicates every id in it verbatim, which
+// would otherwise leave two elements answering to the same id in the DOM.
+function _blStripIds(el) {
+    if (el.id) el.removeAttribute('id');
+    Array.prototype.forEach.call(el.querySelectorAll('[id]'), function(child) {
+        child.removeAttribute('id');
+    });
+}
+
+function _blStartDrag(id, startX, startY) {
+    var box = _blBoxEl(id);
+    if (!box) return;
+
+    var rect = box.getBoundingClientRect();
+
+    // The real box stays exactly where it is — dimmed in place, inert —
+    // for the entire drag. Nothing about the grid reflows until the actual
+    // drop; a separate floating clone is what follows the cursor. Moving
+    // the real box (or re-packing the other 4 around its absence) is what
+    // made everything slide around mid-drag before.
+    box.classList.add('bl-dragging-source');
+
+    var ghost = box.cloneNode(true);
+    _blStripIds(ghost);
+    ghost.classList.remove('bl-dragging-source');
+    ghost.classList.add('bl-drag-ghost');
+    ghost.style.width  = rect.width + 'px';
+    ghost.style.height = rect.height + 'px';
+    // Narrow stack (see _narrowStack): every widget is full width there, so
+    // the ghost is locked to the same left edge it already sits at instead
+    // of centering under the cursor — dragging only ever moves it up/down,
+    // matching there being nothing to dock left/right into anyway.
+    ghost.style.left = (_narrowStack ? rect.left : (startX - rect.width / 2)) + 'px';
+    ghost.style.top  = (startY - rect.height / 2) + 'px';
+    document.body.appendChild(ghost);
+
+    var originalRows = _blGetRows();
+    _blDrag = {
+        id: id,
+        sourceBox: box,
+        ghost: ghost,
+        heldWidth: rect.width,
+        heldHeight: rect.height,
+        lockedLeft: rect.left,
+        originalRows: originalRows,
+        baseline: _blRemoveFromRows(originalRows, id),
+        candidate: null // {targetId, rowIdx, mode} | null
+    };
+    document.body.classList.add('bl-drag-active');
+    document.addEventListener('mousemove', _blOnDragMove);
+    document.addEventListener('mouseup', _blOnDragEnd);
+}
+
+function _blOnDragMove(e) {
+    if (!_blDrag) return;
+    _blDrag.ghost.style.left = (_narrowStack ? _blDrag.lockedLeft : (e.clientX - _blDrag.heldWidth / 2)) + 'px';
+    _blDrag.ghost.style.top  = (e.clientY - _blDrag.heldHeight / 2) + 'px';
+
+    // The source box is still sitting in its real grid slot (just dimmed
+    // and pointer-events:none), so hit-testing naturally sees through it —
+    // no explicit self-exclusion needed.
+    var targetBox = _blTargetFromPoint(e.clientX, e.clientY);
+    var candidate = targetBox ? _blZoneForTarget(targetBox, _blDrag.baseline, e.clientX, e.clientY) : null;
+
+    // The source box's own row is never removed from the board (it's just
+    // dimmed in place), so the gap on either side of it isn't real empty
+    // space — hovering the widgets immediately above/below it can resolve
+    // to "insert right here", which just reconstructs the exact original
+    // arrangement. That's not a meaningful placement, and having it show
+    // up as its own indicator (redundant with just... not moving it) was
+    // confusing, so it's suppressed the same as any other dead zone.
+    if (candidate && JSON.stringify(_blRowsFromCandidate(_blDrag.baseline, _blDrag.id, candidate)) === JSON.stringify(_blDrag.originalRows)) {
+        candidate = null;
+    }
+
+    _blDrag.candidate = candidate;
+
+    if (candidate) _blShowIndicator(targetBox, candidate, _blDrag.baseline);
+    else _blHideIndicator();
+}
+
+function _blOnDragEnd() {
+    if (!_blDrag) return;
+    document.removeEventListener('mousemove', _blOnDragMove);
+    document.removeEventListener('mouseup', _blOnDragEnd);
+
+    var finalRows = _blRowsFromCandidate(_blDrag.baseline, _blDrag.id, _blDrag.candidate) || _blGetRows();
+    var droppedId = _blDrag.id;
+
+    // The other 4 boxes haven't moved all drag long, so their current
+    // rects are the correct FLIP starting point — they slide into their
+    // new spots. The dropped box itself doesn't: sliding it in from the
+    // ghost's floating position read as sliding weirdly, so it instead
+    // gets a quick scale-bounce "landing" animation (see .bl-drop-land).
+    var otherIds = _blPinnedIds().filter(function(x) { return x !== droppedId; });
+    var oldRects = _blCaptureRects(otherIds);
+
+    _blDrag.sourceBox.classList.remove('bl-dragging-source');
+    _blDrag.ghost.remove();
+    _blHideIndicator();
+
+    _blSaveRows(finalRows);
+    _blApplyLayout(finalRows);
+    _blPlayFlip(otherIds, oldRects);
+
+    var droppedBox = _blBoxEl(droppedId);
+    if (droppedBox) {
+        droppedBox.classList.remove('bl-drop-land');
+        void droppedBox.offsetWidth; // force reflow so a rapid re-drop of the same box replays the animation
+        droppedBox.classList.add('bl-drop-land');
+        droppedBox.addEventListener('animationend', function handler() {
+            droppedBox.classList.remove('bl-drop-land');
+            droppedBox.removeEventListener('animationend', handler);
+        });
+    }
+
+    document.body.classList.remove('bl-drag-active');
+    _blDrag = null;
+}
+
+// ── FAVORITE SLOT (top group) ────────────────────────────────────────────────
+// #sec-favorite is a fixed half-width slot up in the top group holding a
+// sliding stack of up to FAV_MAX BL_CATALOG widgets, one per page,
+// physically relocating each real .tool-body the same way Compact/Classic
+// already share one (see _applyLayoutMode) rather than cloning anything.
+// Defaults to a single Ease Copy page, which otherwise has no Compact home
+// of its own. Starring a widget elsewhere pushes a new page onto the end of
+// the stack and jumps to it; starring past FAV_MAX evicts the oldest page
+// back to Bottom Layout to make room. Each page's own X does the same
+// eviction manually — returns that widget to Bottom Layout as a new
+// full-line row (see _blAddWidget) rather than leaving the user to re-add
+// it. _favApplyLayout is the single place that reconciles _favGet()'s id
+// list against the actual DOM (which pages exist, where each one's body
+// currently lives) — re-run after every layout-mode switch and after the
+// favorite list itself changes.
+var FAV_KEY = 'lineup-favorite-widgets';
+var FAV_MAX = 3;
+var _favActiveIndex = 0;
+
+function _favGet() {
+    var raw;
+    try { raw = localStorage.getItem(FAV_KEY); } catch(e) {}
+    if (raw === null) return ['ease']; // key never written -> first-run default
+    var ids;
+    try { ids = JSON.parse(raw); } catch(e) {}
+    if (!Array.isArray(ids)) return [];
+    var out = [];
+    ids.forEach(function(id) {
+        if (BL_CATALOG_IDS.indexOf(id) !== -1 && out.indexOf(id) === -1) out.push(id);
+    });
+    return out.slice(0, FAV_MAX);
+}
+
+function _favSave(ids) {
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(ids)); } catch(e) {}
+}
+
+function _favSlotEl()  { return document.getElementById('sec-favorite'); }
+function _favTrackEl() { return document.getElementById('favPagesTrack'); }
+function _favDotsEl()  { return document.getElementById('favDots'); }
+
+function _favBuildPage(id) {
+    var page = document.createElement('div');
+    page.className = 'fav-page';
+    page.setAttribute('data-fav-id', id);
+
+    // A cloned copy of the widget's own collapse icon (mask-safe — see
+    // _qaCloneCatalogTile) so this page can show it during board-editing,
+    // same as every other Bottom Layout widget — the original stays behind
+    // in the widget's home box, which .tool-body physically leaves.
+    var homeBox = _blBoxEl(id);
+    var iconSrc = homeBox && homeBox.querySelector('.qa-collapse-icon');
+    if (iconSrc) page.appendChild(_qaCloneCatalogTile(iconSrc));
+
+    var badge = document.createElement('button');
+    badge.type = 'button';
+    badge.className = 'bl-widget-remove';
+    badge.title = 'Remove from favorites';
+    badge.innerHTML = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4.8" y1="4.8" x2="9.2" y2="9.2"/><line x1="9.2" y1="4.8" x2="4.8" y2="9.2"/></svg>';
+    badge.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+    badge.addEventListener('click', function(e) {
+        e.stopPropagation();
+        _favRemoveId(id);
+    });
+    page.appendChild(badge);
+    return page;
+}
+
+function _favRenderDots(count) {
+    var dots = _favDotsEl();
+    if (!dots) return;
+    dots.innerHTML = '';
+    dots.classList.toggle('fav-dots-hidden', count <= 1);
+    for (var i = 0; i < count; i++) {
+        var dot = document.createElement('button');
+        dot.type = 'button';
+        dot.className = 'fav-dot' + (i === _favActiveIndex ? ' active' : '');
+        dot.title = 'Page ' + (i + 1);
+        (function(idx) {
+            dot.addEventListener('click', function() { _favGoToPage(idx); });
+        })(i);
+        dots.appendChild(dot);
+    }
+}
+
+function _favUpdateTrackPosition() {
+    var track = _favTrackEl();
+    if (track) track.style.transform = 'translateX(-' + (_favActiveIndex * 100) + '%)';
+}
+
+function _favGoToPage(index) {
+    var count = _favGet().length;
+    if (!count) return;
+    _favActiveIndex = Math.max(0, Math.min(index, count - 1));
+    _favUpdateTrackPosition();
+    var dots = _favDotsEl();
+    if (dots) {
+        Array.prototype.forEach.call(dots.children, function(dot, i) {
+            dot.classList.toggle('active', i === _favActiveIndex);
+        });
+    }
+}
+
+// Reconciles _favGet()'s id list against the DOM: drops pages for ids no
+// longer favorited (sending their real content home first), builds/
+// relocates pages for every currently-favorited id, and re-syncs the dots,
+// track position, and Bottom Layout's pinned state to match.
+function _favApplyLayout() {
+    var favBox = _favSlotEl();
+    var track = _favTrackEl();
+    if (!favBox || !track) return;
+    var ids = _favGet();
+
+    Array.prototype.slice.call(track.querySelectorAll('.fav-page')).forEach(function(page) {
+        var pid = page.getAttribute('data-fav-id');
+        if (ids.indexOf(pid) === -1) {
+            var body = page.querySelector('.tool-body');
+            var home = _blBoxEl(pid);
+            if (body && home) home.appendChild(body);
+            page.remove();
+        }
+    });
+
+    ids.forEach(function(id) {
+        var page = track.querySelector('.fav-page[data-fav-id="' + id + '"]');
+        if (!page) page = _favBuildPage(id);
+        var homeBox = _blBoxEl(id);
+        var body = homeBox && homeBox.querySelector('.tool-body');
+        if (body && body.parentElement !== page) page.appendChild(body);
+        track.appendChild(page); // (re-)appends in id order, so DOM order always matches
+    });
+
+    favBox.classList.toggle('fav-empty', ids.length === 0);
+    _favActiveIndex = ids.length ? Math.max(0, Math.min(_favActiveIndex, ids.length - 1)) : 0;
+    _favRenderDots(ids.length);
+    _favUpdateTrackPosition();
+
+    // Can't be favorited AND pinned in Bottom Layout at the same time —
+    // its real content just moved up here.
+    var rows = _blGetRows();
+    var pinnedIds = _blPinnedIds();
+    var needsSave = false;
+    ids.forEach(function(id) {
+        if (pinnedIds.indexOf(id) !== -1) {
+            rows = _blRemoveFromRows(rows, id);
+            needsSave = true;
+        }
+    });
+    if (needsSave) _blSaveRows(rows);
+    _blApplyLayout();
+}
+
+function _favPlayLand() {
+    var track = _favTrackEl();
+    var page = track && track.children[_favActiveIndex];
+    if (!page) return;
+    page.classList.remove('bl-drop-land');
+    void page.offsetWidth; // force reflow so back-to-back adds each replay the animation
+    page.classList.add('bl-drop-land');
+    page.addEventListener('animationend', function handler() {
+        page.classList.remove('bl-drop-land');
+        page.removeEventListener('animationend', handler);
+    });
+}
+
+// Pushes a new favorite onto the end of the stack and jumps to it. Past
+// FAV_MAX, the oldest page is evicted first — sent back to Bottom Layout as
+// a new full-line row (see _blAddWidget), same as manual removal below.
+function _favAdd(id) {
+    if (BL_CATALOG_IDS.indexOf(id) === -1) return;
+    var ids = _favGet();
+    if (ids.indexOf(id) !== -1) return;
+    var evicted = null;
+    if (ids.length >= FAV_MAX) evicted = ids.shift();
+    ids.push(id);
+    _favSave(ids);
+    _favActiveIndex = ids.length - 1;
+    _favApplyLayout();
+    if (evicted) _blAddWidget(evicted);
+    _favPlayLand();
+}
+
+// A page's own X — un-favorites just that one and returns it to Bottom
+// Layout as a new full-line row instead of leaving it unpinned/delisted.
+function _favRemoveId(id) {
+    var ids = _favGet().filter(function(x) { return x !== id; });
+    _favSave(ids);
+    _favActiveIndex = ids.length ? Math.min(_favActiveIndex, ids.length - 1) : 0;
+    _favApplyLayout();
+    _blAddWidget(id);
+}
+
+// Wires up EVERY catalog id, not just currently-pinned ones — a box that's
+// unpinned (hidden) right now still needs to be drag-ready the moment
+// it's added back in, and this only ever runs once, at page load.
+function _blInitControls() {
+    BL_CATALOG_IDS.forEach(function(id) {
+        var box = _blBoxEl(id);
+        if (!box) return;
+        box.classList.add('bl-draggable');
+        // Every other widget collapses to icon-only (inert) while editing,
+        // so the whole box can safely be the drag surface. Quick Actions
+        // bars stay fully interactive instead (you need to click their
+        // tiles/add-tile/remove-badges), so for those specifically a drag
+        // can only start from the dedicated .bl-drag-handle — otherwise
+        // every click anywhere on the widget picked it up instead of
+        // reaching whatever was actually clicked.
+        var isQa = box.classList.contains('tool-box-quick-actions');
+        box.addEventListener('mousedown', function(e) {
+            if (!_editMode || e.button !== 0) return;
+            if (isQa && !e.target.closest('.bl-drag-handle')) return;
+            e.preventDefault();
+            _blStartDrag(id, e.clientX, e.clientY);
+        });
+    });
+    _blInitRemoveBadges();
+    _blInitFavBadges();
+}
+
+// ── Bottom Layout add/remove — same X-badge / empty "+" tile pattern as
+// Quick Actions, scaled up to whole widgets instead of icon tiles. ────────────
+
+// One badge per catalog box, injected once at load (harmless on a
+// currently-unpinned/hidden box — it just sits inert until that widget is
+// pinned and board-editing is on).
+function _blInitRemoveBadges() {
+    BL_CATALOG_IDS.forEach(function(id) {
+        var box = _blBoxEl(id);
+        if (!box || box.querySelector('.bl-widget-remove')) return;
+        var badge = document.createElement('button');
+        badge.type = 'button';
+        badge.className = 'bl-widget-remove';
+        badge.title = 'Remove this widget';
+        badge.innerHTML = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4.8" y1="4.8" x2="9.2" y2="9.2"/><line x1="9.2" y1="4.8" x2="4.8" y2="9.2"/></svg>';
+        // Stops the box's own mousedown (drag-start) listener from firing —
+        // without this, tapping the badge would also pick the box up.
+        badge.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+        badge.addEventListener('click', function(e) {
+            e.stopPropagation();
+            _blRemoveWidget(id);
+        });
+        box.appendChild(badge);
+    });
+}
+
+// Star badge, opposite corner from the remove-X — clicking it pushes that
+// widget onto the Favorite slot's stack (see _favAdd), same one-badge-per-
+// box injected-once pattern as the remove badges above.
+function _blInitFavBadges() {
+    BL_CATALOG_IDS.forEach(function(id) {
+        var box = _blBoxEl(id);
+        if (!box || box.querySelector('.bl-widget-fav')) return;
+        var badge = document.createElement('button');
+        badge.type = 'button';
+        badge.className = 'bl-widget-fav';
+        badge.title = 'Add to favorites';
+        badge.innerHTML = '<svg viewBox="0 0 14 14" fill="currentColor"><polygon points="7,1.3 8.7,4.9 12.6,5.4 9.8,8 10.5,11.9 7,10 3.5,11.9 4.2,8 1.4,5.4 5.3,4.9"/></svg>';
+        badge.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+        badge.addEventListener('click', function(e) {
+            e.stopPropagation();
+            _favAdd(id);
+        });
+        box.appendChild(badge);
+    });
+}
+
+// Unpins a widget and FLIPs the remaining pinned ones into their newly
+// packed positions — mirrors the drag-drop settle, just triggered by a
+// click instead of a drop.
+function _blRemoveWidget(id) {
+    var beforeIds = _blPinnedIds().filter(function(x) { return x !== id; });
+    var oldRects = _blCaptureRects(beforeIds);
+
+    _blSaveRows(_blRemoveFromRows(_blGetRows(), id));
+    _blApplyLayout();
+    _blPlayFlip(beforeIds, oldRects);
+}
+
+// Pins a widget as its own new full-line row at the end, FLIPping the
+// already-pinned ones aside and giving the new box the same "landing"
+// bounce a drag-drop gets (see .bl-drop-land).
+function _blAddWidget(id) {
+    var beforeIds = _blPinnedIds();
+    var oldRects = _blCaptureRects(beforeIds);
+
+    var rows = _blGetRows();
+    rows.push([id]);
+    _blSaveRows(rows);
+    _blCloseAddPopover();
+
+    _blApplyLayout(rows);
+    _blPlayFlip(beforeIds, oldRects);
+
+    var newBox = _blBoxEl(id);
+    if (newBox) {
+        newBox.classList.remove('bl-drop-land');
+        void newBox.offsetWidth; // force reflow so back-to-back adds each replay the animation
+        newBox.classList.add('bl-drop-land');
+        newBox.addEventListener('animationend', function handler() {
+            newBox.classList.remove('bl-drop-land');
+            newBox.removeEventListener('animationend', handler);
+        });
+    }
+}
+
+// The dashed "+" affordance — a single full-width row appended after every
+// pinned widget, shown only while editing and only when there's actually
+// something left to add. Reused (not rebuilt) across renders, just
+// inserted/removed from the grid as needed.
+var _blAddRowEl = null;
+
+function _blRenderAddRow() {
+    var grid = document.getElementById('homeGrid');
+    if (!grid) return;
+    if (!_blAddRowEl) {
+        _blAddRowEl = document.createElement('button');
+        _blAddRowEl.type = 'button';
+        _blAddRowEl.className = 'tool-box bl-add-row';
+        _blAddRowEl.title = 'Add a widget';
+        _blAddRowEl.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/></svg>';
+        _blAddRowEl.setAttribute('data-span', '6');
+        _blAddRowEl.setAttribute('data-rowspan', '1');
+        _blAddRowEl.addEventListener('mousedown', function(e) { e.stopPropagation(); }); // never a drag source
+        _blAddRowEl.addEventListener('click', function() { _blOpenAddPopover(_blAddRowEl); });
+    }
+    var show = _editMode && _blAvailableIds().length > 0;
+    if (!show) {
+        if (_blAddRowEl.parentElement) _blAddRowEl.parentElement.removeChild(_blAddRowEl);
+        return;
+    }
+    grid.appendChild(_blAddRowEl); // _blApplyLayout has already placed every pinned box before this runs, so this always lands last
+}
+
+// ── Add-widget popover — same search + scrollable grid pattern as Quick
+// Actions' own (.qa-add-popover etc., reused directly for a consistent
+// look), but listing whole BL_CATALOG entries instead of Tools-tab tiles.
+// Kept as separate state/DOM from Quick Actions' popover since the two
+// list entirely different kinds of things.
+
+var _blPopover      = null;
+var _blPopoverInput = null;
+var _blPopoverGrid  = null;
+
+function _blBuildPopover() {
+    var el = document.createElement('div');
+    el.className = 'qa-add-popover';
+
+    var searchRow = document.createElement('div');
+    searchRow.className = 'qa-add-search-row';
+    var icon = document.createElement('span');
+    icon.className = 'qa-add-search-icon';
+    icon.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="6"/><line x1="13" y1="13" x2="17.5" y2="17.5"/></svg>';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'qa-add-search-input';
+    input.placeholder = 'Search…';
+    input.addEventListener('input', _blFilterPopover);
+    searchRow.appendChild(icon);
+    searchRow.appendChild(input);
+    el.appendChild(searchRow);
+
+    var grid = document.createElement('div');
+    grid.className = 'qa-add-grid';
+    el.appendChild(grid);
+
+    document.body.appendChild(el);
+    _blPopoverInput = input;
+    _blPopoverGrid  = grid;
+    return el;
+}
+
+function _blFilterPopover() {
+    var q = _blPopoverInput.value.trim().toLowerCase();
+    var tiles = _blPopoverGrid.querySelectorAll('.qa-add-tile');
+    for (var i = 0; i < tiles.length; i++) {
+        var title = (tiles[i].getAttribute('title') || '').toLowerCase();
+        tiles[i].classList.toggle('qa-add-tile-hidden', q.length > 0 && title.indexOf(q) === -1);
+    }
+}
+
+// Each tile shows the catalog entry's own icon — cloned straight off its
+// box's .qa-collapse-icon, so it can never drift out of sync with what the
+// widget actually looks like once pinned — plus its label.
+function _blBuildCatalogTile(entry) {
+    var tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'qa-add-tile';
+    tile.title = entry.label;
+
+    var box = _blBoxEl(entry.id);
+    var iconSrc = box && box.querySelector('.qa-collapse-icon');
+    if (iconSrc) {
+        // Reuses _qaCloneCatalogTile purely for its mask-id-renaming logic
+        // (generic, not actually Quick-Actions-specific) — Spell Check's
+        // icon has an internal <mask id>, and cloning it verbatim would
+        // collide with the original still sitting in the DOM.
+        var icon = _qaCloneCatalogTile(iconSrc);
+        icon.classList.remove('qa-collapse-icon');
+        icon.removeAttribute('style'); // drop its collapsed-state opacity:0/centering, irrelevant here
+        tile.appendChild(icon);
+    }
+    var lbl = document.createElement('span');
+    lbl.textContent = entry.label;
+    tile.appendChild(lbl);
+
+    tile.onclick = function() { _blAddWidget(entry.id); };
+    return tile;
+}
+
+function _blOpenAddPopover(anchorEl) {
+    if (!_blPopover) _blPopover = _blBuildPopover();
+
+    _blPopoverGrid.innerHTML = '';
+    var pinned = _blPinnedIds();
+    BL_CATALOG.forEach(function(entry) {
+        if (pinned.indexOf(entry.id) !== -1) return;
+        _blPopoverGrid.appendChild(_blBuildCatalogTile(entry));
+    });
+    if (_blPopoverInput) _blPopoverInput.value = '';
+
+    var rect = anchorEl.getBoundingClientRect();
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var pw = 220, ph = 230;
+    _blPopover.style.left = Math.max(4, Math.min(rect.left, vw - pw - 4)) + 'px';
+    _blPopover.style.top  = Math.min(rect.bottom + 4, vh - ph - 4) + 'px';
+    _blPopover.classList.add('visible');
+    if (_blPopoverInput) _blPopoverInput.focus();
+
+    setTimeout(function() {
+        document.addEventListener('mousedown', _blPopoverOutside);
+        document.addEventListener('keydown', _blPopoverKey);
+    }, 0);
+}
+
+function _blCloseAddPopover() {
+    if (_blPopover) _blPopover.classList.remove('visible');
+    document.removeEventListener('mousedown', _blPopoverOutside);
+    document.removeEventListener('keydown', _blPopoverKey);
+}
+
+function _blPopoverOutside(e) {
+    if (_blPopover && !_blPopover.contains(e.target) && !e.target.closest('.bl-add-row')) {
+        _blCloseAddPopover();
+    }
+}
+
+function _blPopoverKey(e) {
+    if (e.key === 'Escape') _blCloseAddPopover();
 }
 
 // ── ORGANIZE ──────────────────────────────────────────────────────────────────
@@ -2351,21 +4166,24 @@ function doRecalcRig() { run('lineup_recalcRig()'); }
 
 // ── Panel scale ───────────────────────────────────────────────────────────────
 
-var SCALE_FACTORS = [0.85, 1.0, 1.15];
+// Recentered ~20% smaller than the original [0.85, 1.0, 1.15] — the whole
+// Home tab (Compact and Classic both live inside #panel-content) reads
+// noticeably large at native size, and zoom scales it as one unit without
+// disturbing any internal flex/grid proportions.
+var SCALE_FACTORS = [0.65, 0.8, 0.95];
 
 function applyScale(val) {
     var f = SCALE_FACTORS[Math.max(0, Math.min(2, val))];
     var content = document.getElementById('panel-content');
-    if (content) content.style.zoom = (f === 1.0) ? '' : String(f);
+    if (content) content.style.zoom = String(f);
 
     // Overlay modals (Settings, Help, Batch Comp Settings, Batch Rename, Comp
     // Export) live outside #panel-content, so the zoom above doesn't reach them.
     // Scale each one with a CSS transform instead — transform doesn't affect
     // layout/spacing, just visually scales the box from its own center (the
     // overlay already centers it via flexbox).
-    var scaleStr = (f === 1.0) ? '' : 'scale(' + f + ')';
     document.querySelectorAll('.settings-modal').forEach(function (m) {
-        m.style.transform = scaleStr;
+        m.style.transform = 'scale(' + f + ')';
     });
 }
 
@@ -2378,53 +4196,39 @@ function restoreScale() {
     applyScale(val);
 }
 
-// ── Settings persistence ──────────────────────────────────────────────────────
+// ── Classic section order persistence ────────────────────────────────────────
+// Ordering is independent per layout (Compact's own order lives in
+// lineup-home-layout) — only hidden-state is shared between the two, via
+// _commitHiddenBlockIds/_getHiddenBlockIds above.
 
-function saveSettings() {
-    var panel    = document.querySelector('.panel');
-    var sections = panel.querySelectorAll('.section');
-    var order      = [];
-    var visibility = {};
-    sections.forEach(function(s) {
-        if (!s.id) return;
-        order.push(s.id);
-        visibility[s.id] = !s.classList.contains('sec-hidden');
+function saveClassicOrder() {
+    var sections = document.querySelectorAll('#homeClassic .section[data-block-id]');
+    var order = [];
+    sections.forEach(function(s) { order.push(s.getAttribute('data-block-id')); });
+    try { localStorage.setItem('lineup-classic-order', JSON.stringify(order)); } catch(e) {}
+}
+
+function restoreClassicOrder() {
+    var order;
+    try { order = JSON.parse(localStorage.getItem('lineup-classic-order')); } catch(e) {}
+    if (!order || !Array.isArray(order) || !order.length) return;
+    var content = document.getElementById('homeClassic');
+    if (!content) return;
+    order.forEach(function(id) {
+        var el = document.getElementById('cls-' + id);
+        if (el) content.appendChild(el);
     });
-    try {
-        localStorage.setItem('lineup-order',      JSON.stringify(order));
-        localStorage.setItem('lineup-visibility', JSON.stringify(visibility));
-    } catch(e) {}
 }
 
-function restoreSettings() {
-    var order, visibility;
-    try {
-        order      = JSON.parse(localStorage.getItem('lineup-order'));
-        visibility = JSON.parse(localStorage.getItem('lineup-visibility'));
-    } catch(e) {}
+// ── Classic Sections list (Settings tab) ─────────────────────────────────────
+// Rebuilt fresh each time Classic becomes the active layout (or the Settings
+// tab is opened while it's active) — the original settings page's own
+// drag-to-reorder + toggle-to-hide list, just inline instead of a modal.
 
-    if (order && Array.isArray(order) && order.length > 0) {
-        var content = document.getElementById('panel-content');
-        order.forEach(function(id) {
-            var el = document.getElementById(id);
-            if (el && el.classList.contains('section')) content.appendChild(el);
-        });
-    }
-
-    if (visibility && typeof visibility === 'object') {
-        Object.keys(visibility).forEach(function(id) {
-            var el = document.getElementById(id);
-            if (el) el.classList.toggle('sec-hidden', !visibility[id]);
-        });
-    }
-}
-
-// ── Settings modal ────────────────────────────────────────────────────────────
-
-function openSettings() {
-    var list     = document.getElementById('settingsSectionList');
-    var panel    = document.querySelector('.panel');
-    var sections = panel.querySelectorAll('.section');
+function _renderClassicSettingsList() {
+    var list = document.getElementById('settingsSectionList');
+    if (!list) return;
+    var sections = document.querySelectorAll('#homeClassic .section[data-block-id]');
 
     list.innerHTML = '';
     sections.forEach(function(sec) {
@@ -2433,12 +4237,6 @@ function openSettings() {
     });
 
     initSettingsDrag();
-    document.getElementById('settingsOverlay').classList.remove('settings-hidden');
-}
-
-function closeSettings() {
-    document.getElementById('settingsOverlay').classList.add('settings-hidden');
-    saveSettings();
 }
 
 function openHelp() {
@@ -2490,9 +4288,17 @@ function buildSettingsRow(secEl) {
 
     if (!cb.checked) row.classList.add('row-disabled');
 
+    var blockId = secEl.getAttribute('data-block-id');
     cb.addEventListener('change', function() {
-        document.getElementById(secEl.id).classList.toggle('sec-hidden', !cb.checked);
         row.classList.toggle('row-disabled', !cb.checked);
+        // Hidden state is the one thing shared with Compact — route the
+        // toggle through the shared commit instead of just this row's own
+        // section, so Compact reflects it the moment you switch back.
+        var ids = _getHiddenBlockIds();
+        var idx = ids.indexOf(blockId);
+        if (!cb.checked && idx === -1) ids.push(blockId);
+        if (cb.checked && idx !== -1) ids.splice(idx, 1);
+        _commitHiddenBlockIds(ids);
     });
 
     row.appendChild(handle);
@@ -2505,11 +4311,12 @@ function buildSettingsRow(secEl) {
 function applySettingsOrder() {
     var list    = document.getElementById('settingsSectionList');
     var rows    = list.querySelectorAll('.settings-sec-row');
-    var content = document.getElementById('panel-content');
+    var content = document.getElementById('homeClassic');
     rows.forEach(function(row) {
         var sec = document.getElementById(row.dataset.secId);
         if (sec) content.appendChild(sec);
     });
+    saveClassicOrder();
 }
 
 function initSettingsDrag() {
@@ -3367,11 +5174,22 @@ function applyCompExport() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', function() {
-    restoreSettings();
+    restoreActiveTab();
+    _initAnchorRowUnit();
+    _initNarrowStack();
+    restoreClassicOrder();
+    restoreClassicCollapsed();
+    restoreLayoutMode();
+    _renderAllQuickActions();
+    _blInitControls();
+    _blApplyLayout();
+    restoreHighContrast();
+    initToolsSearch();
     restoreCollapsed();
     restoreScale();
     _bcsInit();
     _brnInit();
+    _easePreviewFetch();
 
     // Favorites: load persisted state, render bar, wire up right-click context menus
     _loadFavorites();

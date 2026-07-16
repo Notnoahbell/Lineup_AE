@@ -19,13 +19,66 @@
     --divider:     #0e0e0e;
 }
 
+/* ── High Contrast Mode (Settings tab toggle) ────────────────────────────── */
+/* Re-points the shared variables first (covers anything already using them),
+   then overrides the hardcoded colors in the bespoke tool grid specifically,
+   since most of its rules were written with literal hex values. */
+body.high-contrast {
+    --bg:          #000000;
+    --bg-panel:    #000000;
+    --bg-btn:      #000000;
+    --bg-btn-h:    #3a3a3a;
+    --bg-btn-act:  #4d9bff;
+    --bg-fill-btn: #000000;
+    --bg-fill-h:   #3a3a3a;
+    --border:      #909090;
+    --border-h:    #ffffff;
+    --text:        #ffffff;
+    --text-dim:    #e0e0e0;
+    --text-dimmer: #b0b0b0;
+    --accent:      #4d9bff;
+    --divider:     #909090;
+}
+body.high-contrast .tool-box {
+    background: #000000;
+    border-color: #909090;
+}
+body.high-contrast .tool-box-divider { background: #909090; }
+body.high-contrast .anchor-grid { background: #000000; }
+body.high-contrast .anchor-btn { color: #d0d0d0; }
+body.high-contrast .anchor-btn:hover { color: #ffffff; }
+body.high-contrast .icon-btn-wide,
+body.high-contrast .organize-btn { color: #e0e0e0; }
+body.high-contrast .organize-btn { border-color: #909090; }
+body.high-contrast .icon-btn-wide:hover { background: #3a3a3a; color: #ffffff; }
+body.high-contrast .btn-group,
+body.high-contrast .ease-subpanel-body,
+body.high-contrast .display-box,
+body.high-contrast select,
+body.high-contrast input[type="text"],
+body.high-contrast input[type="number"] {
+    background: #000000;
+    border-color: #909090;
+    color: #ffffff;
+}
+body.high-contrast .keyframe-toggle-diamond { border-color: #909090; }
+body.high-contrast .tab-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
+body.high-contrast .tab-btn.active { background: #163e73; border-color: #4d9bff; color: #ffffff; }
+body.high-contrast .tools-search-row { background: #000000; border: 1px solid #909090; }
+body.high-contrast .settings-tab-row { background: #000000; border-color: #909090; }
+body.high-contrast .tools-grid-btn { color: #e0e0e0; border-color: #909090; }
+body.high-contrast .tools-filter-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
+body.high-contrast .tools-filter-btn.active { background: #163e73; border-color: #4d9bff; color: #ffffff; }
+body.high-contrast .tools-grid-btn:hover { background: #3a3a3a; color: #ffffff; }
+
 html, body {
     background: var(--bg);
     color: var(--text);
     font-family: -apple-system, "Segoe UI", Arial, sans-serif;
     font-size: 11px;
     height: 100%;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 ::-webkit-scrollbar { display: none; }
@@ -33,6 +86,1493 @@ html, body {
 .panel {
     padding: 0;
     min-width: 220px;
+}
+
+/* ── Tab bar (Home / Tools / Settings) ────────────────────────────────────── */
+/* Styled like ordinary buttons rather than an underlined tab strip — only one
+   is ever "pressed" (active) at a time, and it swaps which panel is shown. */
+.tab-bar {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px 0;
+    width: 100%;
+    max-width: 570px;
+    margin: 0 auto;
+}
+.tab-btn {
+    flex: 1;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    background: #1e1e1e;
+    border: 1px solid #323232;
+    border-radius: 7px;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+}
+.tab-btn:hover  { background: #2a2a2a; border-color: #444444; color: #d0d0d0; }
+.tab-btn.active { background: #3c3c3c; border-color: #6a6a6a; color: #F9F9F4; }
+.tab-btn svg { width: 14px; height: 14px; flex-shrink: 0; pointer-events: none; }
+.tab-btn-icon svg { width: 16px; height: 16px; }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── Tools tab: full-width search bar, filter tags below it, small tiles ─── */
+.tools-search-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 10px 0;
+    padding: 12px 12px;
+    background: #1a1a1a;
+    border: none;
+    border-radius: 9px;
+}
+.tools-search-icon { width: 15px; height: 15px; color: var(--text-dim); flex-shrink: 0; }
+.tools-search-input {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 12px;
+    outline: none;
+    padding: 0;
+}
+.tools-search-input::placeholder { color: var(--text-dimmer); }
+
+.tools-filter-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: 8px 10px 0;
+}
+.tools-filter-btn {
+    padding: 5px 10px;
+    background: #1e1e1e;
+    border: 1px solid #323232;
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-size: 10px;
+    font-family: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+}
+.tools-filter-btn:hover  { background: #2a2a2a; border-color: #444444; color: #d0d0d0; }
+.tools-filter-btn.active { background: #3c3c3c; border-color: #6a6a6a; color: #F9F9F4; }
+
+.tools-body {
+    padding: 10px;
+}
+
+/* Column count adapts to the panel's width instead of the tiles shrinking
+   indefinitely: 2 across when narrow, stepping up to 3 then 4 as the panel
+   widens. Each tile is a 1fr grid cell, so within a given column count the
+   tiles themselves scale up to fill the extra width — capped at 4 across
+   even on a very wide panel, so tiles just keep growing past that point.
+   Cropped to the remaining viewport height and scrollable, so a long tool
+   list can't push the footer off-screen (the page itself can't scroll). */
+.tools-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    align-content: start;
+    max-height: calc(100vh - 220px);
+    min-height: 100px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+@media (min-width: 320px) {
+    .tools-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 420px) {
+    .tools-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.tools-grid::-webkit-scrollbar           { display: block; width: 5px; }
+.tools-grid::-webkit-scrollbar-track     { background: transparent; }
+.tools-grid::-webkit-scrollbar-thumb     { background: #2a2a2a; border-radius: 100px; }
+.tools-grid::-webkit-scrollbar-thumb:hover { background: #444; }
+
+.tools-grid-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    aspect-ratio: 1 / 1;
+    padding: 2px;
+    background: var(--bg-btn);
+    border: 1px solid #323232;
+    border-radius: 8px;
+    color: #a0a0a0;
+    cursor: pointer;
+    text-align: center;
+    overflow: hidden;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+}
+.tools-grid-btn:hover  { background: var(--bg-btn-h); border-color: var(--border-h); color: #F9F9F4; }
+.tools-grid-btn:active { background: var(--bg-btn-act); border-color: var(--accent); color: #fff; }
+.tools-grid-btn svg {
+    width: 24%;
+    height: 24%;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+.tools-grid-btn span {
+    font-size: 10px;
+    line-height: 1.1;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.tools-grid-btn-hidden { display: none; }
+
+/* ── Settings tab ─────────────────────────────────────────────────────────── */
+.settings-tab-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 10px;
+    padding: 10px;
+    background: #181818;
+    border: 1px solid #2c2c2c;
+    border-radius: 8px;
+}
+
+/* Compact/Classic — a 2-button segmented control, same neutral (not blue)
+   "selected" treatment as the top tab bar. */
+.layout-mode-group {
+    display: flex;
+    gap: 6px;
+}
+.layout-mode-btn {
+    height: 28px;
+    padding: 0 12px;
+    background: #232323;
+    border: 1px solid #333333;
+    border-radius: 6px;
+    color: #909090;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+}
+.layout-mode-btn:hover  { background: #2a2a2a; border-color: #444444; color: #d0d0d0; }
+.layout-mode-btn.active { background: #3c3c3c; border-color: #6a6a6a; color: #F9F9F4; }
+
+/* Classic's section list, inline in the Settings tab — only shown while
+   Layout above is set to Classic. */
+.classic-sections-block {
+    margin: 0 10px 10px;
+}
+
+/* ── Bespoke tool grid ────────────────────────────────────────────────────── */
+/* Fixed layout, no drag-to-reorder, no colored section headers — each tool
+   lives in its own plain box, arranged with flexbox so it reflows as the
+   panel is resized instead of scrolling off a fixed column. */
+
+.tool-grid {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px;
+    /* Still flexes/shrinks freely below this — it's only a ceiling. Without
+       it, a wide panel stretches every button/dropdown/icon in the 6-column
+       grid right along with it, since they're all 1fr/flex-based. Kept in
+       sync with .tab-bar and .edit-mode-bar-inner's own max-width, both of
+       which need to match this exactly to stay left-aligned with it. */
+    max-width: 570px;
+    margin: 0 auto;
+}
+
+/* Bento grid: a 6-column CSS Grid. Each tool-box's data-span (3 = half
+   width, 6 = full width) and data-rowspan (1 or 2 row units) place it via
+   auto-placement. Sparse (not dense) flow — Align/Distribute/Sizing/
+   AutoCrop/Sort's order and spans are now computed explicitly in JS
+   (_blApplyLayout/_blPack) so DOM order alone must always tile correctly;
+   dense would let the grid silently reorder things to backfill gaps,
+   which is exactly the unpredictable behavior that approach was replaced
+   to avoid. */
+.tool-col {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-auto-rows: auto;
+    grid-auto-flow: row;
+    gap: 10px;
+    width: 100%;
+}
+
+/* Anchor / Quick Actions / the blank Ease slot — a separate grid from the
+   reorderable bottom one below, wrapped in its own darker backdrop so the
+   two groups read as visually distinct at a glance. */
+.home-top-group {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-auto-rows: auto;
+    grid-auto-flow: row;
+    gap: 10px;
+    width: 100%;
+    background: #101010;
+    border: 1px solid #262626;
+    border-radius: 12px;
+    padding: 10px;
+    /* Half of Anchor's own rendered height in px — kept in sync by
+       _syncAnchorRowUnit in main.js. This fallback only matters for the
+       instant before that first runs. */
+    --home-anchor-unit: 100px;
+}
+
+/* ── Narrow stack ──────────────────────────────────────────────────────────
+   Below NARROW_STACK_THRESHOLD (330px — see _syncNarrowStack in main.js),
+   nothing sits side by side anymore. Bottom Layout's own widgets get this
+   via _blApplyLayout forcing data-span="6" on every pinned box (so all its
+   existing half-width CSS just stops matching); the top group isn't part
+   of that rows/pack system at all, so it's handled here directly — forcing
+   every child to span all 6 columns is enough on its own for the grid's
+   auto-placement to stack Anchor/Quick Actions/Favorite into their own
+   full-width rows, one after another, with no other change needed. */
+#homeToolGrid.narrow-stack .home-top-group .tool-box {
+    grid-column: span 6;
+}
+
+/* Quick Actions' box padding (the standard .tool-box 10px) eats into an
+   already-tight skinny row more than it's worth here — trimming it gives
+   the tiles more room instead. */
+#homeToolGrid.narrow-stack #sec-quick-actions {
+    padding: 4px;
+}
+
+/* Anchor point specifically keeps its square grid at roughly half width
+   even though its own box is now full width like everything else above —
+   the freed right half holds its mode dropdown/Ignore Masks/Null controls
+   instead of leaving them stacked below (which would just be dead space to
+   their right) or leaving that whole half empty. */
+#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] {
+    flex-direction: row;
+    align-items: stretch;
+}
+#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] .anchor-row {
+    width: 50%;
+    flex: 0 0 auto;
+}
+#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] > .tool-box-divider {
+    width: 1px;
+    height: auto;
+    align-self: stretch;
+    margin: 0 4px;
+}
+#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] .anchor-mode-line {
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+}
+/* .anchor-mode-stack's own flex:1 (see its base rule) now grows along the
+   column's main axis instead of the row's, filling whatever height the
+   square gave this side instead of leaving dead space above/below a
+   vertically-centered cluster — the actual "fill the square" part.
+   Centering its own two children (select + Ignore Masks) within that
+   taller area keeps them from just sitting stuck at the top of it. */
+#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] .anchor-mode-stack {
+    justify-content: center;
+}
+#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] .anchor-mode-line .vsep {
+    width: auto;
+    height: 1px;
+    align-self: stretch;
+    margin: 4px 0;
+}
+
+/* Favorited widgets: half-width by default (matching the Favorite slot's
+   actual half-width real estate the rest of the time), reverted back to
+   their full-line/one-line form here once narrow-stack forces the slot
+   itself full width — undoing each half-line-specific rule declared
+   alongside its normal Bottom Layout counterpart further down this file. */
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="align"] .ctrl-row,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .ctrl-row {
+    flex-wrap: wrap;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="align"] .ctrl-row > .lbl,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .ctrl-row > .lbl {
+    display: inline;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="align"] .btn-group-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .btn-group-wide {
+    display: flex;
+    gap: 4px;
+    height: auto;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="align"] .btn-group-wide .vsep,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .btn-group-wide .vsep {
+    display: block;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="align"] .icon-btn-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .icon-btn-wide {
+    height: 32px;
+    min-height: 0;
+    max-height: 32px;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="sizing"] .sec-title-lbl,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="autocrop"] .ac-title-compact-only,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="sort"] .sort-title-lbl {
+    display: inline;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="sizing"] #sizeMode,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="autocrop"] .ac-controls-start {
+    margin-left: 0;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="sizing"] .sec-controls-start,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="autocrop"] .ac-controls-start {
+    margin-left: auto;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-preview {
+    display: none;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="sizing"] .btn-group-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="autocrop"] .btn-group-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="spellcheck"] .btn-group-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="sort"] .btn-group-wide {
+    height: auto;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="sizing"] .icon-btn-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="autocrop"] .icon-btn-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="spellcheck"] .icon-btn-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="sort"] .icon-btn-wide {
+    height: 32px;
+    min-height: 0;
+    max-height: 32px;
+}
+
+/* Favorite slot — see _favApplyLayout in main.js. Reads as true empty
+   space (not an empty card) when nothing's favorited and you're not
+   editing, same as the old blank Ease Copy gap this replaced; only turns
+   into a visible dashed hint card while board-editing is on, so there's
+   something to click/discover. */
+/* min-height:0 overrides the generic .tool-box[data-rowspan="1"] floor
+   (matching half of Anchor's height) — with nothing favorited, the box
+   itself should collapse to nothing rather than reserving that space on
+   top of whatever height the row-track already ends up at from Anchor
+   sharing it. Needs the #sec-favorite id to actually win that override —
+   .tool-box[data-rowspan="1"] is declared later in this file at equal
+   class-level specificity, so source order alone would let it win instead. */
+.tool-box-favorite.fav-empty {
+    background: transparent;
+    border-color: transparent;
+    padding: 0;
+}
+#sec-favorite.fav-empty {
+    min-height: 0;
+}
+#homeToolGrid.board-editing .tool-box-favorite.fav-empty {
+    background: #181818;
+    border-color: #2c2c2c;
+    padding: 10px;
+}
+.fav-empty-hint {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: 1;
+    color: #666666;
+    font-size: 10px;
+    text-align: center;
+    line-height: 1.3;
+}
+.fav-empty-hint svg { width: 16px; height: 16px; }
+/* .fav-pages is an empty, otherwise-invisible flex:1 sibling whenever
+   there's nothing favorited — leaving it in flow would split the box's
+   height with .fav-empty-hint 50/50, centering the hint in only the top
+   half instead of the whole box. */
+.tool-box-favorite.fav-empty .fav-pages {
+    display: none;
+}
+#homeToolGrid.board-editing .tool-box-favorite.fav-empty .fav-empty-hint {
+    display: flex;
+}
+
+/* Sliding stack of favorited widgets — .fav-pages is the clipping
+   viewport, .fav-pages-track the flex row that actually slides (each
+   .fav-page is a full-viewport-width slot; translateX by -activeIndex *
+   100% brings the target page into view — see _favUpdateTrackPosition in
+   main.js), and .fav-dots the page indicator row underneath. */
+.fav-pages {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+}
+.fav-pages-track {
+    display: flex;
+    height: 100%;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.fav-page {
+    position: relative;
+    flex: 0 0 100%;
+    width: 100%;
+    min-width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+.fav-dots {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    padding-top: 6px;
+}
+.fav-dots-hidden {
+    display: none;
+}
+.fav-dot {
+    width: 6.5px;
+    height: 6.5px;
+    padding: 0;
+    background: #555555;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.1s linear, transform 0.1s linear;
+}
+.fav-dot:hover { background: #888888; }
+.fav-dot.active { background: #F9F9F4; }
+
+.tool-box[data-span="3"] { grid-column: span 3; }
+.tool-box[data-span="6"] { grid-column: span 6; }
+.tool-box[data-rowspan="2"] { grid-row: span 2; }
+
+.tool-box {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #181818;
+    border: 1px solid #2c2c2c;
+    border-radius: 10px;
+    padding: 10px;
+    transition: opacity 0.15s ease;
+}
+
+/* Wraps each tool's actual controls (everything except the hide/resize
+   handles) so that whole node can be physically relocated between a
+   Compact tool-box and a Classic section-body by _applyLayoutMode() in
+   main.js — one set of ids/onclicks, two possible chrome wrappers, no
+   duplicated markup. Flex settings mirror .tool-box's own so moving a
+   tool-body in or out of it is visually transparent. */
+.tool-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+}
+
+/* ── Classic layout (original collapsible sections) ──────────────────────── */
+/* Hidden unless Settings > Layout is set to Classic (see setLayoutMode in
+   main.js). Reuses the .section/.section-hdr/.section-body classes the
+   Shape Rigs section already relies on further down the page.
+   Explicit width/flex here (rather than leaving it to size off its
+   content) is what keeps the column itself spanning the full panel —
+   chevron flush against the right edge — even once the content below
+   is made deliberately compact and no longer wide enough on its own to
+   push the column out to full width. */
+.tool-col-classic {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    /* Scales the whole Classic layout as one unit rather than each fixed
+       size individually — zoom (not transform) so it actually affects
+       layout sizing, not just paint, matching how the existing manual
+       scale slider (applyScale() in main.js) already scales #panel-content
+       elsewhere in this app. Anchored from the top-left corner, which is
+       just how zoom naturally renders (no transform-origin needed).
+       360px is roughly the width Classic's original pixel values were
+       designed around, so (100vw - 20px) / 360px is ~1 there; the whole
+       ratio is scaled by 0.75 so everything reads about 25% smaller
+       across the board, and the min/max are scaled down to match so that
+       relationship holds at both ends — 0.6 is the floor that keeps it
+       from shrinking into illegibility on very narrow panels. */
+    zoom: clamp(0.6, calc(((100vw - 20px) / 360px) * 0.75), 1.05);
+}
+
+/* Compact and Classic share the exact same DOM nodes for each tool's actual
+   controls (see .tool-body in main.js's _applyLayoutMode) — everything
+   below only applies while that content is sitting inside #homeClassic, so
+   it reverts each module's look back to the original pre-bespoke styling
+   without touching Compact's bento appearance at all. The section itself
+   still spans the full column (a plain block-level .section, chevron
+   flush with the panel edge) — these rules only stop the *content* inside
+   it from stretching to match. */
+
+/* .tool-body's own base rule (shared with Compact) defaults to stretching
+   its children to fill its full width — that's what Compact's bento boxes
+   want, but it's also what was quietly forcing every "compact toolbar"
+   override below back out to full width regardless of their own width
+   rules, since align-items:stretch wins over width:auto on a flex child.
+   Opting out here is what actually lets those toolbars hug their own
+   content. The divider needs to explicitly opt back in since it has no
+   content of its own to size itself by otherwise. */
+#homeClassic .tool-body { align-items: flex-start; }
+#homeClassic .tool-box-divider { align-self: stretch; }
+
+/* Anchor: a small, fixed 3×3 grid instead of one that grows to fill
+   whatever width the column happens to have. */
+#homeClassic .anchor-grid {
+    grid-template-columns: repeat(3, 42px);
+    grid-template-rows: repeat(3, 42px);
+    gap: 5px;
+    width: auto;
+    aspect-ratio: auto;
+    background: #131313;
+    border: 1px solid #2c2c2c;
+    border-radius: 14px;
+    padding: 10px;
+    flex-shrink: 0;
+    overflow: hidden;
+    margin: 0;
+}
+#homeClassic .anchor-btn {
+    width: 42px;
+    height: 42px;
+    background: #202020;
+    color: #888888;
+}
+#homeClassic .anchor-btn:hover  { background: #2e2e2e; color: #F9F9F4; }
+#homeClassic .anchor-btn svg { width: 26px; height: 26px; }
+#homeClassic .anchor-mode-line { justify-content: flex-start; }
+
+/* Organize: one continuous toolbar of icon buttons, not a grid of
+   icon-plus-label tiles. */
+#homeClassic .organize-grid {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: auto;
+    flex: 0 0 auto;
+    background: var(--bg);
+    border: 1px solid #2c2c2c;
+    border-radius: 9px;
+    padding: 3px;
+    overflow: hidden;
+}
+#homeClassic .organize-btn {
+    flex-direction: row;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: #787878;
+}
+#homeClassic .organize-btn svg { width: 18px; height: 18px; }
+#homeClassic .organize-btn:hover  { background: #323232; color: #d0d0d0; }
+#homeClassic .organize-btn:active { background: var(--bg-btn-act); border-color: transparent; color: #fff; }
+/* Hidden in Compact — organize-grid is a grid of tiles there, and a 1px
+   divider would just occupy an awkward tile of its own; Classic's flex
+   toolbar (above) is the only place these make sense. */
+.tool-box-organize .btn-divider { display: none; }
+
+/* Align/Distribute/Sizing/AutoCrop: a compact toolbar that hugs its own
+   content width, left-aligned, instead of stretching edge to edge.
+   .btn-row-wide (the wrapper) needs to become a flex container too — as a
+   plain block, its width:auto means "fill available width" (normal block
+   layout), not "shrink to content"; only as a flex item does width:auto
+   default to sizing off content, which is what actually makes
+   .btn-group-wide stop at the width of its own last button. */
+#homeClassic .btn-row-wide {
+    display: flex;
+    width: auto;
+}
+#homeClassic .btn-group-wide {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: auto;
+    flex: 0 0 auto;
+    background: var(--bg);
+    border: 1px solid #2c2c2c;
+    border-radius: 9px;
+    padding: 3px;
+    overflow: hidden;
+}
+#homeClassic .btn-group-wide .vsep { display: block; }
+#homeClassic .icon-btn-wide {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    background: transparent;
+    color: #787878;
+}
+#homeClassic .icon-btn-wide svg { width: 18px; height: 18px; }
+#homeClassic .icon-btn-wide:hover  { background: #323232; color: #d0d0d0; }
+#homeClassic .icon-btn-wide:active { background: var(--bg-btn-act); color: #fff; }
+
+/* The colored icon in Align/Distribute/Sizing's own "…to" row only exists
+   because the bento boxes have no header of their own to carry it —
+   Classic's section header already shows the same icon, so the one here
+   is a plain duplicate. */
+#homeClassic .tool-body .sec-icon { display: none; }
+
+/* Hidden via Classic's Sections list (shared state — see
+   _applySharedHiddenState in main.js) — removed from the grid entirely. */
+.tool-box.home-hidden { display: none !important; }
+
+.tool-box-anchor {
+    align-items: stretch;
+}
+
+.anchor-mode-line {
+    justify-content: flex-start;
+}
+/* Mode dropdown and Ignore Masks stack vertically on the left (sharing
+   one column instead of competing for horizontal space), a divider, then
+   Null sits on its own at its natural size on the right. */
+.anchor-mode-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex: 1;
+    min-width: 0;
+}
+.anchor-mode-stack select {
+    height: 18px;
+    padding: 0 4px;
+}
+.anchor-mode-line .vsep {
+    align-self: stretch;
+    height: auto;
+}
+.anchor-mode-line .btn-anchor-null {
+    flex: 0 0 auto;
+    align-self: stretch;
+    height: auto;
+    min-width: 76px;
+    padding: 4px 16px;
+}
+
+.tool-box-nullcp {
+    align-items: center;
+}
+
+/* rowspan 1 = stacked beside Anchor (Quick Actions and the blank Ease
+   slot). Pin its height to half of Anchor's rather than letting
+   grid-auto-rows derive it from the block's own (usually shorter) content. */
+.tool-box[data-rowspan="1"] {
+    min-height: var(--home-anchor-unit);
+}
+
+/* Organize quick actions — 3x2 grid of icon-only tiles. */
+.organize-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(2, 1fr);
+    gap: 6px;
+    width: 100%;
+    flex: 1;
+}
+/* Full-width state: single row of 6 instead of 3x2. */
+.tool-box[data-block-id="organize"][data-span="6"] .organize-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-rows: repeat(1, 1fr);
+}
+
+.organize-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 6px 2px;
+    background: var(--bg-btn);
+    border: 1px solid #323232;
+    border-radius: 9px;
+    color: #a0a0a0;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+}
+.organize-btn:active { background: var(--bg-btn-act); border-color: var(--accent); color: #fff; }
+.organize-btn svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    pointer-events: none;
+    transition: color 0.05s linear, transform 0.05s linear;
+}
+/* Hover recolors only the icon (via --icon-hover) — the button chrome itself
+   stays put, so the color swap is the only hover feedback. */
+.organize-btn:hover svg {
+    color: var(--icon-hover, #F9F9F4);
+    transform: scale(1.1);
+}
+
+/* ── Quick Actions (Compact-only, customizable) ──────────────────────────── */
+/* Same 3-wide icon-grid look as Organize's old fixed grid, but every tile
+   is a clone of a Tools-tab entry (see _qaBuildTile in main.js) and the
+   set is user-editable. */
+.tool-box-quick-actions { position: relative; }
+
+.quick-actions-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: 1fr;
+    row-gap: 9px;
+    column-gap: 6px;
+    width: 100%;
+    flex: 1;
+    min-height: 96px;
+}
+
+/* Every place a Quick Actions bar goes 6-wide/one-row (quickactions2 docked
+   full-width, either bar under narrow-stack) shares this same shorter
+   floor instead of each keeping the 2-3-row min-height above — one row of
+   6 needs a lot less height, and matching it everywhere keeps tiles close
+   to square instead of tall rectangles, and both bars the same height as
+   each other whenever they're both showing this shape. */
+.tool-box[data-span="6"] .quick-actions-grid,
+#homeToolGrid.narrow-stack #sec-quick-actions .quick-actions-grid,
+#homeToolGrid.narrow-stack #sec-favorite .fav-page[data-fav-id="quickactions2"] .quick-actions-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    min-height: 40px;
+}
+/* Quick Actions 2 inside the Favorite slot matches whatever shape it'd have
+   if simply docked at that same width in Bottom Layout: the slot itself is
+   always half-width of the top group, so 3x2 (the base 3-wide grid above)
+   is the right shape normally — its 6-wide one-line form only makes sense
+   once narrow-stack forces the whole top group (and so the slot) full
+   width instead (see the rule above, which covers that case's shorter
+   height too). Floor for the 3x2 case specifically. */
+#sec-favorite .fav-page[data-fav-id="quickactions2"] .quick-actions-grid {
+    min-height: 64px;
+}
+
+.quick-actions-btn {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 6px 2px;
+    background: var(--bg-btn);
+    border: 1px solid #323232;
+    border-radius: 9px;
+    color: #a0a0a0;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+}
+.quick-actions-btn:hover  { background: var(--bg-btn-h); color: #F9F9F4; }
+.quick-actions-btn:active { background: var(--bg-btn-act); border-color: var(--accent); color: #fff; }
+.quick-actions-btn svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+/* Single-row (1x6) shape reads as one connected bar instead of a strip of
+   individually bordered/gapped tiles — same idea as .btn-group-wide
+   wrapping .icon-btn-wide elsewhere, just applied to the grid itself
+   rather than a separate wrapper (see .qa-grid-1x6 in main.js). The 3-wide
+   2-row shape is unaffected — its tiles stay separate squares as normal. */
+.qa-grid-1x6 {
+    gap: 3px;
+    background: var(--bg);
+    border: 1px solid #2c2c2c;
+    border-radius: 9px;
+    padding: 3px;
+}
+.qa-grid-1x6 .quick-actions-btn {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+}
+.qa-grid-1x6 .quick-actions-btn:active {
+    background: var(--bg-btn-act);
+}
+
+/* The little x-circle badge — only shown (and only clickable) while
+   editing; the button's own primary action is disabled at the same time
+   (see #homeToolGrid.board-editing .quick-actions-btn below) so an accidental tap
+   while rearranging can't fire the underlying AE command. */
+.quick-actions-remove {
+    display: none;
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 15px;
+    height: 15px;
+    color: #a0a0a0;
+    cursor: pointer;
+}
+.quick-actions-remove:hover { color: #e05555; }
+.quick-actions-remove svg { width: 100%; height: 100%; pointer-events: none; }
+
+/* Empty-slot placeholder — only rendered while editing (see
+   _renderQuickActions), always the last tile in the grid. */
+.quick-actions-add-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 1.5px dashed #444444;
+    border-radius: 9px;
+    color: #666666;
+    cursor: pointer;
+    transition: border-color 0.05s linear, color 0.05s linear;
+}
+.quick-actions-add-tile:hover { border-color: var(--accent); color: var(--accent); }
+.quick-actions-add-tile svg { width: 18px; height: 18px; pointer-events: none; }
+
+/* Entering/leaving edit mode fully rebuilds the grid (see
+   _renderQuickActions) — every tile gets this on that rebuild only, via
+   .qa-anim-mode-switch, so they don't all just pop in at full size
+   instantly. Adding/removing a single tile does NOT touch this class on
+   the others (see _qaAdd/_qaRemove), so existing tiles stay put. */
+@keyframes qa-tile-in {
+    from { opacity: 0; transform: scale(0.85); }
+    to   { opacity: 1; transform: scale(1); }
+}
+.qa-anim-mode-switch {
+    animation: qa-tile-in 0.16s ease;
+}
+
+/* A single newly-pinned tile (see _qaAdd) gets its own "falls into place"
+   animation instead — scales down fast from oversized, overshoots slightly
+   past its final size, then settles, rather than reusing the plain
+   mode-switch fade. */
+@keyframes qa-tile-bounce-in {
+    0%   { opacity: 0; transform: scale(1.2); }
+    35%  { opacity: 1; transform: scale(0.94); }
+    65%  { transform: scale(1.02); }
+    100% { transform: scale(1); }
+}
+.qa-anim-bounce-in {
+    animation: qa-tile-bounce-in 0.22s ease-out;
+}
+
+/* Pencil — the one entry point into the single unified edit mode — lives
+   in the footer next to Help (#quickActionsEditBtn, styled by the shared
+   .settings-btn rules) rather than on any widget itself. Both Quick
+   Actions bars and the Bottom Layout drag-reorder/add/remove (Align/
+   Distribute/Sizing/AutoCrop/Sort/Quick Actions 2/Spell Check) are all
+   live at once:
+     - Both Quick Actions bars (.tool-box-quick-actions — the original one
+       up top, plus the second one addable down here) show their editable
+       dashed tiles.
+     - Every OTHER Bottom Layout widget collapses to just its own icon,
+       enlarged and centered — the "dragging preview" look — but stays
+       mousedown-interactive (only its real content, now hidden, loses
+       pointer-events; the box itself doesn't) so picking one up still
+       works. Each box carries a dedicated, always-present .qa-collapse-icon
+       overlay (see index.html) rather than repurposing the in-flow
+       .sec-icon: a reused element would need position:static→absolute on
+       toggle (a discontinuous, non-interpolatable jump) and its opacity
+       would multiply against its own fading-out ancestor, so neither
+       could ever fade smoothly. The overlay instead sits permanently at
+       its final centered spot and only its own opacity/transform change.
+     - Anchor just dims in place, no icon-collapse — it isn't part of
+       either editable system, only along for the ride. The Favorite slot
+       (whatever's currently starred into it) stays fully interactive with
+       its own dashed outline instead of dimming, same idea as the Quick
+       Actions bars, since its only editable action is the remove-X. */
+#homeToolGrid.board-editing .tool-box:not(.tool-box-quick-actions):not(.bl-draggable):not(.bl-add-row):not(.tool-box-favorite) {
+    opacity: 0.35;
+    pointer-events: none;
+}
+#homeToolGrid.board-editing .bl-draggable,
+#homeToolGrid.board-editing .tool-box-favorite {
+    position: relative;
+    /* outline (not border) so it doesn't shift layout the way an actual
+       border would. Makes it unmistakable which boxes are currently
+       pick-up-able versus just dimmed along for the ride. */
+    outline: 2px dashed rgba(150, 150, 150, 0.6);
+    outline-offset: 2px;
+}
+#homeToolGrid.board-editing .bl-draggable {
+    cursor: grab;
+}
+#homeToolGrid.board-editing .bl-draggable:not(.tool-box-quick-actions) > *:not(.qa-collapse-icon):not(.bl-widget-remove):not(.bl-widget-fav) {
+    visibility: hidden;
+}
+#homeToolGrid.board-editing .bl-draggable:not(.tool-box-quick-actions) .qa-collapse-icon {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+/* Favorite pages collapse to their own icon the same way, via a cloned
+   copy each page carries (see _favBuildPage) — [data-fav-id] is what
+   identifies which widget a page holds, since a plain div has no
+   .tool-box-quick-actions class of its own to key off. Quick Actions 2
+   keeps the same exception as everywhere else: it stays interactive. */
+#homeToolGrid.board-editing .fav-page:not([data-fav-id="quickactions2"]) > *:not(.qa-collapse-icon):not(.bl-widget-remove) {
+    visibility: hidden;
+}
+#homeToolGrid.board-editing .fav-page:not([data-fav-id="quickactions2"]) .qa-collapse-icon {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+#homeToolGrid.board-editing .quick-actions-btn {
+    border-style: dashed;
+    border-color: #555555;
+    pointer-events: none;
+}
+
+/* Grab strip for Quick Actions bars specifically (see the isQa branch in
+   _blInitControls) — same dot-grip look as Classic's own reorder handles
+   (.settings-drag-handle/.bcs-drag-handle), so a whole-box mousedown
+   doesn't fight with actually clicking a tile. Hidden outside board-editing
+   since there's nothing to drag otherwise. */
+.bl-drag-handle {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 18px;
+    align-items: center;
+    justify-content: center;
+    color: #4a4a4a;
+    cursor: grab;
+    border-radius: 8px 0 0 8px;
+}
+.bl-drag-handle:hover { color: #787878; background: rgba(255,255,255,0.04); }
+.bl-drag-handle:active { cursor: grabbing; }
+.bl-drag-handle svg { width: 8px; height: 12px; pointer-events: none; }
+#homeToolGrid.board-editing .tool-box-quick-actions .bl-drag-handle {
+    display: flex;
+}
+/* Makes room so the handle doesn't sit on top of the first tile column —
+   the handle itself is 18px wide starting at the padding edge, so this
+   needs to clear that plus a small gap. Scoped to .bl-draggable (Quick
+   Actions 2, down in Bottom Layout) specifically — the original bar up top
+   (#sec-quick-actions) is fixed in place and never gets a drag handle, so
+   reserving space for one there would just be a dead gap.
+   Also clears the top-right corner for .bl-widget-remove (this widget's
+   own box-level X, unlike the original bar which has no box to remove) —
+   without it, a completely full grid's last tile sits directly under that
+   badge, and its own per-tile X (.quick-actions-remove) becomes unreachable
+   underneath it. */
+#homeToolGrid.board-editing .tool-box-quick-actions.bl-draggable .tool-body {
+    padding-left: 20px;
+    padding-top: 22px;
+}
+/* Same corner-clearance idea, but for when Quick Actions 2 is currently
+   favorited (see _favApplyLayout) — its .tool-body sits inside a bare
+   .fav-page there instead of its own padded .tool-box, and that page's own
+   .bl-widget-remove badge is positioned relative to the page itself (no
+   inherited 10px box padding to partially cover the gap), so it needs
+   more clearance than the non-favorited case above. There's no drag
+   handle to dodge here either, since that stays behind in the home box —
+   only the badge matters. */
+#homeToolGrid.board-editing .fav-page[data-fav-id="quickactions2"] .tool-body {
+    padding-top: 32px;
+}
+#homeToolGrid.board-editing .quick-actions-remove {
+    display: flex;
+    pointer-events: auto;
+}
+
+/* Bottom Layout add/remove — the same X-badge / empty "+" tile idea as
+   Quick Actions, scaled up to whole widgets (see _blInitRemoveBadges/
+   _blRenderAddRow in main.js). A catalog entry that isn't currently pinned
+   is just display:none (.bl-unpinned) rather than removed from the DOM —
+   it stays available to re-add, and its .qa-collapse-icon can still be
+   cloned for the add popover's tile even while hidden. */
+.bl-unpinned {
+    display: none;
+}
+.bl-widget-remove {
+    display: none;
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 26px;
+    height: 26px;
+    align-items: center;
+    justify-content: center;
+    background: #262626;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #a0a0a0;
+    cursor: pointer;
+    z-index: 2;
+}
+.bl-widget-remove:hover { color: #e05555; border-color: #555555; }
+.bl-widget-remove svg { width: 16px; height: 16px; pointer-events: none; }
+#homeToolGrid.board-editing .bl-widget-remove {
+    display: flex;
+}
+
+/* Star badge — opposite corner from the remove-X, sets that widget as the
+   Favorite slot's contents (see _favSet/_blInitFavBadges in main.js). */
+.bl-widget-fav {
+    display: none;
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 26px;
+    height: 26px;
+    align-items: center;
+    justify-content: center;
+    background: #262626;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #7a7a7a;
+    cursor: pointer;
+    z-index: 2;
+}
+.bl-widget-fav:hover { color: #f0c05a; border-color: #555555; }
+.bl-widget-fav svg { width: 14px; height: 14px; pointer-events: none; }
+#homeToolGrid.board-editing .bl-widget-fav {
+    display: flex;
+}
+/* Quick Actions bars occupy the whole left edge with .bl-drag-handle —
+   shift the star clear of it instead of overlapping. */
+.tool-box-quick-actions .bl-widget-fav {
+    left: 26px;
+}
+
+/* The dashed "+" row — always full-width, a fixed rowspan of 1 so it
+   reads as a compact affordance rather than another full-size widget. */
+.bl-add-row {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 1.5px dashed #444444;
+    border-radius: 10px;
+    color: #666666;
+    cursor: pointer;
+    padding: 14px;
+    transition: border-color 0.05s linear, color 0.05s linear;
+}
+.bl-add-row:hover { border-color: var(--accent); color: var(--accent); }
+.bl-add-row svg { width: 22px; height: 22px; pointer-events: none; }
+#homeToolGrid.board-editing .bl-add-row {
+    display: flex;
+}
+
+/* The floating .bl-drag-ghost clone (see _blStartDrag in main.js) is
+   appended to <body>, not #homeToolGrid, so it wouldn't otherwise inherit
+   the icon-collapse rule above — this repeats it unconditionally so the
+   drag preview always matches (icon-only, no buttons), which is the
+   entire point of dragging something that's already shown collapsed. */
+.bl-drag-ghost > *:not(.qa-collapse-icon) {
+    visibility: hidden;
+}
+.bl-drag-ghost .qa-collapse-icon {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+/* The real box's slot while it's held — stays put, dimmed, until the
+   actual drop (see _blStartDrag in main.js); a separate .bl-drag-ghost
+   clone is what actually follows the cursor. */
+.bl-dragging-source {
+    opacity: 0.3;
+    pointer-events: none;
+    transition: opacity 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* The dropped box's own "landing" animation (see _blOnDragEnd in
+   main.js) — starts noticeably larger, dips well below its final size,
+   then eases back up — no explicit overshoot keyframe past 100%, so the
+   ease-out curve alone brings it to rest without an actual bounce hump. */
+@keyframes bl-drop-land {
+    0%   { transform: scale(1.1); }
+    60%  { transform: scale(0.96); }
+    100% { transform: scale(1); }
+}
+.bl-drop-land {
+    animation: bl-drop-land 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* The floating clone that follows the cursor — fixed position (set
+   inline in JS), sized/positioned to match the real box it was cloned
+   from. */
+.bl-drag-ghost {
+    position: fixed;
+    cursor: grabbing;
+    z-index: 1000;
+    opacity: 0.78;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    pointer-events: none;
+    margin: 0;
+}
+
+/* Pure visual "drop here" feedback, fixed position (viewport coordinates,
+   matching getBoundingClientRect) with no layout participation at all,
+   unlike the old live-reflow placeholder. Sits behind the dragged ghost
+   (.bl-drag-ghost is z-index:1000) rather than on top of it. Two looks —
+   see _blShowIndicator in main.js for when each applies. */
+.bl-drop-indicator {
+    display: none;
+    position: fixed;
+    pointer-events: none;
+    z-index: 500;
+    /* Four 1px dashed background strips standing in for a border, shared
+       by both looks below — background (unlike border-image) still
+       respects border-radius, so rounded corners are unaffected. */
+    background-image:
+        linear-gradient(90deg, rgba(122, 170, 255, 0.7) 54%, transparent 0),
+        linear-gradient(90deg, rgba(122, 170, 255, 0.7) 54%, transparent 0),
+        linear-gradient(rgba(122, 170, 255, 0.7) 54%, transparent 0),
+        linear-gradient(rgba(122, 170, 255, 0.7) 54%, transparent 0);
+    background-position: top left, bottom left, top left, top right;
+    background-size: 22px 1px, 22px 1px, 1px 22px, 1px 22px;
+    background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+}
+.bl-drop-indicator-box {
+    background-color: rgba(122, 170, 255, 0.08);
+    border-radius: 8px;
+    /* Slides rather than snaps when flipping from dock-left to dock-right
+       (or landing on a differently-sized widget) instead of teleporting. */
+    transition: left 0.08s cubic-bezier(0.4, 0, 0.2, 1), width 0.08s cubic-bezier(0.4, 0, 0.2, 1),
+                top 0.08s cubic-bezier(0.4, 0, 0.2, 1), height 0.08s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.bl-drop-indicator-line {
+    background-color: rgba(122, 170, 255, 0.18);
+    border-radius: 3px;
+}
+
+/* Set on <body> for the duration of a drag (see _blStartDrag/_blOnDragEnd)
+   so text doesn't get selected while the cursor sweeps across the panel. */
+body.bl-drag-active {
+    cursor: grabbing;
+    user-select: none;
+}
+
+/* ── Quick Actions "add tool" popover — a mini Tools tab: search input +
+   scrollable grid of every not-yet-pinned tool. Same fade/scale-in
+   treatment as .grid-picker for visual consistency with the app's other
+   floating pickers. */
+.qa-add-popover {
+    position: fixed;
+    width: 220px;
+    max-height: 230px;
+    background: #1e1e1e;
+    border: 1px solid #333333;
+    border-radius: 8px;
+    padding: 8px;
+    z-index: 10000;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.65);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transform-origin: top left;
+    opacity: 0;
+    transform: scale(0.95);
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.qa-add-popover.visible {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+}
+.qa-add-search-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: #161616;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+.qa-add-search-icon {
+    display: flex;
+    width: 13px;
+    height: 13px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+}
+.qa-add-search-icon svg { width: 100%; height: 100%; }
+.qa-add-search-input {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 11px;
+    outline: none;
+    padding: 0;
+}
+.qa-add-search-input::placeholder { color: var(--text-dimmer); }
+.qa-add-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: min-content;
+    align-content: start;
+    gap: 5px;
+    /* flex:1 + min-height:0 is what actually lets this shrink to fit inside
+       the popover's max-height and scroll internally — without it, a flex
+       child defaults to its content's full natural height (all ~13 tiles),
+       which just overflows past the popover's boundary and renders on top
+       of whatever page content happens to sit below it, rather than being
+       clipped/scrolled the way overflow-y:auto here implies. */
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+.qa-add-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    aspect-ratio: 1 / 1;
+    padding: 4px;
+    background: var(--bg-btn);
+    border: 1px solid #323232;
+    border-radius: 7px;
+    color: #a0a0a0;
+    cursor: pointer;
+    text-align: center;
+    overflow: hidden;
+}
+.qa-add-tile:hover { background: var(--bg-btn-h); border-color: var(--border-h); color: #F9F9F4; }
+.qa-add-tile svg { width: 22%; height: 22%; pointer-events: none; }
+.qa-add-tile span {
+    font-size: 8.5px;
+    line-height: 1.1;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.qa-add-tile-hidden { display: none; }
+
+/* Divider between the merged Align/Distribute blocks inside one tool-box */
+.tool-box-divider {
+    height: 1px;
+    background: #2a2a2a;
+    margin: 2px 0;
+    flex-shrink: 0;
+}
+
+/* "Offset" toggle — a keyframe diamond instead of a checkbox, right-aligned
+   in the Align/Distribute control rows via margin-left:auto. */
+.keyframe-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    padding-left: 8px;
+    cursor: pointer;
+    user-select: none;
+    color: var(--text-dim);
+}
+/* Half-line (short) Align/Distribute: keep Offset inline on the same row
+   as the icon/label/select (position:absolute previously let it escape
+   the box's own padding and float outside it) — forcing the row to stay
+   on one line means Offset's existing margin-left:auto still pushes it
+   flush right there, same as the full-line form, just letting the
+   label/select shrink first instead of wrapping Offset onto its own line.
+   The Favorite slot is half-width itself whenever the top group isn't in
+   narrow-stack, so it gets this same half-line treatment by default —
+   reverted back to one-line under narrow-stack (see that section above). */
+.tool-box[data-block-id="align"][data-span="3"] .ctrl-row,
+.tool-box[data-block-id="distribute"][data-span="3"] .ctrl-row,
+#sec-favorite .tool-body[data-block-id="align"] .ctrl-row,
+#sec-favorite .tool-body[data-block-id="distribute"] .ctrl-row {
+    flex-wrap: nowrap;
+}
+.tool-box[data-block-id="align"][data-span="3"] .ctrl-row .sec-icon,
+.tool-box[data-block-id="distribute"][data-span="3"] .ctrl-row .sec-icon {
+    flex-shrink: 0;
+}
+/* "Align to"/"Distribute to" dropped entirely at half width — the select
+   itself already says what it's choosing between, so the label was the
+   easiest thing to give up for space. */
+.tool-box[data-block-id="align"][data-span="3"] .ctrl-row > .lbl,
+.tool-box[data-block-id="distribute"][data-span="3"] .ctrl-row > .lbl,
+#sec-favorite .tool-body[data-block-id="align"] .ctrl-row > .lbl,
+#sec-favorite .tool-body[data-block-id="distribute"] .ctrl-row > .lbl {
+    display: none;
+}
+/* A <select> won't shrink below its content's natural width by default
+   (min-width:auto on flex items) — that's what was actually pushing
+   Offset off the right edge; this lets it compress instead of overflowing. */
+.tool-box[data-block-id="align"][data-span="3"] #alignMode,
+.tool-box[data-block-id="distribute"][data-span="3"] #distMode,
+#sec-favorite .tool-body[data-block-id="align"] #alignMode,
+#sec-favorite .tool-body[data-block-id="distribute"] #distMode {
+    min-width: 0;
+}
+
+.keyframe-toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0; height: 0;
+    pointer-events: none;
+}
+.keyframe-toggle-diamond {
+    width: 11px;
+    height: 11px;
+    flex-shrink: 0;
+    background: transparent;
+    border: 1.6px solid #565656;
+    border-radius: 2px;
+    transform: rotate(45deg);
+    transition: background 0.1s linear, border-color 0.1s linear;
+}
+.keyframe-toggle:hover .keyframe-toggle-diamond { border-color: #8a8a8a; }
+.keyframe-toggle input:checked + .keyframe-toggle-diamond {
+    background: var(--toggle-accent, var(--accent));
+    border-color: var(--toggle-accent, var(--accent));
+}
+.keyframe-toggle-lbl { white-space: nowrap; }
+.keyframe-toggle input:checked ~ .keyframe-toggle-lbl { color: var(--text); }
+
+/* Full-width Align/Distribute bars — a single pill-shaped group (like the
+   original button groups) stretched edge-to-edge, buttons sharing the space
+   evenly instead of clustering at a fixed size. Height is capped so the row
+   stays a compact bar rather than a grid of oversized tiles. */
+.btn-row-wide {
+    width: 100%;
+}
+
+.btn-group-wide {
+    width: 100%;
+}
+
+.icon-btn-wide {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+    height: 32px;
+    max-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 0;
+    color: #808080;
+    transition: background 0.03s linear, color 0.03s linear;
+}
+.icon-btn-wide:hover  { background: #323232; color: #d0d0d0; }
+.icon-btn-wide:active { background: var(--bg-btn-act); color: #fff; }
+.icon-btn-wide svg    { width: 19px; height: 19px; pointer-events: none; transition: transform 0.03s linear; }
+.icon-btn-wide:hover svg { transform: scale(1.08); }
+
+/* Every block is 2 tiles tall regardless of width, but a button row only
+   needs its own content height — grow the wrapper and center within it so
+   it fills the tile instead of leaving dead space below. Organize/Ease
+   handle this via their own grid/row instead. */
+.tool-box[data-block-id="align"] .btn-row-wide,
+.tool-box[data-block-id="distribute"] .btn-row-wide,
+.tool-box[data-block-id="sizing"] .btn-row-wide,
+.tool-box[data-block-id="autocrop"] .btn-row-wide,
+.tool-box[data-block-id="spellcheck"] .btn-row-wide,
+.tool-box[data-block-id="sort"] .btn-row-wide,
+#sec-favorite .tool-body[data-block-id="align"] .btn-row-wide,
+#sec-favorite .tool-body[data-block-id="distribute"] .btn-row-wide,
+#sec-favorite .tool-body[data-block-id="sizing"] .btn-row-wide,
+#sec-favorite .tool-body[data-block-id="autocrop"] .btn-row-wide,
+#sec-favorite .tool-body[data-block-id="spellcheck"] .btn-row-wide,
+#sec-favorite .tool-body[data-block-id="sort"] .btn-row-wide {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+}
+
+/* Align/Distribute's 6 buttons reflow into a 3-wide grid at half width
+   instead of squashing into one row (Sizing/AutoCrop only have 3, so stay a
+   flex row at any width). vsep dividers don't fit the grid shape, so hide
+   those; auto-rows: 1fr fills whatever height the wrapper above gave it.
+   The Favorite slot is half-width by default too (see above), so it gets
+   the same reflow — reverted back to one row under narrow-stack. */
+.tool-box[data-block-id="align"][data-span="3"] .btn-group-wide,
+.tool-box[data-block-id="distribute"][data-span="3"] .btn-group-wide,
+#sec-favorite .tool-body[data-block-id="align"] .btn-group-wide,
+#sec-favorite .tool-body[data-block-id="distribute"] .btn-group-wide {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 1fr;
+    gap: 5px;
+    height: 100%;
+}
+.tool-box[data-block-id="align"][data-span="3"] .btn-group-wide .vsep,
+.tool-box[data-block-id="distribute"][data-span="3"] .btn-group-wide .vsep,
+#sec-favorite .tool-body[data-block-id="align"] .btn-group-wide .vsep,
+#sec-favorite .tool-body[data-block-id="distribute"] .btn-group-wide .vsep {
+    display: none;
+}
+.tool-box[data-block-id="align"][data-span="3"] .icon-btn-wide,
+.tool-box[data-block-id="distribute"][data-span="3"] .icon-btn-wide,
+#sec-favorite .tool-body[data-block-id="align"] .icon-btn-wide,
+#sec-favorite .tool-body[data-block-id="distribute"] .icon-btn-wide {
+    height: 100%;
+    min-height: 38px; /* ~20% taller than the full-width row's fixed 32px, so the 3x2 grid gets more vertical breathing room */
+    max-height: none;
+}
+
+/* Sizing/AutoCrop only have 3 buttons, so they stay a single flex row at
+   any width (no grid reflow needed like Align/Distribute above) — but
+   their buttons were still capped at the full-width row's fixed 32px even
+   at half width, leaving dead space below them since .btn-row-wide already
+   flexes to fill the tile's height. Letting them fill that height too.
+   .btn-group-wide itself needs the explicit height first, though — it's
+   also just a centered (not stretched) flex item of .btn-row-wide (see
+   .btn-group's own align-items:center), so without this its height stays
+   intrinsic/content-sized and percentage heights on the buttons inside it
+   have nothing definite to resolve against (they'd just no-op). */
+.tool-box[data-block-id="sizing"][data-span="3"] .btn-group-wide,
+.tool-box[data-block-id="autocrop"][data-span="3"] .btn-group-wide,
+.tool-box[data-block-id="spellcheck"][data-span="3"] .btn-group-wide,
+.tool-box[data-block-id="sort"][data-span="3"] .btn-group-wide,
+#sec-favorite .tool-body[data-block-id="sizing"] .btn-group-wide,
+#sec-favorite .tool-body[data-block-id="autocrop"] .btn-group-wide,
+#sec-favorite .tool-body[data-block-id="spellcheck"] .btn-group-wide,
+#sec-favorite .tool-body[data-block-id="sort"] .btn-group-wide {
+    height: 100%;
+}
+.tool-box[data-block-id="autocrop"][data-span="3"] .icon-btn-wide,
+.tool-box[data-block-id="spellcheck"][data-span="3"] .icon-btn-wide,
+#sec-favorite .tool-body[data-block-id="autocrop"] .icon-btn-wide,
+#sec-favorite .tool-body[data-block-id="spellcheck"] .icon-btn-wide {
+    height: 100%;
+    max-height: none;
+}
+/* Sizing/Sort specifically get a touch more floor height than that on top —
+   with only one row of buttons (no 3x2 reflow like Align/Distribute), their
+   half-width form was noticeably thinner than its row-mates; same ~20%-
+   over-the-full-width-32px value Align/Distribute's own half-width bump
+   already uses. */
+.tool-box[data-block-id="sizing"][data-span="3"] .icon-btn-wide,
+.tool-box[data-block-id="sort"][data-span="3"] .icon-btn-wide,
+#sec-favorite .tool-body[data-block-id="sizing"] .icon-btn-wide,
+#sec-favorite .tool-body[data-block-id="sort"] .icon-btn-wide {
+    height: 100%;
+    min-height: 38px;
+    max-height: none;
 }
 
 /* ── Section ──────────────────────────────────────────────────────────────── */
@@ -63,6 +1603,23 @@ html, body {
 .sec-icon {
     width: 14px; height: 14px;
     flex-shrink: 0;
+}
+
+/* Always rendered (never display:none) so it can fade/scale in smoothly
+   instead of popping — see #homeToolGrid.board-editing .qa-collapse-icon
+   (both the Anchor-adjacent bl-draggable rule and the ghost's own copy of
+   it), the only places this ever becomes visible, and the comment above
+   it for why. */
+.qa-collapse-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 28px;
+    height: 28px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(0.6);
+    transition: opacity 0.16s ease, transform 0.16s ease;
 }
 
 .beta-tag {
@@ -110,6 +1667,61 @@ html, body {
 .lbl {
     color: var(--text-dim);
     white-space: nowrap;
+}
+
+/* Sizing/Auto Crop: their checkbox/textbox controls now share a row with
+   the header (see index.html) rather than sitting on their own row below
+   the buttons. When the box is dragged to its half-line (short) width,
+   there isn't room for both the title text and the controls, so the
+   title drops and just the icon remains. The Favorite slot is half-width
+   by default too (see the top of this file), so it gets the same
+   treatment — reverted back to the full-line form under narrow-stack. */
+#sec-sizing[data-span="3"] .sec-title-lbl,
+#sec-autocrop[data-span="3"] .ac-title-compact-only,
+#sec-favorite .tool-body[data-block-id="sizing"] .sec-title-lbl,
+#sec-favorite .tool-body[data-block-id="autocrop"] .ac-title-compact-only {
+    display: none;
+}
+
+/* "Sort Layers based on" only fits alongside the Property/Axis selects at
+   full width — half width (docked half) drops it and keeps just the icon.
+   Same half-line-by-default exception as Sizing/Auto Crop above applies to
+   the Favorite slot. */
+.tool-box[data-block-id="sort"][data-span="3"] .sort-title-lbl,
+#sec-favorite .tool-body[data-block-id="sort"] .sort-title-lbl {
+    display: none;
+}
+
+/* With the title gone in the half-line form, left-packed content leaves
+   an awkward gap trailing off to the right — pull the controls over to
+   hug the right edge instead, while the icon itself stays put at the
+   top-left (margin-left:auto on the first control after it, rather than
+   justify-content on the whole row, is what keeps the icon from moving
+   too). */
+#sec-sizing[data-span="3"] #sizeMode,
+#sec-autocrop[data-span="3"] .ac-controls-start,
+#sec-favorite .tool-body[data-block-id="sizing"] #sizeMode,
+#sec-favorite .tool-body[data-block-id="autocrop"] .ac-controls-start {
+    margin-left: auto;
+}
+
+/* At full width there's room for the title/select to stay put on the left
+   while Crop/Move (Sizing) and Pad/Expand (Auto Crop) push to the right
+   edge instead of clustering immediately after the select with a lot of
+   empty row left over — same idea as Align/Distribute's Offset toggle.
+   The Favorite slot only renders this full-line form under narrow-stack
+   (see that section above), not by default. */
+#sec-sizing[data-span="6"] .sec-controls-start,
+#sec-autocrop[data-span="6"] .ac-controls-start {
+    margin-left: auto;
+}
+
+/* Auto Crop's title only lives inline with its controls in Compact —
+   Classic already shows "Auto Crop" as its own collapsible section
+   header, so this copy (relocated along with the rest of its tool-body)
+   would otherwise duplicate it. */
+#homeClassic .ac-title-compact-only {
+    display: none;
 }
 
 select {
@@ -312,118 +1924,35 @@ input[type="checkbox"]:checked::after {
 .btn.wide { min-width: 70px; }
 .btn.fill { width: 100%; }
 
-/* ── Layer Sort ──────────────────────────────────────────────────────────── */
-
-.sort-controls {
-    display: flex;
-    gap: 8px;
-    align-items: stretch;
-    width: 100%;
-}
-
-.sort-right {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    flex: 1;
-}
-
-.sort-btn {
-    color: #c8a832;
-    border-color: #3e3210;
-    min-width: 84px;
-    height: auto;
-    align-self: stretch;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    border-radius: 9px;
-}
-.sort-btn:hover  { background: #2c2508; border-color: #e8c140; color: #f0d060; }
-.sort-btn:active { background: #3d3008; border-color: #e8c140; color: #f0d060; }
-
-
-.sort-toggle {
-    position: relative;
-    display: flex;
-    align-items: center;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-.sort-toggle input {
-    position: absolute;
-    opacity: 0;
-    width: 0; height: 0;
-    pointer-events: none;
-}
-.sort-toggle-track {
-    width: 50px; height: 26px;
-    background: rgba(232,193,64,0.06);
-    border: 1px solid #5a4818;
-    border-radius: 13px;
-    position: relative;
-    flex-shrink: 0;
-}
-.sort-toggle-thumb {
-    position: absolute;
-    top: 3px; left: 4px;
-    width: 18px; height: 18px;
-    background: #e8ddb8;
-    border-radius: 50%;
+/* Anchor mode-line's Null button — icon + label inline, sized to its own
+   content rather than .cp-btn's width:100% (this row isn't a full column). */
+.btn-anchor-null {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s;
+    gap: 4px;
+    white-space: nowrap;
 }
-.sort-toggle-thumb svg {
-    width: 12px; height: 12px;
-    color: #1a1a1a;
-    pointer-events: none;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.sort-toggle input:checked + .sort-toggle-track .sort-toggle-thumb { transform: translateX(24px); background: #e8c140; }
-.sort-toggle input:checked + .sort-toggle-track .sort-toggle-thumb svg { transform: rotate(180deg); }
+.btn-anchor-null svg { flex-shrink: 0; }
 
-/* ── Sort property segmented control ─────────────────────────────────────── */
+/* ── Layer Sort ───────────────────────────────────────────────────────────────
+   Redesigned to reuse the same vocabulary as every other Bottom Layout
+   widget instead of its own one-off button/toggle/layout: plain <select>s
+   for Property/Axis, and two direct-action .icon-btn-wide buttons (Sort
+   Ascending / Sort Descending, same .btn-row-wide/.btn-group-wide pattern
+   as Align/Distribute/Sizing/AutoCrop/Spell Check) instead of a separate
+   direction toggle plus a single "Sort" button — each button just sorts in
+   that direction immediately. The widget's own icon keeps its yellow
+   accent — only the interactive controls moved to the shared neutral+
+   accent language. */
 
-.sort-prop-seg {
-    position: relative;
-    display: flex;
-    background: var(--bg);
-    border: 1px solid #2c2c2c;
-    border-radius: 9px;
-    padding: 3px;
-    flex-shrink: 0;
-}
-.seg-slider {
-    position: absolute;
-    top: 3px; left: 3px;
-    width: calc((100% - 6px) / 3);
-    height: calc(100% - 6px);
-    background: #323232;
-    border-radius: 6px;
-    transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
-    pointer-events: none;
-}
-.seg-btn {
-    position: relative;
-    z-index: 1;
-    flex: 1;
-    display: flex;
-    align-items: center;
+/* Sort's box is always 2 tiles tall regardless of width — its rows only
+   need their own content height by default, leaving dead space below at
+   the bottom of the taller tile. Centering them within the extra height
+   avoids that clustering at the top. */
+.tool-box[data-block-id="sort"] .tool-body {
     justify-content: center;
-    width: 30px; height: 24px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    color: #484848;
-    padding: 0;
-    transition: color 0.1s;
 }
-.seg-btn:hover  { color: #686868; }
-.seg-btn.active { color: #a8a8a8; }
-.seg-btn svg    { width: 14px; height: 14px; pointer-events: none; }
 
 /* ── Two-option (Stretch/Crop) segmented control ─────────────────────────── */
 
@@ -486,7 +2015,83 @@ input[type="checkbox"]:checked::after {
     letter-spacing: 0.03em;
 }
 
-/* ── Ease subpanels ───────────────────────────────────────────────────────── */
+/* Hidden everywhere by default (including Classic, which never triggers the
+   hover rule that reveals it) — only #sec-ease-quick's :hover rule below
+   shows it, swapping out the text in place. */
+.ease-display-trash-icon { display: none; }
+
+/* ── Ease preview (live curve + speed graph) ─────────────────────────────────
+   Hidden by default; shown only when Ease Copy is docked half width in
+   Bottom Layout. The Favorite slot is half-width by default too, so it
+   shows the preview there as well — hidden again under narrow-stack, once
+   the slot is actually full width (see that section above). Built/
+   populated by _easePreviewRender in main.js. */
+.ease-preview { display: none; }
+.tool-box[data-block-id="ease"][data-span="3"] .ease-preview,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-preview {
+    display: block;
+    position: relative;
+    width: 100%;
+    height: 64px;
+    background: #131313;
+    border: 1px solid #2c2c2c;
+    border-radius: 6px;
+    overflow: hidden;
+}
+.ease-preview-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.ease-preview-zero-line {
+    stroke: #383838;
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+.ease-preview-value-path {
+    fill: none;
+    stroke: #7aaaff;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+.ease-preview-speed-pos,
+.ease-preview-speed-neg {
+    stroke: none;
+}
+.ease-preview-speed-pos { fill: rgba(122, 170, 255, 0.28); }
+.ease-preview-speed-neg { fill: rgba(224, 85, 85, 0.32); }
+.ease-preview-points circle {
+    fill: #101010;
+    stroke: #7aaaff;
+    stroke-width: 1.4;
+    vector-effect: non-scaling-stroke;
+}
+.ease-preview-empty {
+    display: none;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    color: #555555;
+    font-size: 10px;
+}
+.ease-preview.is-empty .ease-preview-empty { display: flex; }
+.ease-preview.is-empty svg { display: none; }
+
+/* ── Ease subpanel ────────────────────────────────────────────────────────── */
+/* Base rules here match the original two-panel layout (Copy: button +
+   display + trash in one bordered row; Paste: its button alone in a
+   second) — that's what Classic gets unmodified, since #sec-ease-quick
+   (Compact's own tool-box id) isn't an ancestor once this content is
+   relocated into #homeClassic. Compact instead flattens the two labeled
+   .ease-subpanel wrappers via display:contents (dropping their own
+   box/label) so the two .ease-subpanel-bodies become direct rows of one
+   shared bordered panel that stretches to fill the tool-box's height. */
+.tool-box-ease {
+    gap: 10px;
+}
 
 .ease-panels-row {
     display: flex;
@@ -514,10 +2119,59 @@ input[type="checkbox"]:checked::after {
     border: 1px solid #2c2c2c;
     border-radius: 6px;
     padding: 5px 6px;
+    overflow: hidden;
 }
 .ease-subpanel-display {
     text-align: center;
     min-width: 52px;
+}
+
+/* Compact lays Copy, Paste, and the display "screen" out in a single
+   inline row in that order — cutting across both original .ease-subpanel
+   groups (Copy's subpanel holds the screen; Paste's holds just Paste).
+   Both wrapper levels flatten via display:contents so all 3 real elements
+   become direct flex children, then `order` places each regardless of
+   which subpanel it's nested in. No card background/border anymore —
+   these sit directly on the tool-body like every other block's controls.
+   The old separate trash button is hidden here; the screen itself is the
+   clear button now (see the :hover rule below and doEaseClear in main.js). */
+#sec-ease-quick .ease-panels-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+#sec-ease-quick .ease-subpanel { display: contents; }
+#sec-ease-quick .ease-subpanel-lbl { display: none; }
+#sec-ease-quick .ease-subpanel-body { display: contents; }
+
+#sec-ease-quick .ease-copy-btn { order: 1; flex: 1; }
+#sec-ease-quick #easePasteBtn { order: 2; flex: 1; }
+#sec-ease-quick .ease-subpanel-display { order: 3; flex: 1.5; }
+#sec-ease-quick .ease-subpanel-body .icon-btn.small { display: none; }
+
+#sec-ease-quick .ease-subpanel-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.05s linear, border-color 0.05s linear;
+}
+#sec-ease-quick .ease-subpanel-display:hover {
+    background: rgba(224, 85, 85, 0.14);
+    border-color: #e05555;
+}
+#sec-ease-quick .ease-subpanel-display:hover .ease-display-text { display: none; }
+#sec-ease-quick .ease-subpanel-display:hover .ease-display-trash-icon {
+    display: block;
+    width: 14px;
+    height: 14px;
+    color: #e05555;
+}
+#sec-ease-quick .ease-action-btn {
+    padding: 0 10px;
+    font-size: 11px;
+    width: 100%;
 }
 
 .cp-btns .ease-action-btn { flex: 1; }
@@ -543,39 +2197,62 @@ input[type="checkbox"]:checked::after {
 .anchor-row {
     display: flex;
     align-items: flex-start;
+    justify-content: center;
     gap: 8px;
 }
 
+/* Always a square (aspect-ratio keeps it 1:1 as the panel resizes), sitting
+   in a darker rounded bounding box so the grid reads as one contained unit.
+   Fills its row now that the row itself (and so the whole tool-box — see
+   .tool-box-anchor) is narrowed to the square's own size, rather than
+   shrinking the square inside a still full-width box. */
 .anchor-grid {
     display: grid;
-    grid-template-columns: repeat(3, 42px);
-    grid-template-rows: repeat(3, 42px);
-    gap: 5px;
-    background: #131313;
-    border: 1px solid #2c2c2c;
-    border-radius: 14px;
-    padding: 10px;
-    flex-shrink: 0;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 6%;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 16px;
+    /* % of .anchor-row's own width (padding percentages always resolve
+       against the containing block's width, on every side, including
+       top/bottom) — matches gap above, so this scales with the square
+       itself instead of staying a flat px size that reads as
+       proportionally huge or negligible depending on how big the square
+       currently is. Smaller than gap so the outer edge reads tighter than
+       the spacing between buttons, not wider. */
+    padding: 1.5%;
 }
 
 .anchor-btn {
-    width: 42px; height: 42px;
+    width: 100%;
+    height: 100%;
     display: flex; align-items: center; justify-content: center;
-    background: #202020;
+    background: #101010;
     border: none;
-    border-radius: 5px;
+    border-radius: 8px;
     cursor: pointer;
     padding: 0;
-    color: #888888;
-    transition: background 0.03s linear, color 0.03s linear;
+    color: #868686;
+    transition: background 0.05s linear, color 0.05s linear;
 }
-.anchor-btn:hover  { background: #2e2e2e; color: #F9F9F4; }
+.anchor-btn:hover  { background: #2e2e2e; color: #7aaaff; }
 .anchor-btn:active { background: var(--bg-btn-act); color: #fff; }
-.anchor-btn svg    { width: 26px; height: 26px; pointer-events: none; transition: transform 0.03s linear; }
-.anchor-btn:hover svg { transform: scale(1.09); }
+.anchor-btn svg    { width: 58%; height: 58%; pointer-events: none; transition: transform 0.12s ease-out; }
 
-.anchor-btn-center { background: #202020; }
-.anchor-btn-center:hover { background: #2e2e2e; }
+/* Each icon slides toward the edge/corner it represents (grid order maps
+   1:1 to position — see .anchor-grid's fixed 3x3 layout in index.html);
+   the Center icon just scales up in place instead, since it has no edge
+   to slide toward. */
+.anchor-grid .anchor-btn:nth-child(1):hover svg { transform: translate(-4px, -4px); }
+.anchor-grid .anchor-btn:nth-child(2):hover svg { transform: translate(0, -4px); }
+.anchor-grid .anchor-btn:nth-child(3):hover svg { transform: translate(4px, -4px); }
+.anchor-grid .anchor-btn:nth-child(4):hover svg { transform: translate(-4px, 0); }
+.anchor-grid .anchor-btn:nth-child(5):hover svg { transform: scale(1.12); }
+.anchor-grid .anchor-btn:nth-child(6):hover svg { transform: translate(4px, 0); }
+.anchor-grid .anchor-btn:nth-child(7):hover svg { transform: translate(-4px, 4px); }
+.anchor-grid .anchor-btn:nth-child(8):hover svg { transform: translate(0, 4px); }
+.anchor-grid .anchor-btn:nth-child(9):hover svg { transform: translate(4px, 4px); }
 
 /* ── Copy / Paste icon button colour variants ────────────────────────────── */
 
@@ -1272,6 +2949,82 @@ input.gap-inline-input {
 .update-banner-close:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
 .update-banner-close svg { width: 9px; height: 9px; pointer-events: none; display: block; }
 
+/* ── Edit mode bar ────────────────────────────────────────────────────────── */
+
+.edit-mode-bar {
+    display: flex;
+    padding: 7px 0;
+    background: #1c1c1c;
+    border-bottom: 1px solid #2c2c2c;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+.edit-mode-bar.edit-mode-bar-hidden { display: none; }
+
+/* Same width ceiling/centering as .tool-grid (see its own max-width
+   comment) so "Editing Layout" and the widgets below always share the
+   same left edge, even once the panel's wide enough for the grid to
+   center with margin instead of sitting flush left. */
+.edit-mode-bar-inner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 570px;
+    margin: 0 auto;
+    padding: 0 10px;
+}
+
+.edit-mode-bar-text {
+    flex: 1;
+    min-width: 0;
+    color: #d0d0d0;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.edit-mode-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.edit-mode-bar-btn {
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    padding: 0 12px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear, transform 0.06s ease;
+}
+.edit-mode-bar-btn:active { transform: scale(0.96); }
+
+.edit-mode-bar-btn-ghost {
+    background: transparent;
+    border: 1px solid #3a3a3a;
+    color: #a0a0a0;
+}
+.edit-mode-bar-btn-ghost:hover { background: #262626; color: #d0d0d0; border-color: #4a4a4a; }
+
+.edit-mode-bar-btn-save {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #fff;
+}
+.edit-mode-bar-btn-save:hover { background: #3680ea; border-color: #3680ea; }
+
+@media (max-width: 329px) {
+    .edit-mode-bar-inner { gap: 4px; padding: 0 6px; }
+    .edit-mode-bar-text { display: none; }
+    .edit-mode-bar-actions { flex: 1; gap: 4px; }
+    .edit-mode-bar-btn { flex: 1; padding: 0 4px; font-size: 10px; }
+    .edit-mode-bar-btn-suffix { display: none; }
+}
+
 /* ── Footer ───────────────────────────────────────────────────────────────── */
 
 .footer {
@@ -1326,6 +3079,7 @@ input.gap-inline-input {
     flex-shrink: 0;
 }
 .settings-btn:hover { background: #222222; color: #c8c8c8; }
+.settings-btn.active { background: rgba(36,112,224,0.18); color: #7aaaff; }
 .settings-btn svg { width: 18px; height: 18px; pointer-events: none; }
 
 /* ── Settings overlay ─────────────────────────────────────────────────────── */

@@ -359,7 +359,7 @@ function lineup_align(alignIdx, alignToSelection, margin, usePercent, offsetKeys
 // ── DISTRIBUTE ────────────────────────────────────────────────────────────────
 // horizontal: 1=H 0=V, distMode: 0=comp 1=selection 2=keyLayer, spacing: px
 
-function lineup_distribute(horizontal, distMode, spacing) {
+function lineup_distribute(horizontal, distMode, spacing, offsetKeys) {
     try {
         var comp = app.project.activeItem;
         if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
@@ -368,6 +368,18 @@ function lineup_distribute(horizontal, distMode, spacing) {
         var H = !!horizontal;
 
         app.beginUndoGroup("Distribute " + (H ? "Horizontal" : "Vertical"));
+
+        // offsetKeys on: shift every keyframe by the delta (preserves existing motion).
+        // offsetKeys off: snap only the value at the current time, like Align's default.
+        function place(layer, dx, dy) {
+            if (offsetKeys) {
+                shiftPosition(layer.position, dx, dy, layer.threeDLayer);
+            } else {
+                var is3D = layer.threeDLayer, pos = layer.position.value;
+                var np = is3D ? [pos[0]+dx, pos[1]+dy, pos[2]] : [pos[0]+dx, pos[1]+dy];
+                setPositionAt(layer.position, np, comp.time, is3D);
+            }
+        }
 
         if (distMode === 2) {
             var kl = layers[0], kb = getLayerCompBounds(kl, comp);
@@ -386,14 +398,14 @@ function lineup_distribute(horizontal, distMode, spacing) {
                 var l = bef[i], bd = getLayerCompBounds(l, comp);
                 var sz = H ? bd.width : bd.height, ctr = H ? bd.left+bd.width/2 : bd.top+bd.height/2;
                 var dlt = (edgeBef - spacing - sz/2) - ctr;
-                shiftPosition(l.position, H?dlt:0, H?0:dlt, l.threeDLayer);
+                place(l, H?dlt:0, H?0:dlt);
                 edgeBef -= spacing + sz;
             }
             for (var i = 0; i < aft.length; i++) {
                 var l = aft[i], bd = getLayerCompBounds(l, comp);
                 var sz = H ? bd.width : bd.height, ctr = H ? bd.left+bd.width/2 : bd.top+bd.height/2;
                 var dlt = (edgeAft + spacing + sz/2) - ctr;
-                shiftPosition(l.position, H?dlt:0, H?0:dlt, l.threeDLayer);
+                place(l, H?dlt:0, H?0:dlt);
                 edgeAft += spacing + sz;
             }
         } else {
@@ -412,7 +424,7 @@ function lineup_distribute(horizontal, distMode, spacing) {
             var step   = (rEnd - rStart) / (ld.length - 1);
             for (var i = 0; i < ld.length; i++) {
                 var dlt = (rStart + step*i) - ld[i].center;
-                shiftPosition(ld[i].layer.position, H?dlt:0, H?0:dlt, ld[i].layer.threeDLayer);
+                place(ld[i].layer, H?dlt:0, H?0:dlt);
             }
         }
 
@@ -1049,7 +1061,8 @@ function lineup_easeCopy() {
                             try { inE=copyEaseArr(p.keyInTemporalEase(ki)); } catch(e) {}
                             try { outE=copyEaseArr(p.keyOutTemporalEase(ki)); } catch(e) {}
                             var val=null; try { val=p.keyValue(ki); } catch(e) {}
-                            out.push({inType:inT, outType:outT, inEase:inE, outEase:outE, value:val});
+                            var time=null; try { time=p.keyTime(ki); } catch(e) {}
+                            out.push({inType:inT, outType:outT, inEase:inE, outEase:outE, value:val, time:time});
                         }
                     }
                 } else if (p.propertyType===PropertyType.NAMED_GROUP || p.propertyType===PropertyType.INDEXED_GROUP) {
@@ -1179,6 +1192,44 @@ function lineup_easeValuePaste() {
 }
 
 function lineup_easeClear() { _easeClipboard=null; _easeClipboardType=null; return "ok"; }
+
+// ── Ease preview data (live curve/speed graph) ──────────────────────────────
+// Plain-object projection of _easeClipboard for the panel to draw from —
+// deliberately NOT the same objects Paste uses (those need real
+// KeyframeEase instances for setTemporalEaseAtKey), and interpolation type
+// is classified into a plain string here since the panel has no access to
+// the KeyframeInterpolationType enum to compare against.
+function _easeTypeStr(t) {
+    if (t === KeyframeInterpolationType.HOLD) return "hold";
+    if (t === KeyframeInterpolationType.LINEAR) return "linear";
+    return "bezier";
+}
+function _easeArrToPlain(arr) {
+    if (!arr) return null;
+    var out = [];
+    for (var i = 0; i < arr.length; i++) out.push({ speed: arr[i].speed, influence: arr[i].influence });
+    return out;
+}
+function lineup_easeGetClipboard() {
+    if (!_easeClipboard) return "null";
+    try {
+        var out = [];
+        for (var i = 0; i < _easeClipboard.length; i++) {
+            var e = _easeClipboard[i];
+            out.push({
+                time: e.time,
+                value: e.value,
+                inType: _easeTypeStr(e.inType),
+                outType: _easeTypeStr(e.outType),
+                inEase: _easeArrToPlain(e.inEase),
+                outEase: _easeArrToPlain(e.outEase)
+            });
+        }
+        return JSON.stringify(out);
+    } catch (err) {
+        return "null";
+    }
+}
 
 // ── SHAPE RIGS ────────────────────────────────────────────────────────────────
 
