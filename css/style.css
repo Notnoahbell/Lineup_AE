@@ -70,6 +70,33 @@ body.high-contrast .tools-grid-btn { color: #e0e0e0; border-color: #909090; }
 body.high-contrast .tools-filter-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
 body.high-contrast .tools-filter-btn.active { background: #163e73; border-color: #4d9bff; color: #ffffff; }
 body.high-contrast .tools-grid-btn:hover { background: #3a3a3a; color: #ffffff; }
+/* .btn is generic/shared (Check for Updates and many others) — its own
+   color already tracks var(--text), just never had a background/border
+   override anywhere, so it stayed a normal dark gray in high contrast. */
+body.high-contrast .btn { background: #000000; border-color: #909090; }
+body.high-contrast .btn:hover { background: #3a3a3a; border-color: #ffffff; }
+
+/* Settings popup — .settings-tab-row above already covers its plain rows;
+   these are the rest of its own chrome (modal box, Layout toggle, the
+   Sections drag list, the High Contrast switch itself). */
+body.high-contrast .settings-modal-box { background: #000000; border-color: #909090; }
+body.high-contrast .layout-mode-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
+body.high-contrast .layout-mode-btn:hover { background: #3a3a3a; color: #ffffff; }
+body.high-contrast .layout-mode-btn.active { background: #163e73; border-color: #4d9bff; color: #ffffff; }
+body.high-contrast .settings-sec-row { background: #000000; border-color: #909090; }
+body.high-contrast .settings-drag-handle { color: #a0a0a0; }
+body.high-contrast .settings-drag-handle:hover { color: #ffffff; }
+body.high-contrast .toggle-track { background: #000000; border-color: #909090; }
+body.high-contrast .toggle-track::after { background: #d0d0d0; }
+
+/* Classic's anchor grid/buttons are their own fixed-size, hardcoded-color
+   markup (see #homeClassic .anchor-grid/.anchor-btn further down) — that
+   ID-scoped specificity beats the generic .anchor-grid/.anchor-btn
+   high-contrast rules above, so they need re-targeting here specifically
+   to actually go black/high-contrast in Classic. */
+body.high-contrast #homeClassic .anchor-grid { background: #000000; border-color: #909090; }
+body.high-contrast #homeClassic .anchor-btn { background: #000000; color: #d0d0d0; }
+body.high-contrast #homeClassic .anchor-btn:hover { background: #3a3a3a; color: #ffffff; }
 
 html, body {
     background: var(--bg);
@@ -98,6 +125,21 @@ html, body {
     width: 100%;
     max-width: 570px;
     margin: 0 auto;
+    /* Classic hides this entirely (Settings is reached via #settingsGearBtn
+       in the footer instead, in both modes) — collapsing smoothly via
+       max-height/opacity instead of an instant display:none swap. 50px
+       comfortably clears the bar's own ~44px natural height (36px button +
+       8px top padding) so the transition always starts from its full,
+       un-clipped size. */
+    max-height: 50px;
+    overflow: hidden;
+    transition: opacity 0.16s ease, max-height 0.16s ease, padding 0.16s ease;
+}
+body.layout-classic .tab-bar {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    pointer-events: none;
 }
 .tab-btn {
     flex: 1;
@@ -238,12 +280,14 @@ html, body {
 .tools-grid-btn-hidden { display: none; }
 
 /* ── Settings tab ─────────────────────────────────────────────────────────── */
+/* No margin of its own — .settings-modal-box's own gap (see below) already
+   spaces these out; adding both was stacking to a much bigger gap than
+   either one alone. */
 .settings-tab-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    margin: 10px;
     padding: 10px;
     background: #181818;
     border: 1px solid #2c2c2c;
@@ -259,6 +303,9 @@ html, body {
 .layout-mode-btn {
     height: 28px;
     padding: 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
     background: #232323;
     border: 1px solid #333333;
     border-radius: 6px;
@@ -267,13 +314,26 @@ html, body {
     cursor: pointer;
     transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
 }
+.layout-mode-btn svg { width: 13px; height: 13px; flex-shrink: 0; pointer-events: none; }
 .layout-mode-btn:hover  { background: #2a2a2a; border-color: #444444; color: #d0d0d0; }
 .layout-mode-btn.active { background: #3c3c3c; border-color: #6a6a6a; color: #F9F9F4; }
 
 /* Classic's section list, inline in the Settings tab — only shown while
-   Layout above is set to Classic. */
+   Layout above is set to Classic. No margin of its own for the same reason
+   as .settings-tab-row above. Accordions open/closed (.classic-sections-open,
+   toggled in _applyLayoutMode) instead of an instant display:none swap, so
+   the popup grows/shrinks into it rather than popping — max-height needs a
+   real value to transition to/from (can't animate to "auto"), so 420px is
+   just a generous ceiling comfortably above the tallest real list. */
 .classic-sections-block {
-    margin: 0 10px 10px;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height 0.28s ease, opacity 0.22s ease;
+}
+.classic-sections-block.classic-sections-open {
+    max-height: 420px;
+    opacity: 1;
 }
 
 /* ── Bespoke tool grid ────────────────────────────────────────────────────── */
@@ -294,6 +354,17 @@ html, body {
        which need to match this exactly to stay left-aligned with it. */
     max-width: 570px;
     margin: 0 auto;
+}
+/* Classic wants its column flush against the actual panel edges (see
+   .tool-col-classic above) — this shared container's own padding/max-width/
+   centering (needed for Compact's bento grid) would otherwise still leave
+   a gap and cap it short of that. Compact's own #homeTopGroup/#homeGrid are
+   both display:none while Classic is active, so nothing else here is
+   affected by lifting them. */
+body.layout-classic .tool-grid {
+    padding: 0;
+    max-width: none;
+    margin: 0;
 }
 
 /* Bento grid: a 6-column CSS Grid. Each tool-box's data-span (3 = half
@@ -331,6 +402,16 @@ html, body {
        _syncAnchorRowUnit in main.js. This fallback only matters for the
        instant before that first runs. */
     --home-anchor-unit: 100px;
+    /* Scales Anchor/Quick Actions/Favorite down together as one unit as the
+       panel narrows (kept in sync by _syncAnchorTiers in main.js) — zoom,
+       not transform, so it actually affects layout sizing (matching the
+       panel-wide scale slider and Classic's own zoom, both elsewhere in
+       this file), and so every fixed-px gap/padding inside shrinks in the
+       same proportion instead of any one of them crowding out of step with
+       the rest. Resets to native scale (1) once narrow-stack takes over —
+       full width is the intended remedy for that range, not shrinking
+       everything down further on top of it. */
+    zoom: 1;
 }
 
 /* ── Narrow stack ──────────────────────────────────────────────────────────
@@ -357,22 +438,28 @@ html, body {
    even though its own box is now full width like everything else above —
    the freed right half holds its mode dropdown/Ignore Masks/Null controls
    instead of leaving them stacked below (which would just be dead space to
-   their right) or leaving that whole half empty. */
-#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] {
+   their right) or leaving that whole half empty.
+   #homeClassic is nested inside #homeToolGrid too (not a sibling), and its
+   own relocated anchor tool-body shares the same [data-block-id="anchor"]
+   selector — every rule here is scoped through #homeTopGroup specifically
+   (Compact-only, never an ancestor of Classic's anchor) so none of this
+   row-split styling leaks onto Classic's own (differently-structured)
+   anchor markup once narrow-stack is on. */
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] {
     flex-direction: row;
     align-items: stretch;
 }
-#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] .anchor-row {
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-row {
     width: 50%;
     flex: 0 0 auto;
 }
-#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] > .tool-box-divider {
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] > .tool-box-divider {
     width: 1px;
     height: auto;
     align-self: stretch;
     margin: 0 4px;
 }
-#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] .anchor-mode-line {
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-line {
     flex: 1;
     min-width: 0;
     flex-direction: column;
@@ -382,17 +469,103 @@ html, body {
 /* .anchor-mode-stack's own flex:1 (see its base rule) now grows along the
    column's main axis instead of the row's, filling whatever height the
    square gave this side instead of leaving dead space above/below a
-   vertically-centered cluster — the actual "fill the square" part.
-   Centering its own two children (select + Ignore Masks) within that
-   taller area keeps them from just sitting stuck at the top of it. */
-#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] .anchor-mode-stack {
-    justify-content: center;
+   vertically-centered cluster — the actual "fill the square" part. Splits
+   the whole column into thirds along with .btn-anchor-null below (2 shares
+   here since it holds 2 of those 3 — select and Ignore Masks — 1 there):
+   each share is a plain flex-grow ratio, not a computed pixel/percentage
+   height, so the three controls can only ever divide up whatever height
+   the grid already established, never demand more of it and inflate
+   Anchor's own box to fit (the self-feeding growth loop medium mode's own
+   flex:1 attempt hit earlier — safe here specifically because
+   _anchorNaturalHeight takes narrow-stack's MAX of this row vs. the grid,
+   not a sum, so nothing here ever measures back into its own input). */
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-stack {
+    flex: 2 1 0;
+    min-height: 0;
 }
-#homeToolGrid.narrow-stack .tool-body[data-block-id="anchor"] .anchor-mode-line .vsep {
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-stack select,
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-stack .check-label {
+    flex: 1 1 0;
+    min-height: 0;
+    height: auto;
+}
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-line .vsep {
     width: auto;
     height: 1px;
     align-self: stretch;
     margin: 4px 0;
+}
+/* The 3rd third — see .anchor-mode-stack's own comment above. Its base
+   rule's min-width:76px (fine anywhere there's a full row/column to
+   itself) is what was pushing this past the edge of Anchor's own
+   half-width column here — letting it actually shrink (and tightening its
+   padding a bit) keeps it contained instead. */
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .btn-anchor-null {
+    flex: 1 1 0;
+    min-width: 0;
+    height: auto;
+    padding: 4px 8px;
+}
+/* ── Anchor "tiny" width (narrow-stack, close to the panel's own minimum) ────
+   Below ANCHOR_TINY_THRESHOLD (see _syncAnchorTiers in main.js) even
+   "Masks" alone plus the checkbox is about all that fits — the "Ignore "
+   half of the label drops first, only here (not throughout narrow-stack),
+   since it's genuinely still readable at the wider end of that range. The
+   dropdown/Null button sizing itself is handled throughout all of
+   narrow-stack already (see .anchor-mode-stack's own flex-thirds comment
+   above), not specifically gated to this tighter tier. */
+#homeToolGrid.anchor-tiny #homeTopGroup .tool-body[data-block-id="anchor"] .ignore-masks-prefix {
+    display: none;
+}
+/* ── Anchor "medium" width (Compact only, well above narrow-stack) ───────────
+   Between NARROW_STACK_THRESHOLD and ANCHOR_MEDIUM_THRESHOLD (see
+   _syncAnchorTiers in main.js), the dropdown/Ignore Masks/Null row no
+   longer fits comfortably beside the grid even at #homeTopGroup's zoom
+   floor — stacked into a column instead, each control given a legible
+   1.5x height on top of that (see below). Deliberately just
+   flex-direction:column here, NOT flex:1: flex:1 would make this row's own
+   height depend on how much space Anchor ends up with, which
+   _anchorNaturalHeight then measures right back out of it (it sums this
+   row, not narrow-stack's own max-based version) — a self-feeding loop
+   that grows without bound on every resize tick. Plain column sizing keeps
+   this row's height exactly its own (now taller, but bounded) natural
+   content size, which safely grows Anchor's own measured height to match
+   with no gap left over, instead of chasing whatever height already
+   exists. */
+#homeToolGrid.anchor-medium #sec-quick-actions {
+    /* _syncAnchorRowUnit (main.js) pins #homeTopGroup's two row-tracks
+       explicitly in medium mode — row 1 to exactly Quick Actions' own
+       natural height, row 2 to whatever's left for Favorite. That alone
+       is what actually stops Quick Actions from ending up in a
+       taller-than-it-needs track (CSS Grid's own row distribution for a
+       rowspan-2 item, like Anchor, otherwise happily grows BOTH tracks it
+       spans past what a single-row item like Quick Actions needs) —
+       align-self:start here is just a belt-and-suspenders backup in case
+       that computed row height is ever momentarily stale (e.g. the instant
+       before a resize's ResizeObserver callback fires). */
+    align-self: start;
+}
+#homeToolGrid.anchor-medium #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-line {
+    min-width: 0;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+}
+#homeToolGrid.anchor-medium #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-line .vsep {
+    width: auto;
+    height: 1px;
+    align-self: stretch;
+    margin: 4px 0;
+}
+/* 1.5x each control's own normal height (18px dropdown, 26px Null button —
+   its .btn base height, which .anchor-mode-line normally overrides to
+   auto/stretch; this needs to win over that now that the column above has
+   the height to spend on them). */
+#homeToolGrid.anchor-medium #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-stack select {
+    height: 27px;
+}
+#homeToolGrid.anchor-medium #homeTopGroup .tool-body[data-block-id="anchor"] .btn-anchor-null {
+    height: 39px;
 }
 
 /* Favorited widgets: half-width by default (matching the Favorite slot's
@@ -596,7 +769,12 @@ html, body {
 .tool-col-classic {
     display: flex;
     flex-direction: column;
-    flex: 1 1 auto;
+    /* Full width, edge to edge — each .section-hdr (the collapsible
+       dropdown bar) stretches all the way across with it, chevron flush
+       against the far edge, same as the original layout. Individual
+       controls inside a section body hug their own natural width instead
+       (see the #homeClassic width:auto overrides further down), so only
+       the header bars themselves actually reach edge to edge. */
     width: 100%;
     min-width: 0;
     /* Scales the whole Classic layout as one unit rather than each fixed
@@ -659,6 +837,40 @@ html, body {
 #homeClassic .anchor-btn:hover  { background: #2e2e2e; color: #F9F9F4; }
 #homeClassic .anchor-btn svg { width: 26px; height: 26px; }
 #homeClassic .anchor-mode-line { justify-content: flex-start; }
+/* Ignore Masks sits inline with the dropdown here instead of stacked below
+   it (Compact's own column layout, kept as-is there) — "Based on" labels
+   the dropdown now that there's a full row's width to spare for it. */
+#homeClassic .anchor-mode-stack {
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 auto;
+}
+#homeClassic .anchor-based-on-lbl {
+    display: inline;
+}
+/* .anchor-row's shared base rule centers the grid (right for Compact's
+   square tile, since there's no room to its side) — Classic's grid is a
+   small fixed-size 3x3 (see .anchor-grid above), so left-pin it instead of
+   leaving it stranded in the middle of the full-width row. */
+#homeClassic .anchor-row { justify-content: flex-start; }
+/* Classic wants the "Anchor based on" mode dropdown + Ignore Masks above
+   the grid instead of below it (Compact's own order, kept as-is there) —
+   order alone moves it ahead of its two DOM-order-earlier siblings without
+   touching the shared markup. The divider needs its own order too (-1,
+   between the two) — left at its default it'd keep its DOM position after
+   .anchor-row, landing below the grid with nothing left to divide from. */
+#homeClassic .anchor-mode-line { order: -2; }
+#homeClassic .tool-body[data-block-id="anchor"] > .tool-box-divider { order: -1; }
+/* Classic docks the Null/Copy-Paste panel beside the grid (see
+   _applyLayoutMode in main.js), which already has its own "Null" button —
+   the shared anchor-mode-line's copy would just be a redundant second one,
+   so it (and the divider that only exists to separate it from Ignore
+   Masks) is dropped here. Compact keeps both untouched — it never shows
+   the Copy-Paste panel inline, so there's no duplication there. */
+#homeClassic .btn-anchor-null,
+#homeClassic .anchor-mode-line > .vsep {
+    display: none;
+}
 
 /* Organize: one continuous toolbar of icon buttons, not a grid of
    icon-plus-label tiles. */
@@ -732,6 +944,11 @@ html, body {
    Classic's section header already shows the same icon, so the one here
    is a plain duplicate. */
 #homeClassic .tool-body .sec-icon { display: none; }
+/* Ease Copy's own title row (icon + "Ease Copy") is Compact-only for the
+   same reason — the icon alone is already covered by the generic rule
+   above, but its "Ease Copy" text label isn't, so the whole row needs its
+   own hide here to avoid a text-only duplicate of Classic's own header. */
+#homeClassic .ease-title-row { display: none; }
 
 /* Hidden via Classic's Sections list (shared state — see
    _applySharedHiddenState in main.js) — removed from the grid entirely. */
@@ -754,9 +971,30 @@ html, body {
     flex: 1;
     min-width: 0;
 }
+/* Outside narrow-stack (which needs the unrestricted shrink above — its
+   own column is often narrower than this floor), a real floor here is what
+   lets .anchor-mode-line's own flex-wrap (inherited from .ctrl-row) do its
+   job: once the row genuinely can't fit the dropdown/Ignore Masks AND the
+   Null button at a legible width, the Null button wraps onto its own line
+   — a normal, bounded content-driven height increase — instead of
+   min-width:0 letting this shrink toward unreadable first. */
+#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-stack {
+    min-width: 70px;
+}
 .anchor-mode-stack select {
     height: 18px;
     padding: 0 4px;
+    /* A <select> won't shrink below its content's natural width by default
+       (min-width:auto on flex items) — same fix as Align/Distribute's own
+       half-width selects, since this is what was actually bleeding past
+       the box's edge in narrow-stack's side-by-side grid+controls split. */
+    min-width: 0;
+}
+/* Compact has no room for a label beside the dropdown (it's already
+   squeezed into half of the anchor square) — Classic gets it back below,
+   inline with the dropdown instead of stacked above Ignore Masks. */
+.anchor-based-on-lbl {
+    display: none;
 }
 .anchor-mode-line .vsep {
     align-self: stretch;
@@ -1396,6 +1634,19 @@ body.bl-drag-active {
    reverted back to one-line under narrow-stack (see that section above). */
 .tool-box[data-block-id="align"][data-span="3"] .ctrl-row,
 .tool-box[data-block-id="distribute"][data-span="3"] .ctrl-row,
+/* Full width too now, not just half — see .ctrl-row-tight below, which
+   needs this off at any span for its own overflow check to mean anything
+   (a wrapped row never actually overflows, so scrollWidth can't detect
+   crowding once wrapping has already "resolved" it by moving Offset to
+   its own line). Classic isn't included — its own fixed ~360px column
+   wraps fine as-is and was never part of this crowding complaint. */
+.tool-box[data-block-id="align"][data-span="6"] .ctrl-row,
+.tool-box[data-block-id="distribute"][data-span="6"] .ctrl-row,
+/* Sort Layers has the same issue at full width — "Sort Layers based on"
+   plus both selects wrapping the Property/Axis dropdowns onto their own
+   line instead of just dropping the label first (see .ctrl-row-tight,
+   extended to cover 'sort' too in _syncCtrlRowLabels). */
+.tool-box[data-block-id="sort"][data-span="6"] .ctrl-row,
 #sec-favorite .tool-body[data-block-id="align"] .ctrl-row,
 #sec-favorite .tool-body[data-block-id="distribute"] .ctrl-row {
     flex-wrap: nowrap;
@@ -1406,16 +1657,31 @@ body.bl-drag-active {
 }
 /* "Align to"/"Distribute to" dropped entirely at half width — the select
    itself already says what it's choosing between, so the label was the
-   easiest thing to give up for space. */
+   easiest thing to give up for space. Same idea at full width once things
+   get tight there too (see .ctrl-row-tight, toggled by _syncCtrlRowLabels
+   in main.js) — dropping the label first keeps Offset from being pushed
+   onto its own line as early as it used to. */
 .tool-box[data-block-id="align"][data-span="3"] .ctrl-row > .lbl,
 .tool-box[data-block-id="distribute"][data-span="3"] .ctrl-row > .lbl,
 #sec-favorite .tool-body[data-block-id="align"] .ctrl-row > .lbl,
-#sec-favorite .tool-body[data-block-id="distribute"] .ctrl-row > .lbl {
+#sec-favorite .tool-body[data-block-id="distribute"] .ctrl-row > .lbl,
+.ctrl-row.ctrl-row-tight > .lbl {
+    display: none;
+}
+/* Last resort, only once dropping the label above still isn't enough (see
+   _syncCtrlRowLabels in main.js) — Offset's own word, keeping just its
+   checkbox/diamond up in the top right corner. */
+.ctrl-row.ctrl-row-tighter .keyframe-toggle-lbl {
     display: none;
 }
 /* A <select> won't shrink below its content's natural width by default
    (min-width:auto on flex items) — that's what was actually pushing
-   Offset off the right edge; this lets it compress instead of overflowing. */
+   Offset off the right edge; this lets it compress instead of overflowing.
+   Deliberately NOT extended to full width (data-span="6") — tried that,
+   but it shrinks "Composition"/etc. down to unreadable well before the
+   checkbox/diamond actually needs the room. Full width instead only ever
+   drops text (.ctrl-row-tight/-tighter above) and accepts the dropdown
+   staying full natural width as the higher priority of the two. */
 .tool-box[data-block-id="align"][data-span="3"] #alignMode,
 .tool-box[data-block-id="distribute"][data-span="3"] #distMode,
 #sec-favorite .tool-body[data-block-id="align"] #alignMode,
@@ -2016,8 +2282,8 @@ input[type="checkbox"]:checked::after {
 }
 
 /* Hidden everywhere by default (including Classic, which never triggers the
-   hover rule that reveals it) — only #sec-ease-quick's :hover rule below
-   shows it, swapping out the text in place. */
+   hover rule that reveals it) — only the full-width display's :hover rule
+   below shows it, swapping out the text in place. */
 .ease-display-trash-icon { display: none; }
 
 /* ── Ease preview (live curve + speed graph) ─────────────────────────────────
@@ -2025,28 +2291,47 @@ input[type="checkbox"]:checked::after {
    Bottom Layout. The Favorite slot is half-width by default too, so it
    shows the preview there as well — hidden again under narrow-stack, once
    the slot is actually full width (see that section above). Built/
-   populated by _easePreviewRender in main.js. */
+   populated by _easePreviewRender in main.js. flex:1 with min-height as a
+   floor (not a fixed height) — the title row above it now competes for the
+   same space, and a rigid height was pushing the button row below past the
+   bottom of whatever the box actually has room for instead of ever
+   shrinking to make room. This grows to fill leftover space when there's
+   plenty (same ~128px result as before in the common case), but yields
+   first if the box is ever shorter than that — the button row (its own
+   flex-shrink:0 below) is what should never be the one to give. Its own
+   padding keeps the plotted curve/keyframe dots off the very edges instead
+   of touching the box's border directly. */
 .ease-preview { display: none; }
 .tool-box[data-block-id="ease"][data-span="3"] .ease-preview,
 #sec-favorite .tool-body[data-block-id="ease"] .ease-preview {
     display: block;
     position: relative;
     width: 100%;
-    height: 64px;
+    flex: 2 1 0; /* ~66/33 split with the button row's own flex: 1 1 0 below */
+    min-height: 50px;
+    padding: 6px;
     background: #131313;
     border: 1px solid #2c2c2c;
     border-radius: 6px;
     overflow: hidden;
 }
+/* Never the one to shrink/clip when the box is squeezed — the preview
+   above it (flex:1, min-height as its own floor) gives way first. */
+.tool-box[data-block-id="ease"] .ease-panels-row,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-panels-row {
+    flex-shrink: 0;
+}
 .ease-preview-svg {
     display: block;
     width: 100%;
     height: 100%;
-}
-.ease-preview-zero-line {
-    stroke: #383838;
-    stroke-width: 1;
-    vector-effect: non-scaling-stroke;
+    /* <svg> clips to its own viewBox by default (overflow:hidden is the UA
+       default) — the first/last keyframe dots sit exactly on the viewBox's
+       left/right edge (see xOf in main.js), so half of each was being cut
+       off right there regardless of .ease-preview's own padding around it.
+       overflow:visible lets that overflow render into that padding instead
+       of being clipped before it ever gets there. */
+    overflow: visible;
 }
 .ease-preview-value-path {
     fill: none;
@@ -2056,16 +2341,27 @@ input[type="checkbox"]:checked::after {
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
 }
-.ease-preview-speed-pos,
-.ease-preview-speed-neg {
-    stroke: none;
-}
-.ease-preview-speed-pos { fill: rgba(122, 170, 255, 0.28); }
-.ease-preview-speed-neg { fill: rgba(224, 85, 85, 0.32); }
 .ease-preview-points circle {
     fill: #101010;
     stroke: #7aaaff;
     stroke-width: 1.4;
+    vector-effect: non-scaling-stroke;
+}
+/* Bezier handles — the same speed/influence-derived control points AE's
+   own graph editor draws, one dimmer line from each keyframe to its
+   handle plus a small dot at the handle itself. Only drawn for genuine
+   bezier segments (see _easePreviewRender in main.js) — hold/linear
+   segments have no real handle to show. */
+.ease-preview-handles line {
+    stroke: #7aaaff;
+    stroke-width: 1;
+    stroke-opacity: 0.45;
+    vector-effect: non-scaling-stroke;
+}
+.ease-preview-handles circle {
+    fill: #7aaaff;
+    fill-opacity: 0.55;
+    stroke: none;
     vector-effect: non-scaling-stroke;
 }
 .ease-preview-empty {
@@ -2083,14 +2379,29 @@ input[type="checkbox"]:checked::after {
 /* ── Ease subpanel ────────────────────────────────────────────────────────── */
 /* Base rules here match the original two-panel layout (Copy: button +
    display + trash in one bordered row; Paste: its button alone in a
-   second) — that's what Classic gets unmodified, since #sec-ease-quick
-   (Compact's own tool-box id) isn't an ancestor once this content is
-   relocated into #homeClassic. Compact instead flattens the two labeled
-   .ease-subpanel wrappers via display:contents (dropping their own
-   box/label) so the two .ease-subpanel-bodies become direct rows of one
-   shared bordered panel that stretches to fill the tool-box's height. */
-.tool-box-ease {
-    gap: 10px;
+   second) — that's what Classic gets unmodified. Compact (both Bottom
+   Layout and the Favorite slot — the fixed #sec-ease-quick id this used to
+   be scoped to never actually matched anything there, so none of this ever
+   applied; every rule below is now keyed off .tool-box[data-block-id="ease"]
+   and #sec-favorite .tool-body[data-block-id="ease"] instead, the same
+   pattern every other widget in this file already uses) flattens the two
+   labeled .ease-subpanel wrappers via display:contents (dropping their own
+   box/label) so the real controls become direct children of one shared row
+   that stretches to fill the available width, buttons sharing it evenly
+   instead of any of them getting cut off. */
+/* .tool-box-ease never actually matched anything in the HTML (dead class,
+   same mistake as the old #sec-ease-quick id) — .ease-preview and
+   .ease-panels-row are direct children of .tool-body itself, so the real
+   gap between them is .tool-body's own generic 8px, and the space below
+   the button row is .tool-box's own generic 10px padding. Both scoped down
+   here specifically for Ease rather than changed at their shared/generic
+   rule, which every other widget also relies on. */
+.tool-box[data-block-id="ease"] .tool-body,
+#sec-favorite .tool-body[data-block-id="ease"] {
+    gap: 5px;
+}
+.tool-box[data-block-id="ease"] {
+    padding-bottom: 5px;
 }
 
 .ease-panels-row {
@@ -2126,52 +2437,122 @@ input[type="checkbox"]:checked::after {
     min-width: 52px;
 }
 
-/* Compact lays Copy, Paste, and the display "screen" out in a single
-   inline row in that order — cutting across both original .ease-subpanel
-   groups (Copy's subpanel holds the screen; Paste's holds just Paste).
-   Both wrapper levels flatten via display:contents so all 3 real elements
-   become direct flex children, then `order` places each regardless of
-   which subpanel it's nested in. No card background/border anymore —
-   these sit directly on the tool-body like every other block's controls.
-   The old separate trash button is hidden here; the screen itself is the
-   clear button now (see the :hover rule below and doEaseClear in main.js). */
-#sec-ease-quick .ease-panels-row {
+/* Compact flattens both .ease-subpanel wrappers (dropping their own
+   card/label — the all-caps "COPY"/"PASTE" subheadings were never needed
+   once this isn't two separate labeled panels anymore) so the real
+   controls become direct flex children of one shared row, ordered
+   regardless of which original subpanel each came from. Which controls
+   actually show — and in what proportions — differs by width; see the two
+   blocks below. */
+.tool-box[data-block-id="ease"] .ease-panels-row,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-panels-row {
     display: flex;
-    align-items: center;
+    /* stretch (not center) so the buttons below can actually fill whatever
+       height this row's own flex share works out to, rather than sitting
+       at their own fixed height with dead space around them. */
+    align-items: stretch;
     gap: 6px;
+    flex: 1 1 0; /* ~33/66 split with the preview's own flex: 2 1 0 above */
+}
+.tool-box[data-block-id="ease"] .ease-action-btn,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-action-btn,
+.tool-box[data-block-id="ease"] .ease-subpanel-body .icon-btn.small,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-body .icon-btn.small {
+    height: 100%;
+}
+.tool-box[data-block-id="ease"] .ease-subpanel,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel {
+    display: contents;
+}
+.tool-box[data-block-id="ease"] .ease-subpanel-lbl,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-lbl {
+    display: none;
+}
+.tool-box[data-block-id="ease"] .ease-subpanel-body,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-body {
+    display: contents;
+}
+.tool-box[data-block-id="ease"] .ease-action-btn,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-action-btn {
+    padding: 0 10px;
+    font-size: 11px;
+    width: 100%;
+}
+
+/* Full width (Bottom Layout span=6, or the Favorite slot once narrow-stack
+   forces it full width too) has room for the keyframe-count "screen" —
+   Copy, Paste, and the screen share the row (the screen a little wider
+   than the two buttons), and the screen doubles as the clear button (hover
+   swaps its text for a trash icon — see doEaseClear in main.js), so the
+   old separate trash icon button is hidden here instead of competing for
+   the same space. */
+.tool-box[data-block-id="ease"][data-span="6"] .ease-copy-btn,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-copy-btn {
+    order: 1;
     flex: 1;
 }
-#sec-ease-quick .ease-subpanel { display: contents; }
-#sec-ease-quick .ease-subpanel-lbl { display: none; }
-#sec-ease-quick .ease-subpanel-body { display: contents; }
-
-#sec-ease-quick .ease-copy-btn { order: 1; flex: 1; }
-#sec-ease-quick #easePasteBtn { order: 2; flex: 1; }
-#sec-ease-quick .ease-subpanel-display { order: 3; flex: 1.5; }
-#sec-ease-quick .ease-subpanel-body .icon-btn.small { display: none; }
-
-#sec-ease-quick .ease-subpanel-display {
+.tool-box[data-block-id="ease"][data-span="6"] #easePasteBtn,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] #easePasteBtn {
+    order: 2;
+    flex: 1;
+}
+.tool-box[data-block-id="ease"][data-span="6"] .ease-subpanel-display,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-display {
     display: flex;
+    order: 3;
+    flex: 1.5;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: background 0.05s linear, border-color 0.05s linear;
 }
-#sec-ease-quick .ease-subpanel-display:hover {
+.tool-box[data-block-id="ease"][data-span="6"] .ease-subpanel-display:hover,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-display:hover {
     background: rgba(224, 85, 85, 0.14);
     border-color: #e05555;
 }
-#sec-ease-quick .ease-subpanel-display:hover .ease-display-text { display: none; }
-#sec-ease-quick .ease-subpanel-display:hover .ease-display-trash-icon {
+.tool-box[data-block-id="ease"][data-span="6"] .ease-subpanel-display:hover .ease-display-text,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-display:hover .ease-display-text {
+    display: none;
+}
+.tool-box[data-block-id="ease"][data-span="6"] .ease-subpanel-display:hover .ease-display-trash-icon,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-display:hover .ease-display-trash-icon {
     display: block;
     width: 14px;
     height: 14px;
     color: #e05555;
 }
-#sec-ease-quick .ease-action-btn {
-    padding: 0 10px;
-    font-size: 11px;
-    width: 100%;
+.tool-box[data-block-id="ease"][data-span="6"] .ease-subpanel-body .icon-btn.small,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-body .icon-btn.small {
+    display: none;
+}
+
+/* Half width (Bottom Layout span=3, or the Favorite slot the rest of the
+   time) already shows the bigger live curve/speed-graph preview above this
+   row (.ease-preview, its own rule further up) — the keyframe-count screen
+   here would just be a smaller, redundant copy of that, so it's dropped
+   instead, and the old separate trash icon button takes its place as a
+   plain fixed-size icon button (not stretched — Copy/Paste share the rest
+   evenly between them). */
+.tool-box[data-block-id="ease"][data-span="3"] .ease-copy-btn,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-copy-btn {
+    order: 1;
+    flex: 1;
+}
+.tool-box[data-block-id="ease"][data-span="3"] #easePasteBtn,
+#sec-favorite .tool-body[data-block-id="ease"] #easePasteBtn {
+    order: 2;
+    flex: 1;
+}
+.tool-box[data-block-id="ease"][data-span="3"] .ease-subpanel-body .icon-btn.small,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-body .icon-btn.small {
+    display: flex;
+    order: 3;
+    flex: 0 0 auto;
+}
+.tool-box[data-block-id="ease"][data-span="3"] .ease-subpanel-display,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-display {
+    display: none;
 }
 
 .cp-btns .ease-action-btn { flex: 1; }
@@ -3075,14 +3456,127 @@ input.gap-inline-input {
     cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     padding: 0;
-    transition: background 0.03s linear, color 0.03s linear;
+    transition: background 0.03s linear, color 0.03s linear, width 0.16s ease, opacity 0.16s ease, margin 0.16s ease;
     flex-shrink: 0;
+    overflow: hidden;
 }
 .settings-btn:hover { background: #222222; color: #c8c8c8; }
 .settings-btn.active { background: rgba(36,112,224,0.18); color: #7aaaff; }
-.settings-btn svg { width: 18px; height: 18px; pointer-events: none; }
+.settings-btn svg { width: 18px; height: 18px; pointer-events: none; flex-shrink: 0; }
+
+/* The footer's edit pencil / Classic Settings gear crossfade into each
+   other's spot off the same body.layout-classic class as the tab bar
+   above, rather than a hard swap. */
+/* Classic-only: the edit pencil has nothing to customize there (Quick
+   Actions/Bottom Layout are both Compact-only), so it collapses away —
+   the Settings gear beside it (#settingsGearBtn) stays put in both modes. */
+body.layout-classic #quickActionsEditBtn { width: 0; opacity: 0; pointer-events: none; }
 
 /* ── Settings overlay ─────────────────────────────────────────────────────── */
+
+/* ── Settings popup ───────────────────────────────────────────────────────────
+   Opened via #settingsGearBtn in the footer (openSettingsPopup in main.js),
+   in both Compact and Classic alike — no tab of its own. .settings-as-popup
+   turns #settingsPopup into the fixed backdrop, matching .settings-overlay's
+   own look; .settings-popup-visible is added a frame later so the fade-in
+   actually animates from opacity:0 instead of snapping in already-visible. */
+#settingsPopup {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.16s ease;
+}
+#settingsPopup.settings-as-popup { display: flex; }
+#settingsPopup.settings-as-popup.settings-popup-visible { opacity: 1; }
+.settings-modal-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #1e1e1e;
+    border: 1px solid #303030;
+    border-radius: 11px;
+    /* ~30% wider than the other .settings-modal dialogs (216px) — the
+       Sections list's rows (drag handle, name, hide toggle) need more
+       breathing room than Help/Update's simpler rows do. */
+    width: 280px;
+    padding: 0 12px 10px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.8);
+}
+.settings-popup-hdr {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* Bottom margin on top of .settings-modal-box's own 6px gap brings the
+       header-to-first-item space up to 12px, matching the box's own side
+       padding — everything else keeps the tighter 6px between items. */
+    margin: 0 -12px 6px -12px;
+    padding: 11px 12px 10px;
+}
+/* Version/Check for Updates — its own bottom bar (same edge-to-edge bleed
+   as .settings-popup-hdr above) rather than another row in the gapped
+   stack, so it reads as a persistent footer instead of just one more
+   section. Top margin mirrors .settings-popup-hdr's own bottom margin
+   above, for the same 12px reasoning. */
+.settings-popup-ftr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 6px -12px -10px;
+    padding: 10px 12px 11px;
+}
+
+/* ── What's New popup ─────────────────────────────────────────────────────────
+   Same fixed-backdrop/fade-in mechanism as #settingsPopup above (see
+   openWhatsNewPopup/closeWhatsNewPopup in main.js) — just its own id so it
+   can be shown independently of Settings. */
+#whatsNewPopup {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+    opacity: 0;
+    transition: opacity 0.16s ease;
+}
+#whatsNewPopup.whatsnew-as-popup { display: flex; }
+#whatsNewPopup.whatsnew-as-popup.whatsnew-popup-visible { opacity: 1; }
+.whatsnew-modal-box { width: 300px; }
+.whatsnew-ftr { justify-content: flex-end; }
+.whatsnew-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 2px 2px 4px;
+}
+.whatsnew-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+.whatsnew-item-icon {
+    width: 26px; height: 26px;
+    flex-shrink: 0;
+    border-radius: 7px;
+    background: rgba(36,112,224,0.14);
+    color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+}
+.whatsnew-item-icon svg { width: 15px; height: 15px; }
+.whatsnew-item-text { display: flex; flex-direction: column; gap: 2px; padding-top: 1px; }
+.whatsnew-item-title { font-size: 12px; font-weight: 600; color: #d8d8d8; }
+.whatsnew-item-body { font-size: 11px; line-height: 1.4; color: var(--text-dim); }
 
 .settings-overlay {
     position: fixed;
@@ -3211,7 +3705,12 @@ input.gap-inline-input {
     border-radius: 8px;
     padding: 9px 10px;
     user-select: none;
-    transition: transform 0.12s ease, border-color 0.03s linear, opacity 0.03s linear;
+    /* transform/opacity double as the one-by-one entrance (see
+       _renderClassicSettingsList in main.js, which sets each row's initial
+       scaled/faded state inline then releases it on a staggered delay) —
+       slower than a drag interaction would want, but nothing here actually
+       changes transform outside of that entrance. */
+    transition: transform 0.2s ease, border-color 0.03s linear, opacity 0.2s ease;
 }
 .settings-sec-row.dragging         { opacity: 0.25; }
 .settings-sec-row.drag-over-top    { border-top-color: var(--accent); }

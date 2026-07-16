@@ -2,30 +2,24 @@
 
 var cs = new CSInterface();
 
-// ── Tabs (Home / Tools / Settings) ─────────────────────────────────────────────
+// ── Tabs (Home / Tools) ──────────────────────────────────────────────────────
+// Settings has no tab of its own — it's always the popup opened by
+// openSettingsPopup below.
 
 function switchTab(name) {
-    ['home', 'tools', 'settings'].forEach(function(n) {
+    ['home', 'tools'].forEach(function(n) {
         var panel = document.getElementById(n === 'home' ? 'panel-content' : 'tab-' + n);
         if (panel) panel.classList.toggle('active', n === name);
         var btn = document.getElementById('tabBtn-' + n);
         if (btn) btn.classList.toggle('active', n === name);
     });
     try { localStorage.setItem('lineup-active-tab', name); } catch(e) {}
-
-    // Refresh the Classic Sections list whenever Settings comes into view —
-    // hidden state may have changed via Compact's editor since it was last
-    // rendered, and this is cheap enough to just rebuild unconditionally.
-    if (name === 'settings') {
-        var clsBlock = document.getElementById('classicSettingsBlock');
-        if (clsBlock && clsBlock.style.display !== 'none') _renderClassicSettingsList();
-    }
 }
 
 function restoreActiveTab() {
     var name;
     try { name = localStorage.getItem('lineup-active-tab'); } catch(e) {}
-    if (name === 'tools' || name === 'settings') switchTab(name);
+    if (name === 'tools') switchTab(name);
 }
 
 // ── Home layout ──────────────────────────────────────────────────────────────
@@ -76,57 +70,221 @@ function _anchorNaturalHeight() {
 
 function _syncAnchorRowUnit() {
     var grid = document.getElementById('homeTopGroup');
-    var h = _anchorNaturalHeight();
-    if (grid && h > 0) grid.style.setProperty('--home-anchor-unit', (h / 2) + 'px');
-}
-
-// Watches #homeTopGroup's width so a panel resize or zoom change re-derives
-// Anchor's height immediately; fires once on observe with the current size.
-function _initAnchorRowUnit() {
-    var grid = document.getElementById('homeTopGroup');
-    if (!grid || typeof ResizeObserver === 'undefined') return;
-    new ResizeObserver(function() { _syncAnchorRowUnit(); }).observe(grid);
-}
-
-// ── Narrow stack ─────────────────────────────────────────────────────────────
-// Below NARROW_STACK_THRESHOLD, every widget — including the top group
-// (Anchor/Quick Actions/Favorite) — renders full width and stacks, no more
-// half-width pairs. Purely a display-time override: _blApplyLayout (see
-// below) still computes each widget's real stored span from _blGetRows()
-// first and only forces it to 6 afterward when _narrowStack is on, so
-// nothing here ever touches what's actually saved — widening back past the
-// threshold re-applies the original pairing untouched. The top group's own
-// stacking is handled in CSS alone (#homeToolGrid.narrow-stack #homeTopGroup
-// .tool-box), since it isn't part of the rows/pack system at all.
-var NARROW_STACK_THRESHOLD = 330;
-var _narrowStack = false;
-
-function _syncNarrowStack() {
-    var grid = document.getElementById('homeToolGrid');
     if (!grid) return;
-    var isNarrow = grid.getBoundingClientRect().width < NARROW_STACK_THRESHOLD;
-    if (isNarrow === _narrowStack) return;
+
+    if (_anchorMedium) {
+        // CSS Grid's own "auto" row-track sizing splits whatever extra
+        // height Anchor's rowspan-2 need requires across BOTH rows it
+        // spans, regardless of align-self on the items inside them —
+        // align-self only positions an item within its track once that
+        // track's size is already decided, it can't stop the track itself
+        // from growing. That's what was still leaving a gap below Quick
+        // Actions even with align-self:start on it. Explicit row heights
+        // instead: row 1 pinned to exactly Quick Actions' own natural
+        // height, row 2 whatever's left over for Favorite to stretch into
+        // (its own align-items:stretch, unchanged) — the two rows' combined
+        // height always exactly matches Anchor's, so there's no gap
+        // anywhere in the column.
+        var qaBox = document.getElementById('sec-quick-actions');
+        var anchorHeight = _anchorNaturalHeight();
+        var qaHeight = qaBox ? qaBox.getBoundingClientRect().height : 0;
+        if (anchorHeight > 0 && qaHeight > 0) {
+            var favHeight = Math.max(0, anchorHeight - qaHeight);
+            grid.style.gridTemplateRows = qaHeight + 'px ' + favHeight + 'px';
+        }
+        return;
+    }
+
+    // Not medium — back to the normal, evenly-split arrangement (see
+    // .home-top-group's own --home-anchor-unit fallback comment).
+    grid.style.gridTemplateRows = '';
+    var h = _anchorNaturalHeight();
+    if (h > 0) grid.style.setProperty('--home-anchor-unit', (h / 2) + 'px');
+}
+
+// ── Anchor responsive tiers ──────────────────────────────────────────────────
+// Three bands, all measured off the same #homeToolGrid width:
+//   width >= ANCHOR_MEDIUM_THRESHOLD           : normal — Anchor/Quick
+//                                                 Actions/Favorite scale
+//                                                 down together as one unit
+//                                                 (see #homeTopGroup's zoom
+//                                                 below) as the panel
+//                                                 narrows, so the grid,
+//                                                 dropdown, Ignore Masks,
+//                                                 and Null button all shrink
+//                                                 in the same proportion
+//                                                 instead of any one of them
+//                                                 crowding out of step with
+//                                                 the others.
+//   NARROW_STACK_THRESHOLD <= width <          : medium — the square grid
+//   ANCHOR_MEDIUM_THRESHOLD                      has shrunk enough that the
+//                                                 dropdown/Ignore Masks/Null
+//                                                 row no longer fits
+//                                                 comfortably beside it even
+//                                                 at the zoom floor above;
+//                                                 stacked into a column
+//                                                 instead (see .anchor-medium
+//                                                 in style.css — plain
+//                                                 flex-direction:column, NOT
+//                                                 flex:1, which is what
+//                                                 caused the earlier
+//                                                 self-feeding "melting"
+//                                                 height bug), each control
+//                                                 given a legible 1.5x
+//                                                 height on top of that.
+//   width < NARROW_STACK_THRESHOLD             : narrow-stack — every
+//                                                 widget, including the top
+//                                                 group, goes full-width/
+//                                                 stacked; Anchor's own
+//                                                 grid+controls sit side by
+//                                                 side instead, at native
+//                                                 scale (the zoom above
+//                                                 resets to 1 here — full
+//                                                 width is the intended
+//                                                 remedy for this range, not
+//                                                 shrinking everything down
+//                                                 further on top of it), all
+//                                                 the way down — no smaller
+//                                                 breakpoint below this that
+//                                                 hides the controls
+//                                                 entirely (tried that; it
+//                                                 read worse, and dragged
+//                                                 Quick Actions/Favorite's
+//                                                 own layout down with it
+//                                                 since they share this same
+//                                                 top-group row). The
+//                                                 dropdown/Ignore Masks row/
+//                                                 Null button split the
+//                                                 controls column into
+//                                                 thirds via plain flex-grow
+//                                                 (see .anchor-mode-stack/
+//                                                 .btn-anchor-null's
+//                                                 narrow-stack rules) — pure
+//                                                 CSS, no JS-computed pixel
+//                                                 heights, so they can never
+//                                                 demand more than the
+//                                                 column's own actual height
+//                                                 and inflate Anchor's box
+//                                                 to fit (the same class of
+//                                                 bug medium mode's flex:1
+//                                                 attempt caused earlier).
+//   width < ANCHOR_TINY_THRESHOLD               : narrow-stack, tiny —
+//                                                 halfway between
+//                                                 NARROW_STACK_THRESHOLD and
+//                                                 the panel's own minimum
+//                                                 width (CSXS/manifest.xml's
+//                                                 MinSize), "Ignore Masks"
+//                                                 would actually bleed past
+//                                                 the edge at this point, so
+//                                                 its "Ignore " prefix drops
+//                                                 to just "Masks" (see
+//                                                 .ignore-masks-prefix).
+// Tune any of these directly if they kick in too early/late once actually
+// seen in AE.
+var ANCHOR_MEDIUM_THRESHOLD = 471; // roughly where the zoom below hits its floor and stops shrinking further
+var NARROW_STACK_THRESHOLD = 330;
+var ANCHOR_TINY_THRESHOLD = 275; // halfway between NARROW_STACK_THRESHOLD (330) and the panel's own MinSize width (220)
+// #homeTopGroup's own width at the panel's full max-width (570px, minus
+// .tool-grid's 10px-each-side padding) — the "zoom:1, no scaling" point the
+// ratio below is measured against.
+var TOP_GROUP_REFERENCE_WIDTH = 550;
+// 0.6 (matching the ratio's own value right at NARROW_STACK_THRESHOLD) read
+// as too small/hard to read well before the panel actually got that narrow
+// — text and icons were shrinking the whole way down. Floored higher so
+// zoom stops shrinking earlier and holds there instead; medium mode above
+// takes over from there.
+var TOP_GROUP_ZOOM_FLOOR = 0.82;
+
+var _anchorMedium = false;
+var _narrowStack = false;
+var _anchorTiny = false;
+
+function _syncAnchorTiers() {
+    var grid = document.getElementById('homeToolGrid');
+    var topGroup = document.getElementById('homeTopGroup');
+    if (!grid) return;
+    var width = grid.getBoundingClientRect().width;
+
+    var isNarrow = width < NARROW_STACK_THRESHOLD;
+    var isMedium = !isNarrow && width < ANCHOR_MEDIUM_THRESHOLD;
+    var isTiny = isNarrow && width < ANCHOR_TINY_THRESHOLD;
+    var narrowChanged = isNarrow !== _narrowStack;
+
+    _anchorMedium = isMedium;
     _narrowStack = isNarrow;
+    _anchorTiny = isTiny;
+    grid.classList.toggle('anchor-medium', isMedium);
     grid.classList.toggle('narrow-stack', isNarrow);
-    _blApplyLayout(); // re-syncs quickactions2's placeholders too (see its tail)
-    // _blApplyLayout only re-syncs quickactions2 (it's the one that's
-    // actually part of that rows/pack system) — the original top-group bar
-    // needs the same nudge directly, since its own shape just changed too.
-    var qaMainGrid = document.getElementById(QA_INSTANCES.main.gridId);
-    if (qaMainGrid) _qaSyncAddTiles('main', qaMainGrid);
-    // #homeTopGroup's own ResizeObserver (see _initAnchorRowUnit) reacts to
-    // ITS width changing, not to Anchor's children re-flowing from column
-    // to row internally — that reflow is a same-tick side effect of this
-    // same resize, not a further size change of #homeTopGroup itself, so
-    // it may never re-fire on its own. Recomputing here directly is what
-    // actually picks up _anchorNaturalHeight's now-narrow-aware reading.
+    grid.classList.toggle('anchor-tiny', isTiny);
+
+    if (topGroup) {
+        // #homeTopGroup's OWN rect isn't safe to re-measure here — it
+        // already has this same zoom applied to itself, so its reported
+        // width would already be shrunk by whatever zoom a previous call
+        // set, corrupting the ratio below. #homeToolGrid never gets zoomed
+        // itself, so its width (already measured above) stays a stable,
+        // un-shrunk reference every time — just subtract its own fixed
+        // 20px (10px each side) padding to approximate #homeTopGroup's
+        // natural, pre-zoom width.
+        var topGroupWidth = width - 20;
+        topGroup.style.zoom = isNarrow ? '' :
+            String(Math.min(1, Math.max(TOP_GROUP_ZOOM_FLOOR, topGroupWidth / TOP_GROUP_REFERENCE_WIDTH)));
+    }
+
+    // Bottom Layout/Quick Actions only care about the narrow-stack band
+    // itself — no need to re-pack/re-tile those unless it actually changed.
+    if (narrowChanged) {
+        _blApplyLayout(); // re-syncs quickactions2's placeholders too (see its tail)
+        var qaMainGrid = document.getElementById(QA_INSTANCES.main.gridId);
+        if (qaMainGrid) _qaSyncAddTiles('main', qaMainGrid);
+    }
+    // Anchor's own natural height depends on which of these tiers/zoom
+    // level is active — always recomputed, not just on narrowChanged.
     _syncAnchorRowUnit();
 }
 
-function _initNarrowStack() {
+function _initAnchorTiers() {
     var grid = document.getElementById('homeToolGrid');
     if (!grid || typeof ResizeObserver === 'undefined') return;
-    new ResizeObserver(function() { _syncNarrowStack(); }).observe(grid);
+    new ResizeObserver(function() { _syncAnchorTiers(); }).observe(grid);
+}
+
+// Align/Distribute's header row (icon + "Align to"/"Distribute to" + select
+// + Offset toggle) — and Sort Layers' own (icon + "Sort Layers based on" +
+// Property/Axis selects) — used to let their trailing controls wrap onto
+// their own line, or spill outside the box, well before the panel was
+// actually narrow enough to trigger anything else. The row-specific label
+// ("Align to"/"Distribute to"/"Sort Layers based on") drops first (same
+// idea as half-width already dropping it outright); Align/Distribute also
+// get a second tier, dropping Offset's own word too if that alone still
+// isn't enough (keeping just its checkbox/diamond in the top right corner
+// — Sort has no equivalent trailing toggle, so this tier is a no-op for
+// it). Compact only — Classic's own fixed ~360px column never had this
+// complaint and keeps wrapping as normal (see .ctrl-row's own
+// flex-wrap:nowrap override, Compact-scoped).
+function _syncCtrlRowLabels() {
+    ['align', 'distribute', 'sort'].forEach(function(id) {
+        var row = document.querySelector('.tool-box[data-block-id="' + id + '"] .ctrl-row');
+        if (!row) return;
+        // Re-measure with both labels showing first — scrollWidth while
+        // already hidden would understate how wide this needs to be,
+        // leaving either stuck hidden even once there's room again.
+        row.classList.remove('ctrl-row-tight', 'ctrl-row-tighter');
+        void row.offsetWidth; // force reflow so the next scrollWidth read reflects that reset
+        if (row.scrollWidth <= row.clientWidth + 1) return; // fits as-is
+
+        row.classList.add('ctrl-row-tight'); // drop "Align to"/"Distribute to" first
+        void row.offsetWidth; // force reflow so the next scrollWidth read reflects the label now being gone
+        if (row.scrollWidth > row.clientWidth + 1) {
+            row.classList.add('ctrl-row-tighter'); // still doesn't fit — drop "Offset" 's own word too
+        }
+    });
+}
+
+function _initCtrlRowLabels() {
+    var grid = document.getElementById('homeToolGrid');
+    if (!grid || typeof ResizeObserver === 'undefined') return;
+    new ResizeObserver(function() { _syncCtrlRowLabels(); }).observe(grid);
 }
 
 // ── Layout mode (Compact / Classic) ──────────────────────────────────────────
@@ -150,12 +308,108 @@ function restoreLayoutMode() {
     _applyLayoutMode(mode === 'classic' ? 'classic' : 'compact');
 }
 
+// ── Settings popup ────────────────────────────────────────────────────────────
+// Opened via the gear button in the footer — no tab of its own in either
+// layout mode (see openSettingsPopup's onclick and switchTab above). Styled
+// in CSS like the other .settings-overlay/.settings-modal dialogs
+// (.settings-as-popup), with .settings-popup-visible added a frame later so
+// the fade-in actually animates instead of snapping in already-visible.
+function openSettingsPopup() {
+    var panel = document.getElementById('settingsPopup');
+    if (!panel) return;
+    panel.classList.add('settings-as-popup');
+    void panel.offsetWidth; // force reflow so the fade-in below actually starts from opacity:0
+    panel.classList.add('settings-popup-visible');
+    var clsBlock = document.getElementById('classicSettingsBlock');
+    if (clsBlock && clsBlock.classList.contains('classic-sections-open')) _renderClassicSettingsList();
+}
+
+function closeSettingsPopup() {
+    var panel = document.getElementById('settingsPopup');
+    if (!panel || !panel.classList.contains('settings-as-popup')) return;
+    panel.classList.remove('settings-popup-visible');
+    // .settings-as-popup itself (the fixed-position overlay chrome) only
+    // comes off after the fade-out finishes — removing it immediately would
+    // snap straight to display:none mid-transition instead of fading.
+    setTimeout(function() { panel.classList.remove('settings-as-popup'); }, 160);
+}
+
+// ── What's New popup ──────────────────────────────────────────────────────────
+// Shown once per upgrade, only for versions listed below that flag something
+// worth calling out — a plain patch bump with no entry here stays silent.
+// Triggered from update.js's checkForUpdates once the installed manifest
+// version is known (see _maybeShowWhatsNew).
+var WHATS_NEW = {
+    '1.8.6': [
+        {
+            icon: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="2" width="7" height="7" rx="2"/><rect x="11" y="2" width="7" height="7" rx="2"/><rect x="2" y="11" width="7" height="7" rx="2"/><rect x="11" y="11" width="7" height="7" rx="2"/></svg>',
+            title: 'Compact Mode',
+            body: 'A denser, icon-first layout that fits every tool into a fraction of the vertical space Classic needs — switch anytime from the gear icon in the footer.'
+        }
+    ]
+};
+
+// lastSeen is only absent on a genuinely fresh install (nothing to compare
+// the current version against yet) — record it silently and skip the popup
+// so new users aren't shown an "upgrade" notice for the version they just
+// installed for the first time.
+function _maybeShowWhatsNew(version) {
+    if (!version) return;
+    var lastSeen = null;
+    try { lastSeen = localStorage.getItem('lineup-last-seen-version'); } catch(e) {}
+    try { localStorage.setItem('lineup-last-seen-version', version); } catch(e) {}
+    if (!lastSeen || lastSeen === version) return;
+    if (!WHATS_NEW[version]) return;
+    _renderWhatsNew(version);
+    openWhatsNewPopup();
+}
+
+function _renderWhatsNew(version) {
+    var titleEl = document.getElementById('whatsNewTitle');
+    if (titleEl) titleEl.textContent = "What's New in v" + version;
+    var list = document.getElementById('whatsNewList');
+    if (!list) return;
+    list.innerHTML = '';
+    (WHATS_NEW[version] || []).forEach(function(item) {
+        var row = document.createElement('div');
+        row.className = 'whatsnew-item';
+        row.innerHTML =
+            '<div class="whatsnew-item-icon">' + item.icon + '</div>' +
+            '<div class="whatsnew-item-text">' +
+                '<div class="whatsnew-item-title">' + item.title + '</div>' +
+                '<div class="whatsnew-item-body">' + item.body + '</div>' +
+            '</div>';
+        list.appendChild(row);
+    });
+}
+
+function openWhatsNewPopup() {
+    var panel = document.getElementById('whatsNewPopup');
+    if (!panel) return;
+    panel.classList.add('whatsnew-as-popup');
+    void panel.offsetWidth; // force reflow so the fade-in below actually starts from opacity:0
+    panel.classList.add('whatsnew-popup-visible');
+}
+
+function closeWhatsNewPopup() {
+    var panel = document.getElementById('whatsNewPopup');
+    if (!panel || !panel.classList.contains('whatsnew-as-popup')) return;
+    panel.classList.remove('whatsnew-popup-visible');
+    setTimeout(function() { panel.classList.remove('whatsnew-as-popup'); }, 160);
+}
+
 function _applyLayoutMode(mode) {
     var isClassic   = mode === 'classic';
     var compactGrid = document.getElementById('homeGrid');
     var compactTop  = document.getElementById('homeTopGroup');
     var classicGrid = document.getElementById('homeClassic');
     var clsBlock    = document.getElementById('classicSettingsBlock');
+
+    // Classic hides the tab bar and the Quick Actions edit pencil (Settings
+    // is reached via the same gear button, #settingsGearBtn, in both modes)
+    // — CSS alone handles the actual show/hide (with a fade/collapse
+    // transition) off this one class.
+    document.body.classList.toggle('layout-classic', isClassic);
 
     CLASSIC_BLOCK_IDS.forEach(function(id) {
         var body = document.querySelector('.tool-body[data-block-id="' + id + '"]');
@@ -194,7 +448,10 @@ function _applyLayoutMode(mode) {
     if (compactGrid) compactGrid.style.display = isClassic ? 'none' : '';
     if (compactTop)   compactTop.style.display  = isClassic ? 'none' : '';
     if (classicGrid) classicGrid.style.display = isClassic ? '' : 'none';
-    if (clsBlock)     clsBlock.style.display    = isClassic ? '' : 'none';
+    // Accordions open/closed (see .classic-sections-open in style.css)
+    // rather than an instant display:none swap, so the Settings popup
+    // grows/shrinks into it instead of popping.
+    if (clsBlock)     clsBlock.classList.toggle('classic-sections-open', isClassic);
 
     // The Favorite slot only exists in Compact — Classic already moved
     // everything above into its own section-bodies, nothing left to do here.
@@ -685,12 +942,11 @@ function doEaseClear() {
     });
 }
 
-// ── Ease preview (live curve + speed graph) ─────────────────────────────────
+// ── Ease preview (live curve) ────────────────────────────────────────────────
 // Only ever visible at half width (see the CSS on .ease-preview) — a value
-// curve with a dot at each copied keyframe, plus a speed (velocity) graph
-// beneath it that can dip negative wherever the interpolation temporarily
-// reverses (e.g. a strong ease-out overshoot). Reconstructs the same
-// speed/influence -> bezier handles AE's own graph editor uses (see
+// curve with a dot at each copied keyframe, normalized to all the copied
+// keyframes' relative timing (not just the first two). Reconstructs the
+// same speed/influence -> bezier handles AE's own graph editor uses (see
 // _easeSegmentSamples), sampling each segment as a parametric curve rather
 // than trying to invert time -> value, which sidesteps needing to solve the
 // cubic for a given time. Multi-dimensional properties (Position, Scale,
@@ -715,10 +971,6 @@ function _easeBezierPoint(p0, p1, p2, p3, u) {
     var mu = 1 - u;
     return mu*mu*mu*p0 + 3*mu*mu*u*p1 + 3*mu*u*u*p2 + u*u*u*p3;
 }
-function _easeBezierDeriv(p0, p1, p2, p3, u) {
-    var mu = 1 - u;
-    return 3*mu*mu*(p1 - p0) + 6*mu*u*(p2 - p1) + 3*u*u*(p3 - p2);
-}
 
 // A keyframe's dimension-0 value, whether it was copied as a plain number
 // (Opacity, Rotation) or a per-dimension array (Position, Scale, ...).
@@ -727,29 +979,30 @@ function _easeDim0(v) {
     return typeof v === 'number' ? v : 0;
 }
 
-// Samples between two consecutive copied keyframes as {t, v, speed} triples
-// — t/v walk the parametric bezier directly (exact, no time->value
-// inversion needed) and speed is dv/dt = (dv/du)/(dt/du) at that point,
-// which is what can legitimately go negative on a strong overshoot.
+// Samples between two consecutive copied keyframes — { samples, handle }.
+// samples are {t, v} pairs walking the parametric bezier directly (exact,
+// no time->value inversion needed); handle is the pair of actual bezier
+// control points (kA's out-handle, kB's in-handle) for genuine bezier
+// segments, or null for hold/linear ones (they have no real handle to
+// show — see _easePreviewRender, which draws a line + dot for each).
 function _easeSegmentSamples(kA, kB) {
     var tA = kA.time, tB = kB.time, dt = tB - tA;
-    if (!(typeof tA === 'number' && typeof tB === 'number' && dt > 0)) return [];
+    if (!(typeof tA === 'number' && typeof tB === 'number' && dt > 0)) return { samples: [], handle: null };
     var vA = _easeDim0(kA.value), vB = _easeDim0(kB.value);
     var out = [];
 
     if (kA.outType === 'hold') {
         for (var i = 0; i <= EASE_PREVIEW_SAMPLES; i++) {
-            out.push({ t: tA + (i / EASE_PREVIEW_SAMPLES) * dt, v: vA, speed: 0 });
+            out.push({ t: tA + (i / EASE_PREVIEW_SAMPLES) * dt, v: vA });
         }
-        return out;
+        return { samples: out, handle: null };
     }
     if (kA.outType === 'linear' && kB.inType === 'linear') {
-        var linSpeed = (vB - vA) / dt;
         for (var j = 0; j <= EASE_PREVIEW_SAMPLES; j++) {
             var uu = j / EASE_PREVIEW_SAMPLES;
-            out.push({ t: tA + uu * dt, v: vA + (vB - vA) * uu, speed: linSpeed });
+            out.push({ t: tA + uu * dt, v: vA + (vB - vA) * uu });
         }
-        return out;
+        return { samples: out, handle: null };
     }
 
     // Bezier (or Bezier mixed with Linear on one side) — reconstruct the
@@ -764,13 +1017,15 @@ function _easeSegmentSamples(kA, kB) {
 
     for (var k = 0; k <= EASE_PREVIEW_SAMPLES; k++) {
         var u = k / EASE_PREVIEW_SAMPLES;
-        var t = _easeBezierPoint(tA, t1, t2, tB, u);
-        var v = _easeBezierPoint(vA, v1, v2, vB, u);
-        var dtdu = _easeBezierDeriv(tA, t1, t2, tB, u);
-        var dvdu = _easeBezierDeriv(vA, v1, v2, vB, u);
-        out.push({ t: t, v: v, speed: Math.abs(dtdu) > 1e-6 ? (dvdu / dtdu) : 0 });
+        out.push({ t: _easeBezierPoint(tA, t1, t2, tB, u), v: _easeBezierPoint(vA, v1, v2, vB, u) });
     }
-    return out;
+    return {
+        samples: out,
+        handle: {
+            from: { t: tA, v: vA }, out: { t: t1, v: v1 },
+            to: { t: tB, v: vB }, in: { t: t2, v: v2 }
+        }
+    };
 }
 
 function _easePreviewRender(data) {
@@ -785,53 +1040,62 @@ function _easePreviewRender(data) {
     }
     box.classList.remove('is-empty');
 
-    var segments = [];
-    for (var i = 0; i < keys.length - 1; i++) segments.push(_easeSegmentSamples(keys[i], keys[i + 1]));
+    var segments = keys.slice(0, -1).map(function(k, i) { return _easeSegmentSamples(k, keys[i + 1]); });
 
-    var allSamples = [].concat.apply([], segments);
+    var allSamples = [].concat.apply([], segments.map(function(seg) { return seg.samples; }));
     if (!allSamples.length) { box.classList.add('is-empty'); return; }
 
     var tMin = keys[0].time, tMax = keys[keys.length - 1].time, tSpan = (tMax - tMin) || 1;
-    var vMin = Infinity, vMax = -Infinity, speedAbsMax = 0;
+    var vMin = Infinity, vMax = -Infinity;
     allSamples.forEach(function(s) {
         if (s.v < vMin) vMin = s.v;
         if (s.v > vMax) vMax = s.v;
-        if (Math.abs(s.speed) > speedAbsMax) speedAbsMax = Math.abs(s.speed);
     });
     var vSpan = (vMax - vMin) || 1;
 
-    var VALUE_TOP = 4, VALUE_H = EASE_PREVIEW_H * 0.55;
-    var SPEED_MID = EASE_PREVIEW_H * 0.78, SPEED_H = EASE_PREVIEW_H * 0.2;
+    // 5% margin on both axes — was 0 horizontally (the first/last keyframe
+    // sat exactly on the viewBox edge) and a smaller fixed 6px vertically;
+    // both are now a real, proportional margin baked into the coordinate
+    // mapping itself, on top of .ease-preview's own CSS padding.
+    var X_MARGIN = EASE_PREVIEW_W * 0.05, VALUE_TOP = EASE_PREVIEW_H * 0.05;
+    var PLOT_W = EASE_PREVIEW_W - 2 * X_MARGIN, VALUE_H = EASE_PREVIEW_H - 2 * VALUE_TOP;
 
-    function xOf(t) { return ((t - tMin) / tSpan) * EASE_PREVIEW_W; }
+    function xOf(t) { return X_MARGIN + ((t - tMin) / tSpan) * PLOT_W; }
     function yOfValue(v) { return VALUE_TOP + VALUE_H - ((v - vMin) / vSpan) * VALUE_H; }
-    function yOfSpeed(s) { return speedAbsMax > 0 ? (SPEED_MID - (s / speedAbsMax) * SPEED_H) : SPEED_MID; }
 
     var valuePath = '';
     allSamples.forEach(function(s, i) {
         valuePath += (i === 0 ? 'M' : 'L') + xOf(s.t).toFixed(2) + ',' + yOfValue(s.v).toFixed(2) + ' ';
     });
 
-    function speedAreaPath(clampFn) {
-        var d = 'M' + xOf(allSamples[0].t).toFixed(2) + ',' + SPEED_MID.toFixed(2) + ' ';
-        allSamples.forEach(function(s) {
-            d += 'L' + xOf(s.t).toFixed(2) + ',' + yOfSpeed(clampFn(s.speed)).toFixed(2) + ' ';
-        });
-        d += 'L' + xOf(allSamples[allSamples.length - 1].t).toFixed(2) + ',' + SPEED_MID.toFixed(2) + ' Z';
-        return d;
-    }
-
-    var zeroLine = document.getElementById('easePreviewZeroLine');
-    if (zeroLine) {
-        zeroLine.setAttribute('y1', SPEED_MID); zeroLine.setAttribute('y2', SPEED_MID);
-        zeroLine.setAttribute('x2', EASE_PREVIEW_W);
-    }
     var valueEl = document.getElementById('easePreviewValuePath');
     if (valueEl) valueEl.setAttribute('d', valuePath.trim());
-    var posEl = document.getElementById('easePreviewSpeedPos');
-    if (posEl) posEl.setAttribute('d', speedAreaPath(function(s) { return Math.max(0, s); }));
-    var negEl = document.getElementById('easePreviewSpeedNeg');
-    if (negEl) negEl.setAttribute('d', speedAreaPath(function(s) { return Math.min(0, s); }));
+
+    // Bezier handles — a dimmer line from each keyframe to its actual
+    // control point, plus a small dot at the handle itself (see
+    // _easeSegmentSamples, which only returns one for genuine bezier
+    // segments — hold/linear have no real handle to draw).
+    var handlesG = document.getElementById('easePreviewHandles');
+    if (handlesG) {
+        handlesG.innerHTML = '';
+        var svgNS = 'http://www.w3.org/2000/svg';
+        segments.forEach(function(seg) {
+            if (!seg.handle) return;
+            [[seg.handle.from, seg.handle.out], [seg.handle.to, seg.handle.in]].forEach(function(pair) {
+                var line = document.createElementNS(svgNS, 'line');
+                line.setAttribute('x1', xOf(pair[0].t).toFixed(2));
+                line.setAttribute('y1', yOfValue(pair[0].v).toFixed(2));
+                line.setAttribute('x2', xOf(pair[1].t).toFixed(2));
+                line.setAttribute('y2', yOfValue(pair[1].v).toFixed(2));
+                handlesG.appendChild(line);
+                var dot = document.createElementNS(svgNS, 'circle');
+                dot.setAttribute('cx', xOf(pair[1].t).toFixed(2));
+                dot.setAttribute('cy', yOfValue(pair[1].v).toFixed(2));
+                dot.setAttribute('r', 1.5);
+                handlesG.appendChild(dot);
+            });
+        });
+    }
 
     var pointsG = document.getElementById('easePreviewPoints');
     if (pointsG) {
@@ -840,7 +1104,7 @@ function _easePreviewRender(data) {
             var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             c.setAttribute('cx', xOf(k.time).toFixed(2));
             c.setAttribute('cy', yOfValue(_easeDim0(k.value)).toFixed(2));
-            c.setAttribute('r', 2.4);
+            c.setAttribute('r', 2.64); // 2.4 + 10%
             pointsG.appendChild(c);
         });
     }
@@ -2821,6 +3085,11 @@ function _blApplyLayout(rows) {
     // _qaGridShape), which just changed along with its span above.
     var qa2Grid = document.getElementById(QA_INSTANCES.quickactions2.gridId);
     if (qa2Grid) _qaSyncAddTiles('quickactions2', qa2Grid);
+    // Align/Distribute's own available width can change here (a drag
+    // docking/undocking them into a pair, or narrow-stack forcing span 6)
+    // without #homeToolGrid itself resizing, so _syncCtrlRowLabels' own
+    // ResizeObserver (see _initCtrlRowLabels) wouldn't otherwise re-fire.
+    _syncCtrlRowLabels();
 }
 
 function _blCaptureRects(ids) {
@@ -4166,11 +4435,12 @@ function doRecalcRig() { run('lineup_recalcRig()'); }
 
 // ── Panel scale ───────────────────────────────────────────────────────────────
 
-// Recentered ~20% smaller than the original [0.85, 1.0, 1.15] — the whole
-// Home tab (Compact and Classic both live inside #panel-content) reads
-// noticeably large at native size, and zoom scales it as one unit without
-// disturbing any internal flex/grid proportions.
-var SCALE_FACTORS = [0.65, 0.8, 0.95];
+// Bumped ~30% up from [0.65, 0.8, 0.95] — reads noticeably too small when
+// actually tested at real size inside AE, not just in a browser preview.
+// zoom scales the whole Home tab (Compact and Classic both live inside
+// #panel-content) as one unit without disturbing any internal flex/grid
+// proportions.
+var SCALE_FACTORS = [0.85, 1.05, 1.25];
 
 function applyScale(val) {
     var f = SCALE_FACTORS[Math.max(0, Math.min(2, val))];
@@ -4231,9 +4501,24 @@ function _renderClassicSettingsList() {
     var sections = document.querySelectorAll('#homeClassic .section[data-block-id]');
 
     list.innerHTML = '';
+    var rows = [];
     sections.forEach(function(sec) {
         var row = buildSettingsRow(sec);
-        if (row) list.appendChild(row);
+        if (!row) return;
+        // Starts faded/scaled down inline (ahead of the class-driven
+        // .settings-sec-row transition — see its own rule in style.css) so
+        // each row can be released on its own staggered delay below,
+        // instead of every row just popping in together.
+        row.style.opacity = '0';
+        row.style.transform = 'scale(0.92)';
+        list.appendChild(row);
+        rows.push(row);
+    });
+    rows.forEach(function(row, i) {
+        setTimeout(function() {
+            row.style.opacity = '';
+            row.style.transform = '';
+        }, i * 35);
     });
 
     initSettingsDrag();
@@ -5175,8 +5460,8 @@ function applyCompExport() {
 
 document.addEventListener('DOMContentLoaded', function() {
     restoreActiveTab();
-    _initAnchorRowUnit();
-    _initNarrowStack();
+    _initAnchorTiers();
+    _initCtrlRowLabels();
     restoreClassicOrder();
     restoreClassicCollapsed();
     restoreLayoutMode();

@@ -206,6 +206,7 @@
             if (footerEl) footerEl.textContent = 'v' + localVer;
             var settingsVerEl = document.getElementById('settingsVersionLbl');
             if (settingsVerEl) settingsVerEl.textContent = 'Version ' + localVer;
+            if (typeof _maybeShowWhatsNew === 'function') _maybeShowWhatsNew(localVer);
 
             if (DEBUG_FORCE_SHOW_BANNER) {
                 _showBanner({ version: '9.9.9', url: 'https://github.com/' + REPO + '/releases/latest' });
