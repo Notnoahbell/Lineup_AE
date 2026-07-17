@@ -151,6 +151,40 @@ function fromComp(layer, compPoint) {
     return [rx / (scale[0] / 100) + anchor[0], ry / (scale[1] / 100) + anchor[1]];
 }
 
+// Linear (rotation+scale) part of what fromComp applies at one ancestor level —
+// converts a delta expressed in `ancestor`'s PARENT space into a delta expressed
+// in `ancestor`'s OWN local space. For a delta (as opposed to a point), the
+// position/anchor terms in fromComp's per-level math cancel out, leaving just
+// the rotate+scale part.
+function oneLevelDelta(ancestor, dx, dy) {
+    var scale = ancestor.scale.value;
+    var rotation = ancestor.rotation.value * (Math.PI / 180);
+    var cos = Math.cos(-rotation), sin = Math.sin(-rotation);
+    var rx = cos*dx - sin*dy, ry = sin*dx + cos*dy;
+    return [rx / (scale[0]/100), ry / (scale[1]/100)];
+}
+
+// Converts a delta in true comp space into the delta that should be added to
+// layer.position (which lives in layer.parent's local space, or comp space with
+// no parent) to move the layer by that much on screen — the position-delta
+// counterpart of fromComp's point conversion. This is what makes Align correct
+// under a scaled/rotated parent (a null, a rig, ...): a comp-space pixel delta
+// only equals a position-unit delta when there's no parent, or an unscaled/
+// unrotated one. Walks the ancestor chain top-down, applying each ancestor's own
+// rotation/scale in turn — same recursion order as fromComp, but starting one
+// level up (at layer.parent), since position is unaffected by the layer's OWN
+// rotation/scale/anchor.
+function compDeltaToPositionDelta(layer, dCompX, dCompY) {
+    var chain = [];
+    for (var p = layer.parent; p; p = p.parent) chain.push(p);
+    var dx = dCompX, dy = dCompY;
+    for (var i = chain.length - 1; i >= 0; i--) {
+        var d = oneLevelDelta(chain[i], dx, dy);
+        dx = d[0]; dy = d[1];
+    }
+    return [dx, dy];
+}
+
 function applyAnchorShift(layer, newAnchor) {
     var comp = app.project.activeItem;
     var t = comp.time;
@@ -311,15 +345,28 @@ function lineup_align(alignIdx, alignToSelection, margin, usePercent, offsetKeys
             var pos = posProp.value;
             var np  = is3D ? [pos[0],pos[1],pos[2]] : [pos[0],pos[1]];
 
+            // Comp-space delta Align wants to close, converted to a position-unit
+            // delta through this layer's parent chain (see compDeltaToPositionDelta)
+            // — this is what keeps alignment correct under a scaled/rotated parent
+            // (a null, a rig, ...) instead of assuming 1 position unit always equals
+            // 1 comp pixel.
+            var dCompX = 0, dCompY = 0;
             switch (mode) {
-                case "left":    np[0] += mW - rect.left;                        break;
-                case "right":   np[0] += (cw-mW) - rect.right;                 break;
-                case "top":     np[1] += mH - rect.top;                         break;
-                case "bottom":  np[1] += (ch-mH) - rect.bottom;                break;
-                case "centerX": np[0] += (cw/2) - (rect.left + rect.width/2);  break;
-                case "centerY": np[1] += (ch/2) - (rect.top  + rect.height/2); break;
+                case "left":    dCompX = mW - rect.left;                        break;
+                case "right":   dCompX = (cw-mW) - rect.right;                 break;
+                case "top":     dCompY = mH - rect.top;                         break;
+                case "bottom":  dCompY = (ch-mH) - rect.bottom;                break;
+                case "centerX": dCompX = (cw/2) - (rect.left + rect.width/2);  break;
+                case "centerY": dCompY = (ch/2) - (rect.top  + rect.height/2); break;
             }
+            var d0 = compDeltaToPositionDelta(layer, dCompX, dCompY);
+            np[0] += d0[0]; np[1] += d0[1];
 
+            // 3D layers with real depth can additionally be skewed by camera
+            // perspective, which compDeltaToPositionDelta doesn't model (it's the
+            // parent chain's linear rotation+scale only) — refine by re-measuring
+            // the actual bounding rect and correcting the residual the same way
+            // until it converges.
             if (is3D && Math.abs(pos[2]) > 0.01) {
                 for (var iter = 0; iter < 5; iter++) {
                     if (posProp.dimensionsSeparated) {
@@ -328,17 +375,18 @@ function lineup_align(alignIdx, alignToSelection, margin, usePercent, offsetKeys
                         posProp.getSeparationFollower(2).setValue(np[2]);
                     } else { posProp.setValue(np); }
                     var nr = getLayerCompBounds(layer, comp);
-                    var ex = 0, ey = 0;
+                    var eCompX = 0, eCompY = 0;
                     switch (mode) {
-                        case "left":    ex = mW - nr.left; break;
-                        case "right":   ex = (cw-mW) - nr.right; break;
-                        case "top":     ey = mH - nr.top; break;
-                        case "bottom":  ey = (ch-mH) - nr.bottom; break;
-                        case "centerX": ex = (cw/2) - (nr.left + nr.width/2); break;
-                        case "centerY": ey = (ch/2) - (nr.top  + nr.height/2); break;
+                        case "left":    eCompX = mW - nr.left; break;
+                        case "right":   eCompX = (cw-mW) - nr.right; break;
+                        case "top":     eCompY = mH - nr.top; break;
+                        case "bottom":  eCompY = (ch-mH) - nr.bottom; break;
+                        case "centerX": eCompX = (cw/2) - (nr.left + nr.width/2); break;
+                        case "centerY": eCompY = (ch/2) - (nr.top  + nr.height/2); break;
                     }
-                    if (Math.abs(ex) < 0.5 && Math.abs(ey) < 0.5) break;
-                    np[0] += ex; np[1] += ey;
+                    if (Math.abs(eCompX) < 0.5 && Math.abs(eCompY) < 0.5) break;
+                    var de = compDeltaToPositionDelta(layer, eCompX, eCompY);
+                    np[0] += de[0]; np[1] += de[1];
                 }
             }
 
@@ -1012,6 +1060,41 @@ function adaptEaseDims(arr, dimN) {
     return out;
 }
 
+// Elementwise (v2 - v1), for either plain numbers (Rotation, Opacity, ...) or
+// per-dimension arrays (Position, Scale, ...). Returns null when either side
+// is missing/non-numeric so callers can treat "no delta" as "don't know the
+// direction" rather than accidentally treating a 0 as "no change".
+function valueDelta(v2, v1) {
+    if (v2 === null || v2 === undefined || v1 === null || v1 === undefined) return null;
+    if (v2 instanceof Array && v1 instanceof Array) {
+        var out = [];
+        for (var i=0; i<v2.length; i++) out.push(v2[i] - v1[i]);
+        return out;
+    }
+    if (typeof v2 === "number" && typeof v1 === "number") return v2 - v1;
+    return null;
+}
+
+// A copied ease's speed is signed to the direction the source value was
+// moving in (see main.js's _easeSegmentSamples, which reconstructs the same
+// bezier handles from speed * dt). Pasting that speed verbatim onto a
+// segment moving the opposite way — increasing angle's ease pasted onto a
+// decreasing one — would ease toward the wrong direction, so per dimension,
+// flip the speed's sign whenever the source and target segments disagree on
+// direction. Influence (0-100%) has no direction and is left alone.
+function directionalizeEase(easeArr, srcDelta, tgtDelta) {
+    if (!easeArr || srcDelta === null || srcDelta === undefined || tgtDelta === null || tgtDelta === undefined) return easeArr;
+    var s = (srcDelta instanceof Array) ? srcDelta : [srcDelta];
+    var t = (tgtDelta instanceof Array) ? tgtDelta : [tgtDelta];
+    var out = [];
+    for (var d=0; d<easeArr.length; d++) {
+        var sd = s[d < s.length ? d : s.length-1], td = t[d < t.length ? d : t.length-1];
+        var flip = sd !== 0 && td !== 0 && ((sd < 0) !== (td < 0));
+        out.push(flip ? new KeyframeEase(-easeArr[d].speed, easeArr[d].influence) : easeArr[d]);
+    }
+    return out;
+}
+
 // Applies a copied ease template entry to one target keyframe. Order matters:
 // setTemporalEaseAtKey force-promotes both sides of the key to Bezier as a side
 // effect (that's the AE API, not a bug here), so it has to run FIRST; the real
@@ -1020,14 +1103,30 @@ function adaptEaseDims(arr, dimN) {
 // old order (type, then ease) let the ease call silently re-promote a just-set
 // Hold side back to Bezier, and skipping the ease call for any non-Bezier side (as
 // a previous fix did) lost the real ease on the side that *was* Bezier too.
-function applyPastedEase(prop, keyIdx, src) {
-    if (src.inEase && src.outEase) {
+//
+// src.inEase/inType and src.outEase/outType may each be null — ease copy only
+// captures the side of a keyframe that borders another copied keyframe (see
+// lineup_easeCopy), so the first copied keyframe has no inEase and the last has
+// no outEase. A null side here means "leave whatever this target keyframe
+// already has alone", so it falls back to the target's own current ease/type
+// instead of being overwritten with the source's unrelated far side.
+// tInDelta/tOutDelta are the target segment's own value deltas, used to flip
+// the copied speed's sign when the target is moving the opposite direction
+// from the source (see directionalizeEase).
+function applyPastedEase(prop, keyIdx, src, tInDelta, tOutDelta) {
+    var inType  = (src.inType  !== null && src.inType  !== undefined) ? src.inType  : prop.keyInInterpolationType(keyIdx);
+    var outType = (src.outType !== null && src.outType !== undefined) ? src.outType : prop.keyOutInterpolationType(keyIdx);
+
+    if (src.inEase || src.outEase) {
         var dimN = 0;
         try { dimN = prop.keyInTemporalEase(keyIdx).length; } catch (e) {}
-        var inE = adaptEaseDims(src.inEase, dimN), outE = adaptEaseDims(src.outEase, dimN);
+        var inE  = src.inEase  ? directionalizeEase(adaptEaseDims(src.inEase,  dimN), src.inDelta,  tInDelta)
+                                : prop.keyInTemporalEase(keyIdx);
+        var outE = src.outEase ? directionalizeEase(adaptEaseDims(src.outEase, dimN), src.outDelta, tOutDelta)
+                                : prop.keyOutTemporalEase(keyIdx);
         try { prop.setTemporalEaseAtKey(keyIdx, inE, outE); } catch (e) {}
     }
-    prop.setInterpolationTypeAtKey(keyIdx, src.inType, src.outType);
+    prop.setInterpolationTypeAtKey(keyIdx, inType, outType);
 }
 
 function pluralize(count, singular, plural) { return count + " " + (count===1 ? singular : (plural || singular + "s")); }
@@ -1049,6 +1148,17 @@ function lineup_easeCopy() {
             for (var e=0; e<arr.length; e++) out.push(new KeyframeEase(arr[e].speed, arr[e].influence));
             return out;
         }
+        // A keyframe's inEase/outEase describes the segment on that side of it
+        // (in = segment from the previous keyframe, out = segment to the next).
+        // Only the segments *between two copied keyframes* are a real "copied
+        // transition" — the first copied keyframe's in-side and the last one's
+        // out-side border keyframes outside the copy, so those sides are left
+        // uncaptured (null) rather than grabbing ease data that has nothing to
+        // do with what was actually selected. A lone selected keyframe has no
+        // such neighbor on either side, so both sides are captured as-is.
+        // inDelta/outDelta record which way the value was moving across that
+        // segment (see valueDelta), so paste can detect a reversed direction
+        // and flip the copied speed's sign (see directionalizeEase).
         function collectEase(pg, out) {
             for (var i=1; i<=pg.numProperties; i++) {
                 var p; try { p=pg.property(i); } catch(e){ continue; }
@@ -1056,13 +1166,23 @@ function lineup_easeCopy() {
                     if (p.numKeys>0 && p.selectedKeys.length>0) {
                         var sel=p.selectedKeys;
                         for (var k=0; k<sel.length; k++) {
-                            var ki=sel[k], inT, outT, inE=null, outE=null;
-                            try { inT=p.keyInInterpolationType(ki); outT=p.keyOutInterpolationType(ki); } catch(e){ continue; }
-                            try { inE=copyEaseArr(p.keyInTemporalEase(ki)); } catch(e) {}
-                            try { outE=copyEaseArr(p.keyOutTemporalEase(ki)); } catch(e) {}
+                            var ki=sel[k];
+                            var captureIn  = (k>0)              || sel.length===1;
+                            var captureOut = (k<sel.length-1)   || sel.length===1;
+                            var inT=null, outT=null, inE=null, outE=null, inDelta=null, outDelta=null;
                             var val=null; try { val=p.keyValue(ki); } catch(e) {}
                             var time=null; try { time=p.keyTime(ki); } catch(e) {}
-                            out.push({inType:inT, outType:outT, inEase:inE, outEase:outE, value:val, time:time});
+                            if (captureIn) {
+                                try { inT=p.keyInInterpolationType(ki); } catch(e) {}
+                                try { inE=copyEaseArr(p.keyInTemporalEase(ki)); } catch(e) {}
+                                if (k>0) { try { inDelta=valueDelta(val, p.keyValue(sel[k-1])); } catch(e) {} }
+                            }
+                            if (captureOut) {
+                                try { outT=p.keyOutInterpolationType(ki); } catch(e) {}
+                                try { outE=copyEaseArr(p.keyOutTemporalEase(ki)); } catch(e) {}
+                                if (k<sel.length-1) { try { outDelta=valueDelta(p.keyValue(sel[k+1]), val); } catch(e) {} }
+                            }
+                            out.push({inType:inT, outType:outT, inEase:inE, outEase:outE, value:val, time:time, inDelta:inDelta, outDelta:outDelta});
                         }
                     }
                 } else if (p.propertyType===PropertyType.NAMED_GROUP || p.propertyType===PropertyType.INDEXED_GROUP) {
@@ -1088,6 +1208,51 @@ function lineup_easeCopy() {
     }
 }
 
+// Grouped per-property (not flattened across the whole layer) so that pasting
+// onto several properties at once — e.g. Position + Scale, each with the same
+// number of selected keys as the clipboard — applies the template to each
+// property independently instead of requiring the layer's total selected-key
+// count to match n. Shared by both easePaste and easeValuePaste.
+function collectEaseRefGroups(pg, out) {
+    for (var i=1; i<=pg.numProperties; i++) {
+        var p; try { p=pg.property(i); } catch(e){ continue; }
+        if (p.propertyType===PropertyType.PROPERTY) {
+            if (p.numKeys>0 && p.selectedKeys.length>0) {
+                var sel=p.selectedKeys, grp=[];
+                for (var k=0; k<sel.length; k++) grp.push({prop:p, keyIdx:sel[k]});
+                out.push(grp);
+            }
+        } else if (p.propertyType===PropertyType.NAMED_GROUP || p.propertyType===PropertyType.INDEXED_GROUP) {
+            collectEaseRefGroups(p, out);
+        }
+    }
+}
+
+// Every target in a group shares the same property, so its keyframes' values
+// can be snapshotted once per group. Snapshotting up front (rather than
+// re-reading keyValue per target inside the paste loop) matters for
+// easeValuePaste specifically: it overwrites each target's value as it goes,
+// so reading live would mix an already-pasted neighbor's new value with a
+// not-yet-pasted one's old value and could misdetect direction mid-group.
+function snapshotEaseValues(targets) {
+    var vals = [];
+    for (var i=0; i<targets.length; i++) {
+        try { vals.push(targets[i].prop.keyValue(targets[i].keyIdx)); } catch(e) { vals.push(null); }
+    }
+    return vals;
+}
+
+// The target's own (pre-paste) value deltas across the segments bordering
+// targets[t], to compare against the copied src's deltas for a direction
+// mismatch (see directionalizeEase). Only computed on the side(s) src
+// actually captured.
+function targetEaseDeltas(origVals, t, src) {
+    var outDelta=null, inDelta=null;
+    if (src.outEase && t < origVals.length-1) outDelta = valueDelta(origVals[t+1], origVals[t]);
+    if (src.inEase && t > 0) inDelta = valueDelta(origVals[t], origVals[t-1]);
+    return { inDelta: inDelta, outDelta: outDelta };
+}
+
 function lineup_easePaste() {
     try {
         var comp = app.project.activeItem;
@@ -1095,37 +1260,22 @@ function lineup_easePaste() {
         if (!_easeClipboard) return "ERROR: No easing copied";
         var n=_easeClipboard.length, layers=comp.selectedLayers;
 
-        // Grouped per-property (not flattened across the whole layer) so that
-        // pasting onto several properties at once — e.g. Position + Scale, each
-        // with the same number of selected keys as the clipboard — applies the
-        // template to each property independently instead of requiring the
-        // layer's total selected-key count to match n.
-        function collectRefGroups(pg, out) {
-            for (var i=1; i<=pg.numProperties; i++) {
-                var p; try { p=pg.property(i); } catch(e){ continue; }
-                if (p.propertyType===PropertyType.PROPERTY) {
-                    if (p.numKeys>0 && p.selectedKeys.length>0) {
-                        var sel=p.selectedKeys, grp=[];
-                        for (var k=0; k<sel.length; k++) grp.push({prop:p, keyIdx:sel[k]});
-                        out.push(grp);
-                    }
-                } else if (p.propertyType===PropertyType.NAMED_GROUP || p.propertyType===PropertyType.INDEXED_GROUP) {
-                    collectRefGroups(p, out);
-                }
-            }
-        }
-
         var easingsPasted=0, propertiesPasted=0, layersPasted=0;
         app.beginUndoGroup("Paste Easing");
         for (var l=0; l<layers.length; l++) {
-            var groups=[]; collectRefGroups(layers[l], groups);
+            var groups=[]; collectEaseRefGroups(layers[l], groups);
             var layerHit=false;
             for (var g=0; g<groups.length; g++) {
                 var targets=groups[g];
                 if (targets.length !== n) continue;
+                var origVals = snapshotEaseValues(targets);
                 for (var t=0; t<targets.length; t++) {
                     var ref=targets[t], src=_easeClipboard[t];
-                    try { applyPastedEase(ref.prop, ref.keyIdx, src); easingsPasted++; } catch(e) {}
+                    try {
+                        var d = targetEaseDeltas(origVals, t, src);
+                        applyPastedEase(ref.prop, ref.keyIdx, src, d.inDelta, d.outDelta);
+                        easingsPasted++;
+                    } catch(e) {}
                 }
                 propertiesPasted++;
                 layerHit=true;
@@ -1147,34 +1297,21 @@ function lineup_easeValuePaste() {
         if (!_easeClipboard) return "ERROR: No easing copied";
         var n=_easeClipboard.length, layers=comp.selectedLayers;
 
-        function collectRefGroups(pg, out) {
-            for (var i=1; i<=pg.numProperties; i++) {
-                var p; try { p=pg.property(i); } catch(e){ continue; }
-                if (p.propertyType===PropertyType.PROPERTY) {
-                    if (p.numKeys>0 && p.selectedKeys.length>0) {
-                        var sel=p.selectedKeys, grp=[];
-                        for (var k=0; k<sel.length; k++) grp.push({prop:p, keyIdx:sel[k]});
-                        out.push(grp);
-                    }
-                } else if (p.propertyType===PropertyType.NAMED_GROUP || p.propertyType===PropertyType.INDEXED_GROUP) {
-                    collectRefGroups(p, out);
-                }
-            }
-        }
-
         var easingsPasted=0, propertiesPasted=0, layersPasted=0;
         app.beginUndoGroup("Paste Ease + Value");
         for (var l=0; l<layers.length; l++) {
-            var groups=[]; collectRefGroups(layers[l], groups);
+            var groups=[]; collectEaseRefGroups(layers[l], groups);
             var layerHit=false;
             for (var g=0; g<groups.length; g++) {
                 var targets=groups[g];
                 if (targets.length !== n) continue;
+                var origVals = snapshotEaseValues(targets);
                 for (var t=0; t<targets.length; t++) {
                     var ref=targets[t], src=_easeClipboard[t];
                     try {
                         if (src.value !== null && src.value !== undefined) ref.prop.setValueAtKey(ref.keyIdx, src.value);
-                        applyPastedEase(ref.prop, ref.keyIdx, src);
+                        var d = targetEaseDeltas(origVals, t, src);
+                        applyPastedEase(ref.prop, ref.keyIdx, src, d.inDelta, d.outDelta);
                         easingsPasted++;
                     } catch(e) {}
                 }
