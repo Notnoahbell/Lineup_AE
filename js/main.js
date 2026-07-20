@@ -6,14 +6,130 @@ var cs = new CSInterface();
 // Settings has no tab of its own — it's always the popup opened by
 // openSettingsPopup below.
 
+// Tab order determines slide direction — switching to a LATER tab (home →
+// tools) slides right, an EARLIER one (tools → home) slides left.
+var TAB_ORDER = ['home', 'tools'];
+var _activeTabName = 'home'; // matches the panel/button markup's own default-active tab
+var _tabSwitchSeq = 0;
+
+// Slight nudge, not a full slide across — the outgoing panel eases IN
+// (slow start, fast finish) while nudging toward the new tab's direction,
+// then a hard cut (no cross-fade) swaps which panel is showing, and the
+// incoming panel picks up from that SAME offset and eases OUT (fast
+// start, slow finish) back to rest. Two separate elements each animating
+// one half, split right at the cut, reads as a single continuous S-curve
+// flick-and-settle motion. Driven by the Web Animations API rather than a
+// CSS transition so it runs on its own animation stack, independent of
+// whatever transitions (if any) are defined on these elements elsewhere.
+var TAB_SLIDE_PX = 15.4; // +10%
+var TAB_SLIDE_OUT_MS = 110;
+var TAB_SLIDE_IN_MS = 170;
+var TAB_SLIDE_OUT_EASE = 'cubic-bezier(0.95, 0.05, 0.795, 0.035)'; // ease-in, steeper — stays slow longer, then whips much faster into the cut
+var TAB_SLIDE_IN_EASE = 'cubic-bezier(0.215, 0.61, 0.355, 1)'; // ease-out — fast, then slow
+
 function switchTab(name) {
+    var prevName = _activeTabName;
+    if (prevName === name) return;
+    _activeTabName = name;
+    var mySeq = ++_tabSwitchSeq;
+
     ['home', 'tools'].forEach(function(n) {
-        var panel = document.getElementById(n === 'home' ? 'panel-content' : 'tab-' + n);
-        if (panel) panel.classList.toggle('active', n === name);
         var btn = document.getElementById('tabBtn-' + n);
         if (btn) btn.classList.toggle('active', n === name);
     });
+    // The pencil (Customize Quick Actions & Rearrange...) lives in the
+    // shared footer, so it's visible regardless of tab by default — only
+    // makes sense on Home (nothing to rearrange on Tools).
+    var editBtn = document.getElementById('quickActionsEditBtn');
+    if (editBtn) editBtn.style.display = (name === 'tools') ? 'none' : '';
     try { localStorage.setItem('lineup-active-tab', name); } catch(e) {}
+
+    var oldPanel = document.getElementById(prevName === 'home' ? 'panel-content' : 'tab-' + prevName);
+    var newPanel = document.getElementById(name === 'home' ? 'panel-content' : 'tab-' + name);
+    if (!newPanel) return;
+
+    var oldIdx = TAB_ORDER.indexOf(prevName);
+    var newIdx = TAB_ORDER.indexOf(name);
+    var dir = (oldIdx >= 0 && newIdx >= 0) ? (newIdx - oldIdx) : 0;
+
+    // No real previous panel (first paint) or no direction to slide in —
+    // just cut straight to it.
+    if (!oldPanel || dir === 0 || !oldPanel.animate) {
+        _applyTabPanels(name);
+        return;
+    }
+
+    var distance = dir > 0 ? -TAB_SLIDE_PX : TAB_SLIDE_PX;
+    var outAnim = _tabAnimate(oldPanel,
+        [{ transform: 'translateX(0)' }, { transform: 'translateX(' + distance + 'px)' }],
+        { duration: TAB_SLIDE_OUT_MS, easing: TAB_SLIDE_OUT_EASE, fill: 'forwards' }
+    );
+    outAnim.finished.catch(function() {}).then(function() {
+        // cancel(), not just clearing style.transform — fill:'forwards'
+        // keeps this effect actively applied (compositing on top of any
+        // inline style, not stored as one) even once .finished resolves,
+        // so leaving it un-canceled meant it would silently reassert
+        // itself and reappear the moment THIS SAME panel's own future
+        // (non-forwards, temporary) slide-in animation later finished and
+        // its effect got removed — which is what was leaving panels
+        // ending up visibly offset instead of centered.
+        outAnim.cancel();
+        if (mySeq !== _tabSwitchSeq) return; // a later switchTab call already landed on the real final state
+        _applyTabPanels(name);
+        // Starts from the OPPOSITE side of where the outgoing panel just
+        // ended, not the same one — outgoing travels 0 → distance (its
+        // velocity is toward whatever direction "distance" points), so
+        // starting incoming there and animating to 0 would move it back
+        // toward the opposite direction, reversing velocity right at the
+        // cut. Starting at -distance and animating to 0 instead continues
+        // moving toward "distance"'s same direction, which is what
+        // actually reads as one uninterrupted motion across the cut.
+        var inAnim = _tabAnimate(newPanel,
+            [{ transform: 'translateX(' + (-distance) + 'px)' }, { transform: 'translateX(0)' }],
+            { duration: TAB_SLIDE_IN_MS, easing: TAB_SLIDE_IN_EASE }
+        );
+        inAnim.finished.catch(function() {}).then(function() { inAnim.cancel(); });
+    });
+}
+
+// One element can end up mid-animation on both ends of consecutive
+// switches (it was the outgoing panel a moment ago, now it's the
+// incoming one, or vice versa) — starting a fresh animate() call without
+// canceling whatever's still attached from the last switch left two
+// effects fighting over the same transform, which is the other half of
+// what could leave a panel visibly offset. Tracked per element, not
+// globally, since the outgoing and incoming animations run concurrently
+// on two different panels for part of every switch.
+var _tabPanelAnims = new WeakMap();
+function _tabAnimate(el, keyframes, opts) {
+    var prev = _tabPanelAnims.get(el);
+    if (prev) prev.cancel();
+    var anim = el.animate(keyframes, opts);
+    _tabPanelAnims.set(el, anim);
+    return anim;
+}
+
+function _applyTabPanels(name) {
+    ['home', 'tools'].forEach(function(n) {
+        var panel = document.getElementById(n === 'home' ? 'panel-content' : 'tab-' + n);
+        if (panel) panel.classList.toggle('active', n === name);
+    });
+    // No .compact re-sync needed here anymore — _syncToolsFilterCompact
+    // now measures .tab-bar (always visible/measurable) instead of
+    // #tab-tools itself (0 width while hidden), so .compact never goes
+    // stale while Tools sits hidden. This used to also run a forced
+    // reflow plus a .no-anim transition-suppress dance right here — real
+    // blocking work sitting at the cut between the two slide animations,
+    // which is what was reading as a jump/stutter on every switch.
+    //
+    // The scroll-gap class is a separate, narrower case: .tools-grid's
+    // own scrollHeight/clientHeight only mean anything while it's actually
+    // rendered (0/0 while display:none), so unlike .compact this genuinely
+    // can go stale while hidden and does need a real re-check on reveal —
+    // but it's just two cheap property reads, no gBCR and no transition to
+    // suppress (.tools-grid-scrollable's padding change isn't animated),
+    // so it doesn't reintroduce the jump the rest of this used to cause.
+    if (name === 'tools') _syncToolsGridScrollGap();
 }
 
 function restoreActiveTab() {
@@ -72,6 +188,22 @@ function _syncAnchorRowUnit() {
     var grid = document.getElementById('homeTopGroup');
     if (!grid) return;
 
+    // #homeTopGroup itself carries the CSS zoom set in _syncAnchorTiers
+    // below (still applied here in both medium and normal tiers, only
+    // narrow-stack resets it to ''). getBoundingClientRect() on anything
+    // inside that zoomed subtree — which is all _anchorNaturalHeight/
+    // qaBox measurements are — reports the value already scaled DOWN by
+    // that zoom, since gBCR always answers in the outer/root coordinate
+    // space. But grid-template-rows and --home-anchor-unit are read back
+    // by CSS *inside* this same zoomed element, i.e. in its own
+    // pre-zoom/local space — feeding a post-zoom measurement straight
+    // back in gets zoomed a second time, shrinking the row/box past what
+    // its actual (single-zoomed) content needs and letting that content
+    // spill out the bottom. Dividing by zoom here converts the
+    // measurement back to the local space these properties are actually
+    // interpreted in.
+    var zoom = parseFloat(grid.style.zoom) || 1;
+
     if (_anchorMedium) {
         // CSS Grid's own "auto" row-track sizing splits whatever extra
         // height Anchor's rowspan-2 need requires across BOTH rows it
@@ -90,7 +222,7 @@ function _syncAnchorRowUnit() {
         var qaHeight = qaBox ? qaBox.getBoundingClientRect().height : 0;
         if (anchorHeight > 0 && qaHeight > 0) {
             var favHeight = Math.max(0, anchorHeight - qaHeight);
-            grid.style.gridTemplateRows = qaHeight + 'px ' + favHeight + 'px';
+            grid.style.gridTemplateRows = (qaHeight / zoom) + 'px ' + (favHeight / zoom) + 'px';
         }
         return;
     }
@@ -99,7 +231,7 @@ function _syncAnchorRowUnit() {
     // .home-top-group's own --home-anchor-unit fallback comment).
     grid.style.gridTemplateRows = '';
     var h = _anchorNaturalHeight();
-    if (h > 0) grid.style.setProperty('--home-anchor-unit', (h / 2) + 'px');
+    if (h > 0) grid.style.setProperty('--home-anchor-unit', (h / zoom / 2) + 'px');
 }
 
 // ── Anchor responsive tiers ──────────────────────────────────────────────────
@@ -184,6 +316,7 @@ function _syncAnchorRowUnit() {
 var ANCHOR_MEDIUM_THRESHOLD = 471; // roughly where the zoom below hits its floor and stops shrinking further
 var NARROW_STACK_THRESHOLD = 330;
 var ANCHOR_TINY_THRESHOLD = 275; // halfway between NARROW_STACK_THRESHOLD (330) and the panel's own MinSize width (220)
+var VECTORTOOLS_TITLE_DROP_WIDTH = 300; // below this, "Shape Tools" drops even in one-line (data-span="6") mode
 // #homeTopGroup's own width at the panel's full max-width (570px, minus
 // .tool-grid's 10px-each-side padding) — the "zoom:1, no scaling" point the
 // ratio below is measured against.
@@ -238,9 +371,36 @@ function _syncAnchorTiers() {
         var qaMainGrid = document.getElementById(QA_INSTANCES.main.gridId);
         if (qaMainGrid) _qaSyncAddTiles('main', qaMainGrid);
     }
+    // Settle Align/Distribute/Sort's own label-dropping BEFORE measuring
+    // anything below — this used to live behind a second, independent
+    // ResizeObserver on this same #homeToolGrid, and while that mostly
+    // agreed with this one, nothing guaranteed it ran first. During a
+    // continuous shrink, that occasionally left a favorited Sort's ctrl-row
+    // still rendered in its wide (wrapped-to-2-lines, taller) form for one
+    // tick after Favorite's own box had already committed to its normal
+    // height — spilling that extra height past #homeTopGroup's bottom edge
+    // for a frame, self-correcting only once something else (switching
+    // tabs) forced a fresh, from-scratch pass. Calling it here first,
+    // synchronously, guarantees the row is already in its final tightened
+    // shape by the time anything downstream renders the box around it.
+    _syncCtrlRowLabels();
+    _syncVectortoolsTitle(width);
     // Anchor's own natural height depends on which of these tiers/zoom
     // level is active — always recomputed, not just on narrowChanged.
     _syncAnchorRowUnit();
+}
+
+// "Shape Tools" — half width (data-span="3") or Favorite always hides it
+// (see the static CSS rule); one-line (data-span="6") only hides it once
+// the panel itself has gotten genuinely narrow, below
+// VECTORTOOLS_TITLE_DROP_WIDTH — narrow-stack forces every widget to
+// data-span="6" regardless of real pairing, so this is really what decides
+// the title there too, not just a "wide and alone" one-line box.
+function _syncVectortoolsTitle(gridWidth) {
+    var box = document.querySelector('.tool-box[data-block-id="vectortools"]');
+    if (!box) return;
+    var oneLine = box.getAttribute('data-span') === '6';
+    box.classList.toggle('vectortools-one-line-tiny', oneLine && gridWidth < VECTORTOOLS_TITLE_DROP_WIDTH);
 }
 
 function _initAnchorTiers() {
@@ -261,30 +421,47 @@ function _initAnchorTiers() {
 // — Sort has no equivalent trailing toggle, so this tier is a no-op for
 // it). Compact only — Classic's own fixed ~360px column never had this
 // complaint and keeps wrapping as normal (see .ctrl-row's own
-// flex-wrap:nowrap override, Compact-scoped).
+// flex-wrap:nowrap override, Compact-scoped). Shape Tools' own title
+// ("Shape Tools") has its own, simpler rule instead — see
+// _syncVectortoolsTitle below, always-hidden at half width/Favorite,
+// width-threshold-hidden at full width — not part of this measured-overflow
+// mechanism.
 function _syncCtrlRowLabels() {
-    ['align', 'distribute', 'sort'].forEach(function(id) {
-        var row = document.querySelector('.tool-box[data-block-id="' + id + '"] .ctrl-row');
-        if (!row) return;
-        // Re-measure with both labels showing first — scrollWidth while
-        // already hidden would understate how wide this needs to be,
-        // leaving either stuck hidden even once there's room again.
-        row.classList.remove('ctrl-row-tight', 'ctrl-row-tighter');
-        void row.offsetWidth; // force reflow so the next scrollWidth read reflects that reset
-        if (row.scrollWidth <= row.clientWidth + 1) return; // fits as-is
+    // .tool-body[data-block-id] (not .tool-box[data-block-id]) — the
+    // tool-body itself physically relocates into the Favorite slot's
+    // .fav-page when starred (see _favApplyLayout), which has no
+    // .tool-box ancestor at all. Anchoring on .tool-box left Sort's row
+    // un-measured (so its label never dropped) the whole time it sat
+    // favorited, since only Align/Distribute happen to also hide their
+    // label unconditionally while favorited and so never showed the same
+    // gap.
+    var rows = ['alignlayers', 'distribute', 'sort'].map(function(id) {
+        return document.querySelector('.tool-body[data-block-id="' + id + '"] .ctrl-row');
+    }).filter(Boolean);
+    if (!rows.length) return;
 
-        row.classList.add('ctrl-row-tight'); // drop "Align to"/"Distribute to" first
-        void row.offsetWidth; // force reflow so the next scrollWidth read reflects the label now being gone
-        if (row.scrollWidth > row.clientWidth + 1) {
-            row.classList.add('ctrl-row-tighter'); // still doesn't fit — drop "Offset" 's own word too
+    // Batched across all 3 rows — one forced reflow total per pass instead
+    // of a separate remove/reflow/read/write/reflow/read cycle PER row
+    // (up to 6 forced reflows every time this runs, called from a
+    // ResizeObserver that fires continuously during a live resize drag).
+    // All the writes for a pass happen first, THEN one reflow, THEN all
+    // the reads — same idea as the settled batching pattern used
+    // elsewhere in this file (e.g. _blPlayFlip).
+    rows.forEach(function(row) { row.classList.remove('ctrl-row-tight', 'ctrl-row-tighter'); });
+    void rows[0].offsetWidth; // one forced reflow settles the removals above for every row at once
+    var needsTight = rows.map(function(row) { return row.scrollWidth > row.clientWidth + 1; });
+
+    var anyTight = false;
+    rows.forEach(function(row, i) {
+        if (needsTight[i]) { row.classList.add('ctrl-row-tight'); anyTight = true; } // drop "Align to"/"Distribute to"/"Sort Layers based on" first
+    });
+    if (!anyTight) return;
+    void rows[0].offsetWidth; // one more forced reflow, only if anything actually went tight
+    rows.forEach(function(row, i) {
+        if (needsTight[i] && row.scrollWidth > row.clientWidth + 1) {
+            row.classList.add('ctrl-row-tighter'); // still doesn't fit — drop "Offset" 's own word too (Align/Distribute only; no-op for Sort)
         }
     });
-}
-
-function _initCtrlRowLabels() {
-    var grid = document.getElementById('homeToolGrid');
-    if (!grid || typeof ResizeObserver === 'undefined') return;
-    new ResizeObserver(function() { _syncCtrlRowLabels(); }).observe(grid);
 }
 
 // ── Layout mode (Compact / Classic) ──────────────────────────────────────────
@@ -294,7 +471,7 @@ function _initCtrlRowLabels() {
 // one .tool-body[data-block-id] node, physically relocated between its
 // Compact tool-box and its Classic section-body whenever the mode switches —
 // so nothing here ever needs two copies of an id or an onclick handler.
-var CLASSIC_BLOCK_IDS = ['anchor', 'organize', 'ease', 'align', 'distribute', 'sizing', 'autocrop', 'sort'];
+var CLASSIC_BLOCK_IDS = ['anchor', 'organize', 'ease', 'alignlayers', 'distribute', 'sizing', 'autocrop', 'sort', 'vectortools'];
 
 function setLayoutMode(mode) {
     if (mode !== 'classic') mode = 'compact';
@@ -306,6 +483,30 @@ function restoreLayoutMode() {
     var mode;
     try { mode = localStorage.getItem('lineup-layout-mode'); } catch(e) {}
     _applyLayoutMode(mode === 'classic' ? 'classic' : 'compact');
+}
+
+// ── Shared modal backdrop: click-OUTSIDE to close, not drag-ends-outside ────
+// A native `click` event fires on the nearest common ancestor of the
+// mousedown and mouseup targets — not simply "wherever the button was
+// released". Dragging inside a modal (the Color Picker's saturation square,
+// a scrub field, Settings' drag-to-reorder section list, ...) and letting
+// the cursor drift past the modal's own edge before releasing already
+// counts as a "click" on the backdrop under that rule, closing the modal
+// even though the user never meant to. Tracking mousedown/mouseup directly
+// instead — only closes when BOTH landed straight on the backdrop element
+// itself (e.target === e.currentTarget; anything that started or ended on
+// a descendant, i.e. inside the modal box, fails this check even after
+// bubbling up here) — fixes that without touching any modal's own close
+// function or its "click inside the box" stopPropagation guard.
+var _overlayBackdropDown = null; // the backdrop element mousedown last landed directly on, or null
+
+function _overlayMouseDown(e) {
+    _overlayBackdropDown = (e.target === e.currentTarget) ? e.currentTarget : null;
+}
+function _overlayMouseUp(e, closeFn) {
+    var wasDown = _overlayBackdropDown === e.currentTarget;
+    _overlayBackdropDown = null;
+    if (wasDown && e.target === e.currentTarget) closeFn();
 }
 
 // ── Settings popup ────────────────────────────────────────────────────────────
@@ -345,6 +546,18 @@ var WHATS_NEW = {
             icon: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="2" width="7" height="7" rx="2"/><rect x="11" y="2" width="7" height="7" rx="2"/><rect x="2" y="11" width="7" height="7" rx="2"/><rect x="11" y="11" width="7" height="7" rx="2"/></svg>',
             title: 'Compact Mode',
             body: 'A denser, icon-first layout that fits every tool into a fraction of the vertical space Classic needs — switch anytime from the gear icon in the footer.'
+        }
+    ],
+    '1.9.0': [
+        {
+            icon: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="3" y="1.8" width="5.2" height="5.2" rx="1.1"/><circle cx="14" cy="4.2" r="3.1"/><path d="M10,8 L6.4,14.3 L13.6,14.3 Z"/></svg>',
+            title: 'Shape Tools',
+            body: 'A new toolbar for shape layers — merge/explode paths, cycle stroke caps and joins, consolidate colors onto a shared controller, and a live Fill/Stroke HUD that shows and edits color and stroke width across the whole selection at once, individually or all together.'
+        },
+        {
+            icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="6"/><line x1="13" y1="13" x2="17.5" y2="17.5"/></svg>',
+            title: 'Redesigned Help',
+            body: "A searchable, paginated rewrite covering every tool — including all of the new Shape Tools."
         }
     ]
 };
@@ -559,12 +772,72 @@ function applyToolsFilter() {
         var matchesSearch = q.length === 0 || title.indexOf(q) !== -1;
         tile.classList.toggle('tools-grid-btn-hidden', !(matchesGroup && matchesSearch));
     }
+    _syncToolsGridScrollGap();
+}
+
+// Whether the tool list actually needs to scroll can only be read from the
+// DOM (scrollHeight vs. clientHeight) — CSS has no way to select on
+// overflow state itself. Toggled here rather than reserving the gap
+// unconditionally (tried that first) since a short, filtered list with
+// nothing to scroll would otherwise show a big empty gutter on the right
+// instead of even padding on all four sides.
+function _syncToolsGridScrollGap() {
+    var grid = document.querySelector('.tools-grid');
+    if (!grid) return;
+    grid.classList.toggle('tools-grid-scrollable', grid.scrollHeight > grid.clientHeight + 1);
 }
 
 function initToolsSearch() {
     var input = document.getElementById('toolsSearchInput');
     if (!input) return;
     input.addEventListener('input', applyToolsFilter);
+}
+
+// As the panel narrows past ~350px, the filter column collapses its text
+// labels down to icon-only instead of letting the drawer beside it get
+// squeezed illegible. Watches #tab-tools itself (which tracks the panel's
+// own width 1:1 up to its own 570px cap) rather than the filter column's
+// sub-width — a single toggled breakpoint, not a value tied continuously
+// to live resize width, since that showed a legible half-clipped word
+// (e.g. "Auto Cro") at whatever width you happened to stop dragging on.
+// The CSS transitions on .tools-filter-btn/-label do the actual animating
+// the moment .compact flips, so it still reads as a sleek fade+slide
+// rather than an instant jump. Same "ResizeObserver on its own width"
+// technique _syncAnchorTiers already uses for the Home tab's own zoom.
+var TOOLS_FILTER_COMPACT_BREAKPOINT = 350; // #tab-tools width at/below which labels collapse to icon-only
+
+function _syncToolsFilterCompact() {
+    var tab = document.getElementById('tab-tools');
+    var bar = document.getElementById('tabBarEl');
+    if (!tab || !bar) return;
+    // Measures .tab-bar, not #tab-tools itself — #tab-tools reports 0
+    // width while hidden (display:none, whenever Home is the active tab),
+    // which used to mean this went stale (misclassified as .compact) the
+    // whole time Tools sat hidden, only correcting itself a frame after
+    // switching back. That required a synchronous re-sync (plus a forced
+    // reflow, plus a .no-anim transition-suppress) exactly at the tab
+    // switch's cut — real, layout-forcing work sitting right in the middle
+    // of what's supposed to be a smooth slide, which is what was reading
+    // as a jump/stutter there. .tab-bar shares the exact same max-width/
+    // centering rules as #tab-tools (see its own CSS comment) so its width
+    // is always an accurate stand-in, and it's never display:none in
+    // either tab or layout mode (Classic collapses it via opacity/
+    // max-height, not display) — so reading its width keeps this
+    // continuously correct even while #tab-tools is hidden, and the
+    // synchronous re-sync at switch time in _applyTabPanels is no longer
+    // needed at all.
+    var w = bar.getBoundingClientRect().width;
+    tab.classList.toggle('compact', w < TOOLS_FILTER_COMPACT_BREAKPOINT);
+    // Column count (1/2/3, its own width breakpoints) and available height
+    // (max-height: calc(100vh - 220px)) both change with this same resize,
+    // either of which can flip whether the tool list actually overflows.
+    _syncToolsGridScrollGap();
+}
+
+function _initToolsFilterCompact() {
+    var bar = document.getElementById('tabBarEl');
+    if (!bar || typeof ResizeObserver === 'undefined') return;
+    new ResizeObserver(function() { _syncToolsFilterCompact(); }).observe(bar);
 }
 
 // ── Section toggle ────────────────────────────────────────────────────────────
@@ -578,7 +851,7 @@ function toggleSection(id) {
 }
 
 function restoreCollapsed() {
-    var ids = ['align','dist','sizing','anchor','ease','rigs','sort','autocrop','organize','spell'];
+    var ids = ['align','dist','sizing','anchor','ease','sort','autocrop','organize','spell'];
     ids.forEach(function(id) {
         var stored;
         try { stored = localStorage.getItem('lineup-sec-' + id); } catch(e) {}
@@ -802,11 +1075,81 @@ function chkVal(id) {
 // ── ALIGN ─────────────────────────────────────────────────────────────────────
 
 function doAlign(idx) {
-    var alignToSel = (selVal('alignMode') === 0) ? 1 : 0;
-    var margin     = numVal('marginInput');
-    var usePct     = selVal('pixelDropdown');
-    var offsetKeys = chkVal('offsetCheck');
-    run('lineup_align(' + idx + ',' + alignToSel + ',' + margin + ',' + usePct + ',' + offsetKeys + ')');
+    var alignToSel   = (selVal('alignMode') === 0) ? 1 : 0;
+    var margin       = numVal('marginInput');
+    var usePct       = selVal('pixelDropdown');
+    var offsetKeys   = chkVal('offsetCheck');
+    var useKeyAlign  = _keyAlignEffective() ? 1 : 0;
+    run('lineup_align(' + idx + ',' + alignToSel + ',' + margin + ',' + usePct + ',' + offsetKeys + ',' + useKeyAlign + ')');
+}
+
+// Whether Left/Center/Right should actually retime keyframes right now —
+// keyframes have to be selected AND the override toggle (see
+// #keyAlignCheck/toggleKeyAlignOverride) has to still be checked. Passed
+// into lineup_align() explicitly (see doAlign) instead of leaving host.jsx
+// to re-derive it alone, since the whole point of the toggle is to let the
+// user force normal position alignment even while keyframes stay selected.
+var _keyframesPresent = false; // raw: does the Timeline have any keyframes selected right now
+var _keyAlignMode     = false; // effective: keyframesPresent AND the toggle is checked — drives the icon swap
+function _keyAlignEffective() {
+    var chk = document.getElementById('keyAlignCheck');
+    return _keyframesPresent && (!chk || chk.checked);
+}
+
+// Left/Center/Right's own icons/tooltips follow the EFFECTIVE state, not
+// raw keyframe presence — unchecking the toggle reverts them to their
+// normal-align look even though keyframes are still technically selected,
+// since that's what the buttons will actually do at that point.
+function _applyKeyAlignMode() {
+    var body = document.querySelector('.tool-body[data-block-id="alignlayers"]');
+    if (!body) return;
+    var on = _keyAlignEffective();
+    if (on === _keyAlignMode) return;
+    _keyAlignMode = on;
+    body.classList.toggle('key-align-mode', on);
+    var leftBtn   = document.getElementById('alignLeftBtn');
+    var centerBtn = document.getElementById('alignCenterHBtn');
+    var rightBtn  = document.getElementById('alignRightBtn');
+    if (leftBtn)   leftBtn.title   = on ? 'Align Keyframes to First Keyframe' : 'Align Left';
+    if (centerBtn) centerBtn.title = on ? 'Align Keyframes to Playhead/Center' : 'Center Horizontal';
+    if (rightBtn)  rightBtn.title  = on ? 'Align Keyframes to Last Keyframe'   : 'Align Right';
+}
+
+// Wired to #keyAlignCheck's onchange — a manual click needs the same
+// re-evaluation _pollKeyAlignMode's own state change triggers below.
+function toggleKeyAlignOverride() {
+    _applyKeyAlignMode();
+}
+
+// Polls whether any keyframe is currently selected so Align Left/Center/Right
+// can live-swap into keyframe-retiming mode (badge + playhead icon), and so
+// the keyframe-align override toggle can fade in/out next to "Align to" —
+// AE has no "selection changed" event to push this, so a cheap interval is
+// the only way to keep it in sync with the Timeline.
+function _pollKeyAlignMode() {
+    var body = document.querySelector('.tool-body[data-block-id="alignlayers"]');
+    // Skip the evalScript round-trip entirely when Align isn't even visible
+    // right now (Tools tab active, widget unpinned, etc.) — this poll ran
+    // regardless before, and a cs.evalScript call crossing into
+    // ExtendScript is one of the more expensive things a CEP panel can do
+    // every 300ms, forever, for a check that can't possibly matter yet.
+    if (!body || !body.offsetParent) return;
+    cs.evalScript('lineup_hasSelectedKeyframes()', function(result) {
+        var present = result === '1';
+        if (present === _keyframesPresent) return;
+        _keyframesPresent = present;
+
+        var toggle = document.getElementById('keyAlignToggle');
+        if (toggle) toggle.classList.toggle('key-align-toggle-visible', present);
+        if (present) {
+            // Resets to checked every time it (re)appears — it never
+            // remembers a previous manual uncheck across a fresh
+            // keyframe selection.
+            var chk = document.getElementById('keyAlignCheck');
+            if (chk) chk.checked = true;
+        }
+        _applyKeyAlignMode();
+    });
 }
 
 // ── DISTRIBUTE ────────────────────────────────────────────────────────────────
@@ -1304,45 +1647,64 @@ function _gridPickerHighlight(maxC, maxR, skipInputs) {
     }
 }
 
+// Clicking a cell or the checkmark both land here — either one now applies
+// the grid immediately (same as clicking the main Distribute-in-Grid button
+// yourself right after), instead of just stashing cols/rows for later.
 function _commitGridPicker() {
     var cols = Math.max(1, parseInt(_gridPickerWInput.value, 10) || 1);
     var rows = Math.max(1, parseInt(_gridPickerHInput.value, 10) || 1);
     document.getElementById('gridColsInput').value = cols;
     document.getElementById('gridRowsInput').value = rows;
     _closeGridPicker();
+    doDistGrid();
+}
+
+// A near-square cols x rows guess sized to how many layers are selected —
+// e.g. 6 selected -> 3x2, 8 -> 3x3 (one empty cell) — rather than a fixed
+// default or just whatever was picked last time, which may have nothing to
+// do with the CURRENT selection. cols is always >= rows, matching how
+// comps are usually wider than tall.
+function _gridGuessColsRows(n) {
+    if (!n || n < 1) return { cols: 3, rows: 3 };
+    var cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+    var rows = Math.max(1, Math.ceil(n / cols));
+    return { cols: cols, rows: rows };
 }
 
 function _openGridPicker(x, y) {
     if (!_gridPicker) _gridPicker = _buildGridPicker();
 
-    var rawCols = parseInt(document.getElementById('gridColsInput').value, 10) || 3;
-    var rawRows = parseInt(document.getElementById('gridRowsInput').value, 10) || 3;
-    _gridPickerHighlight(Math.min(9, rawCols - 1), Math.min(9, rawRows - 1), true);
-    _gridPickerWInput.value = rawCols;
-    _gridPickerHInput.value = rawRows;
+    cs.evalScript('lineup_getSelectedLayerCount()', function(result) {
+        var guess = _gridGuessColsRows(parseInt(result, 10) || 0);
+        var rawCols = guess.cols;
+        var rawRows = guess.rows;
+        _gridPickerHighlight(Math.min(9, rawCols - 1), Math.min(9, rawRows - 1), true);
+        _gridPickerWInput.value = rawCols;
+        _gridPickerHInput.value = rawRows;
 
-    var mainH = document.getElementById('gridHPadInput');
-    var mainV = document.getElementById('gridVPadInput');
-    if (_gridPickerHPadInput) _gridPickerHPadInput.value = mainH ? mainH.value : '';
-    if (_gridPickerVPadInput) _gridPickerVPadInput.value = mainV ? mainV.value : '';
+        var mainH = document.getElementById('gridHPadInput');
+        var mainV = document.getElementById('gridVPadInput');
+        if (_gridPickerHPadInput) _gridPickerHPadInput.value = mainH ? mainH.value : '';
+        if (_gridPickerVPadInput) _gridPickerVPadInput.value = mainV ? mainV.value : '';
 
-    var mainAlign = document.getElementById('alignEdgesCheck');
-    if (_gridPickerAlignCb) _gridPickerAlignCb.checked = mainAlign ? mainAlign.checked : false;
+        var mainAlign = document.getElementById('alignEdgesCheck');
+        if (_gridPickerAlignCb) _gridPickerAlignCb.checked = mainAlign ? mainAlign.checked : false;
 
-    // Position near cursor, clamp inside viewport
-    var vw = window.innerWidth, vh = window.innerHeight;
-    var pw = 190, ph = 246;
-    _gridPicker.style.left = Math.min(x + 4, vw - pw - 4) + 'px';
-    _gridPicker.style.top  = Math.min(y + 4, vh - ph - 4) + 'px';
+        // Position near cursor, clamp inside viewport
+        var vw = window.innerWidth, vh = window.innerHeight;
+        var pw = 190, ph = 246;
+        _gridPicker.style.left = Math.min(x + 4, vw - pw - 4) + 'px';
+        _gridPicker.style.top  = Math.min(y + 4, vh - ph - 4) + 'px';
 
-    _gridPicker.classList.add('visible');
-    _syncAlignEdgesDim();
-    _syncAllPickerStars();
+        _gridPicker.classList.add('visible');
+        _syncAlignEdgesDim();
+        _syncAllPickerStars();
 
-    setTimeout(function() {
-        document.addEventListener('mousedown', _gridPickerOutside);
-        document.addEventListener('keydown',   _gridPickerKey);
-    }, 0);
+        setTimeout(function() {
+            document.addEventListener('mousedown', _gridPickerOutside);
+            document.addEventListener('keydown',   _gridPickerKey);
+        }, 0);
+    });
 }
 
 function _closeGridPicker() {
@@ -1457,13 +1819,20 @@ function _buildRadialPicker() {
 
     document.body.appendChild(el);
 
+    // Cached lazily (first move of each hover) rather than re-measured via
+    // getBoundingClientRect on every single mousemove — the preview
+    // doesn't move/resize while the mouse is over it. Cleared on
+    // mouseleave so a genuinely repositioned/resized popup gets a fresh
+    // measurement the next time the mouse enters.
+    var previewRect = null;
     preview.addEventListener('mousemove', function(e) {
-        var rect = preview.getBoundingClientRect();
-        var dx = e.clientX - rect.left - _rpCx;
-        var dy = e.clientY - rect.top  - _rpCy;
+        if (!previewRect) previewRect = preview.getBoundingClientRect();
+        var dx = e.clientX - previewRect.left - _rpCx;
+        var dy = e.clientY - previewRect.top  - _rpCy;
         _rpRadius = Math.max(1, Math.round(Math.sqrt(dx * dx + dy * dy) / _rpScale));
         _rpUpdateVisual();
     });
+    preview.addEventListener('mouseleave', function() { previewRect = null; });
 
     preview.addEventListener('click', _commitRadialPicker);
 
@@ -1595,6 +1964,7 @@ var _zpWash          = null;
 var _zpHandle        = null;
 var _zpDotCont       = null;
 var _zpTrackEl       = null;
+var _zpTrackRect     = null; // cached once per drag — see the track's own mousedown handler
 
 function _zpDistToPos(dist) {
     if (dist <= 0) return 0;
@@ -1729,11 +2099,17 @@ function _buildZPicker() {
     // Track: drag moves handle only; confirm button commits
     track.addEventListener('mousedown', function(e) {
         e.preventDefault();
+        // Cached once — the track doesn't move/resize for the duration of
+        // this drag, so re-measuring it via getBoundingClientRect on
+        // every single mousemove (_zpOnTrackDrag's old behavior) was
+        // avoidable work.
+        _zpTrackRect = track.getBoundingClientRect();
         _zpOnTrackDrag(e);
         function onMove(e2) { _zpOnTrackDrag(e2); }
         function onUp() {
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
+            _zpTrackRect = null;
         }
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
@@ -1768,7 +2144,7 @@ function _buildZPicker() {
 
 function _zpOnTrackDrag(e) {
     if (!_zpTrackEl) return;
-    var rect = _zpTrackEl.getBoundingClientRect();
+    var rect = _zpTrackRect || _zpTrackEl.getBoundingClientRect(); // fallback for any non-drag caller
     var pos  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     _zpEnd   = Math.round(_zpStart + _zpPosToDist(pos));
     _zpUpdateVisual();
@@ -2473,6 +2849,777 @@ function syncSortAxis() {
     if (axisEl) axisEl.disabled = (selVal('sortProp') !== 0);
 }
 
+// ── SHAPE TOOLS ───────────────────────────────────────────────────────────────
+
+function doSelectAllPaths() {
+    run('lineup_selectAllPaths()');
+}
+
+function doSelectAllFills() {
+    run('lineup_selectAllFillColors()');
+}
+
+function doSelectAllStrokes() {
+    run('lineup_selectAllStrokeColors()');
+}
+
+// AE's own native tool-group convention (e.g. the Rectangle/Ellipse/
+// Polygon flyout): the button itself always shows and runs whichever mode
+// was picked last, and right-click opens a small icon-only flyout of the
+// alternatives — picking one there both switches AND immediately runs it,
+// same as clicking a tool in that flyout selects and activates it in one
+// action. Mode is shared/global and persisted (matching there being one
+// underlying "current tool", not a per-button-instance choice), and every
+// rendered instance of this button (the widget's own, the Tools-tab tile,
+// any future Quick Actions clone) is kept in sync via the shared
+// .shape-sel-btn class — all found and updated together on every change.
+// Every mode's icon is framed in a dashed rounded square — a marquee-
+// selection cue (the classic "marching ants" look) so the icon itself
+// reads as "this selects something" regardless of which of the three
+// it currently shows, not just a shape glyph on its own.
+var SHAPE_SEL_FRAME = '<rect x="1.5" y="1.5" width="17" height="17" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/>';
+var SHAPE_SEL_MODES = [
+    {
+        id: 'path', title: 'Select All Paths', shortLabel: 'Sel. Path', flyoutLabel: 'Path', fn: doSelectAllPaths,
+        svg: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">' +
+            SHAPE_SEL_FRAME +
+            '<path d="M3,15 C3,15 6,5 10,10 C14,15 17,5 17,5" stroke-width="1.5"/>' +
+            '<rect x="1.8" y="13.2" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>' +
+            '<rect x="8.8" y="8.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>' +
+            '<rect x="15.8" y="3.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/></svg>'
+    },
+    {
+        id: 'fill', title: 'Select All Fills', shortLabel: 'Sel. Fill', flyoutLabel: 'Fill', fn: doSelectAllFills,
+        svg: '<svg viewBox="0 0 20 20" fill="currentColor">' +
+            SHAPE_SEL_FRAME +
+            '<rect x="4" y="4" width="12" height="12" rx="2.5"/></svg>'
+    },
+    {
+        id: 'stroke', title: 'Select All Strokes', shortLabel: 'Sel. Stroke', flyoutLabel: 'Stroke', fn: doSelectAllStrokes,
+        svg: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor">' +
+            SHAPE_SEL_FRAME +
+            '<rect x="4" y="4" width="12" height="12" rx="2.5" stroke-width="2.2"/></svg>'
+    }
+];
+var SHAPE_SEL_MODE_KEY = 'lineup-shape-sel-mode';
+var _shapeSelMode = 'path';
+
+function _shapeSelFindMode(id) {
+    for (var i = 0; i < SHAPE_SEL_MODES.length; i++) {
+        if (SHAPE_SEL_MODES[i].id === id) return SHAPE_SEL_MODES[i];
+    }
+    return SHAPE_SEL_MODES[0];
+}
+
+function _shapeSelInit() {
+    var saved;
+    try { saved = localStorage.getItem(SHAPE_SEL_MODE_KEY); } catch (e) {}
+    _shapeSelMode = _shapeSelFindMode(saved).id;
+    _shapeSelRefreshButtons();
+}
+
+function _shapeSelSetMode(id) {
+    _shapeSelMode = _shapeSelFindMode(id).id;
+    try { localStorage.setItem(SHAPE_SEL_MODE_KEY, _shapeSelMode); } catch (e) {}
+    _shapeSelRefreshButtons();
+}
+
+// Only swaps the <svg> (and a text label, if this particular instance has
+// one — the Tools-tab tile does, the widget's icon-only button doesn't),
+// not the button's own innerHTML wholesale, so this can't clobber
+// anything else a given instance happens to contain.
+function _shapeSelRefreshButtons() {
+    var mode = _shapeSelFindMode(_shapeSelMode);
+    document.querySelectorAll('.shape-sel-btn').forEach(function(btn) {
+        var svg = btn.querySelector('svg');
+        if (svg) svg.outerHTML = mode.svg;
+        var label = btn.querySelector('.shape-sel-label');
+        if (label) label.textContent = mode.shortLabel;
+        btn.title = mode.title;
+    });
+}
+
+function _shapeSelRunActive() {
+    _shapeSelFindMode(_shapeSelMode).fn();
+}
+
+// Right-click opens the flyout — each item is an icon plus a text label
+// (e.g. "Fill"), matching AE's own tool-group flyout look, with the
+// currently-active mode highlighted. The label drops out (icon-only,
+// centered — see .shape-sel-ctx.compact) whenever the labeled layout
+// wouldn't actually fit the available width; see _openShapeSelCtx.
+var _shapeSelCtx = null;
+
+function _buildShapeSelCtx() {
+    var el = document.createElement('div');
+    el.className = 'fav-ctx shape-sel-ctx';
+    var row = document.createElement('div');
+    row.className = 'shape-sel-ctx-row';
+    SHAPE_SEL_MODES.forEach(function(mode) {
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'shape-sel-ctx-icon-btn';
+        item.title = mode.title;
+        item.innerHTML = mode.svg + '<span class="shape-sel-ctx-lbl">' + mode.flyoutLabel + '</span>';
+        item.setAttribute('data-mode', mode.id);
+        item.addEventListener('click', function() {
+            _shapeSelSetMode(mode.id);
+            mode.fn();
+            _closeShapeSelCtx();
+        });
+        row.appendChild(item);
+    });
+    el.appendChild(row);
+    document.body.appendChild(el);
+    return el;
+}
+
+// Anchored to the button itself (below it by default, flipping above when
+// there isn't room), not the right-click cursor position — matching AE's
+// own tool-group flyout, which drops from the button, not from wherever
+// you happened to click on it. Dimensions are measured BEFORE adding
+// .visible: .fav-ctx's base state is opacity:0, not display:none, so it's
+// already laid out and measurable without a visible flash at the wrong
+// spot first — same trick used here to test-fit the labeled layout: try
+// it, measure, and only fall back to icon-only/.compact if it wouldn't
+// actually fit, all before anything is shown.
+function _openShapeSelCtx(btn) {
+    if (!_shapeSelCtx) _shapeSelCtx = _buildShapeSelCtx();
+    var items = _shapeSelCtx.querySelectorAll('.shape-sel-ctx-icon-btn');
+    for (var i = 0; i < items.length; i++) {
+        items[i].classList.toggle('active', items[i].getAttribute('data-mode') === _shapeSelMode);
+    }
+    var vw = window.innerWidth, vh = window.innerHeight;
+    // A CEP panel's own width IS the viewport width (no outer window
+    // chrome to account for), so the labeled layout's natural width is
+    // tested straight against it — "horizontally compressed" means the
+    // panel itself isn't wide enough for icon+text, not anything to do
+    // with where the button happens to sit.
+    _shapeSelCtx.classList.remove('compact');
+    var wideFits = (_shapeSelCtx.offsetWidth + 8) <= vw;
+    _shapeSelCtx.classList.toggle('compact', !wideFits);
+
+    var rect = btn.getBoundingClientRect();
+    var ctxW = _shapeSelCtx.offsetWidth;
+    var ctxH = _shapeSelCtx.offsetHeight;
+    var left = Math.min(Math.max(4, rect.left), vw - ctxW - 4);
+    var top = (rect.bottom + 4 + ctxH <= vh)
+        ? rect.bottom + 4  // below, the default
+        : Math.max(4, rect.top - ctxH - 4); // not enough room below — flip above instead
+    _shapeSelCtx.style.left = left + 'px';
+    _shapeSelCtx.style.top  = top + 'px';
+    _shapeSelCtx.classList.add('visible');
+    setTimeout(function() {
+        document.addEventListener('mousedown', _shapeSelCtxOutside);
+        document.addEventListener('keydown', _shapeSelCtxKey);
+    }, 0);
+}
+
+function _closeShapeSelCtx() {
+    if (_shapeSelCtx) _shapeSelCtx.classList.remove('visible');
+    document.removeEventListener('mousedown', _shapeSelCtxOutside);
+    document.removeEventListener('keydown', _shapeSelCtxKey);
+}
+
+function _shapeSelCtxOutside(e) {
+    if (_shapeSelCtx && !_shapeSelCtx.contains(e.target)) _closeShapeSelCtx();
+}
+
+function _shapeSelCtxKey(e) {
+    if (e.key === 'Escape') _closeShapeSelCtx();
+}
+
+// event is only ever passed from the actual onclick (both the widget's
+// own button and its Tools-tab/Quick-Actions tile share this same
+// handler) — reading .altKey here, not in host.jsx, since modifier-key
+// state is a DOM/JS-side concern; the held state just gets forwarded as
+// a plain 0/1 into the eval string like any other option.
+function doChangeStrokeType(e) {
+    var capOnly = (e && e.altKey) ? 1 : 0;
+    run('lineup_changeStrokeType(' + capOnly + ')');
+}
+
+function doMergeShapes(e) {
+    var keepOriginals = (e && e.altKey) ? 1 : 0;
+    run('lineup_mergeShapes(' + keepOriginals + ')');
+}
+
+function doExplodeShapes(e) {
+    var keepOriginals = (e && e.altKey) ? 1 : 0;
+    run('lineup_explodeShapes(' + keepOriginals + ')');
+}
+
+function doManageColors() {
+    run('lineup_manageColors()', function(result) { showToast(result, 'info'); });
+}
+
+// ── SHAPE COLOR HUD ───────────────────────────────────────────────────────────
+// Live Fill/Stroke summary at the top of Shape Tools, modeled on AE's own
+// Tools-panel Fill/Stroke swatches — see lineup_getShapeColorHud in host.jsx
+// for the actual scan (selected shape layers, or every shape layer in the
+// comp if none are selected).
+
+var _shapeColorHudLast    = null; // last polled+parsed payload — the edit popup reads from THIS, not a live poll, so its list can't shift under the cursor mid-edit (closing and reopening it refreshes)
+var _shapeColorHudLastRaw = '';   // last raw JSON string, to skip re-rendering (and re-touching the DOM) when nothing actually changed
+
+function _hexToRgb01(hex) {
+    hex = hex.replace('#', '');
+    return [
+        parseInt(hex.substring(0, 2), 16) / 255,
+        parseInt(hex.substring(2, 4), 16) / 255,
+        parseInt(hex.substring(4, 6), 16) / 255
+    ];
+}
+function _rgb01ToHex(rgb) {
+    function ch(v) {
+        var s = Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16);
+        return s.length < 2 ? '0' + s : s;
+    }
+    return '#' + ch(rgb[0]) + ch(rgb[1]) + ch(rgb[2]);
+}
+
+// ── COLOR PICKER (in-panel) ──────────────────────────────────────────────────
+// <input type="color"> never opens inside AE's CEP host, and ExtendScript's
+// $.colorPicker() only opens the OS-level color panel rather than AE's own
+// "Shape Fill/Stroke Color" dialog — that dialog is internal AE UI with no
+// scriptable entry point at all. So this is a from-scratch HSB picker living
+// in the panel itself (see #cpOverlay in index.html), styled after AE's own
+// dialog but narrow to fit the panel's own ~220-280px width (see .cp-modal
+// in style.css) rather than matching its wide two-column layout.
+
+function _rgbToHsb(r, g, b) { // r,g,b: 0-255 -> { h: 0-360, s: 0-100, b: 0-100 }
+    r /= 255; g /= 255; b /= 255;
+    var max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    var h = 0;
+    if (d !== 0) {
+        if (max === r) h = 60 * (((g - b) / d) % 6);
+        else if (max === g) h = 60 * ((b - r) / d + 2);
+        else h = 60 * ((r - g) / d + 4);
+    }
+    if (h < 0) h += 360;
+    return { h: h, s: max === 0 ? 0 : (d / max) * 100, b: max * 100 };
+}
+function _hsbToRgb(h, s, b) { // h: 0-360, s/b: 0-100 -> [r,g,b] 0-255
+    s /= 100; b /= 100;
+    var c = b * s;
+    var x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    var m = b - c;
+    var r, g, bl;
+    if (h < 60)       { r = c; g = x; bl = 0; }
+    else if (h < 120) { r = x; g = c; bl = 0; }
+    else if (h < 180) { r = 0; g = c; bl = x; }
+    else if (h < 240) { r = 0; g = x; bl = c; }
+    else if (h < 300) { r = x; g = 0; bl = c; }
+    else              { r = c; g = 0; bl = x; }
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((bl + m) * 255)];
+}
+
+var _cpOnApply = null;      // callback(rgb01Array), called only on OK
+var _cpH = 0, _cpS = 0, _cpBVal = 100; // current HSB — source of truth while the dialog is open
+var _cpHScrub, _cpSScrub, _cpBrScrub, _cpRScrub, _cpGScrub, _cpBScrub;
+var _cpSbDragging = false, _cpHueDragging = false;
+
+function _cpInitScrubs() {
+    _cpHScrub  = _bcsMakeScrub(document.getElementById('cpH'),  { min: 0, onChange: function(v) { _cpFromHsbField('h', v); } });
+    _cpSScrub  = _bcsMakeScrub(document.getElementById('cpS'),  { min: 0, onChange: function(v) { _cpFromHsbField('s', v); } });
+    _cpBrScrub = _bcsMakeScrub(document.getElementById('cpBr'), { min: 0, onChange: function(v) { _cpFromHsbField('b', v); } });
+    _cpRScrub  = _bcsMakeScrub(document.getElementById('cpR'),  { min: 0, onChange: _cpFromRgbFields });
+    _cpGScrub  = _bcsMakeScrub(document.getElementById('cpG'),  { min: 0, onChange: _cpFromRgbFields });
+    _cpBScrub  = _bcsMakeScrub(document.getElementById('cpB'),  { min: 0, onChange: _cpFromRgbFields });
+    document.getElementById('cpHex').addEventListener('input', _cpHexChanged);
+}
+
+function _cpFromHsbField(which, v) {
+    if (which === 'h') { _cpH = ((Math.round(v) % 360) + 360) % 360; _cpHScrub.set(_cpH, true); }
+    else if (which === 's') { _cpS = Math.min(100, Math.max(0, v)); _cpSScrub.set(_cpS, true); }
+    else { _cpBVal = Math.min(100, Math.max(0, v)); _cpBrScrub.set(_cpBVal, true); }
+    _cpSyncFromHsb(which === 'h');
+}
+
+// Shared onChange for all three RGB scrubs — re-reads all three (rather than
+// tracking which one fired) since a from-hex or from-HSB update already set
+// all three together, and there's no cheap way to tell "which single field
+// did the user just edit" apart from that from in here.
+function _cpFromRgbFields() {
+    var r = Math.min(255, Math.max(0, _cpRScrub.get()));
+    var g = Math.min(255, Math.max(0, _cpGScrub.get()));
+    var b = Math.min(255, Math.max(0, _cpBScrub.get()));
+    _cpRScrub.set(r, true); _cpGScrub.set(g, true); _cpBScrub.set(b, true);
+    var hsb = _rgbToHsb(r, g, b);
+    var hueChanged = Math.round(hsb.h) !== Math.round(_cpH);
+    _cpH = hsb.h; _cpS = hsb.s; _cpBVal = hsb.b;
+    _cpHScrub.set(Math.round(_cpH), true);
+    _cpSScrub.set(Math.round(_cpS), true);
+    _cpBrScrub.set(Math.round(_cpBVal), true);
+    _cpUpdateHexAndSwatch([r, g, b]);
+    _cpPositionHandles();
+    if (hueChanged) _cpDrawSbCanvas();
+}
+
+function _cpHexChanged() {
+    var v = document.getElementById('cpHex').value.replace(/[^0-9a-fA-F]/g, '');
+    if (v.length !== 6) return; // wait for a full 6-digit value before acting on it
+    var rgb01 = _hexToRgb01('#' + v);
+    _cpRScrub.set(Math.round(rgb01[0] * 255), true);
+    _cpGScrub.set(Math.round(rgb01[1] * 255), true);
+    _cpBScrub.set(Math.round(rgb01[2] * 255), true);
+    _cpFromRgbFields();
+}
+
+// Recomputes RGB/hex/handles from the current HSB state — hueChanged also
+// redraws the Saturation/Brightness square, since its own gradient is tinted
+// by hue and would otherwise still show the previous color.
+function _cpSyncFromHsb(hueChanged) {
+    var rgb = _hsbToRgb(_cpH, _cpS, _cpBVal);
+    _cpRScrub.set(rgb[0], true);
+    _cpGScrub.set(rgb[1], true);
+    _cpBScrub.set(rgb[2], true);
+    _cpUpdateHexAndSwatch(rgb);
+    _cpPositionHandles();
+    if (hueChanged) _cpDrawSbCanvas();
+}
+
+function _cpUpdateHexAndSwatch(rgb) {
+    var hex = _rgb01ToHex([rgb[0] / 255, rgb[1] / 255, rgb[2] / 255]);
+    document.getElementById('cpSwatch').style.backgroundColor = hex;
+    var hexInput = document.getElementById('cpHex');
+    if (document.activeElement !== hexInput) hexInput.value = hex.replace('#', '').toUpperCase();
+}
+
+function _cpPositionHandles() {
+    var sbWrap = document.getElementById('cpSbWrap');
+    var sbHandle = document.getElementById('cpSbHandle');
+    sbHandle.style.left = (_cpS / 100 * sbWrap.clientWidth) + 'px';
+    sbHandle.style.top  = ((1 - _cpBVal / 100) * sbWrap.clientHeight) + 'px';
+
+    var hueWrap = document.getElementById('cpHueWrap');
+    document.getElementById('cpHueHandle').style.top = (_cpH / 360 * hueWrap.clientHeight) + 'px';
+}
+
+// Solid hue fill, then a white→transparent gradient across X (saturation)
+// and a transparent→black gradient down Y (brightness) layered on top — the
+// standard three-layer trick for an HSB square, redrawn only when hue
+// changes since S/B alone don't affect it.
+function _cpDrawSbCanvas() {
+    var canvas = document.getElementById('cpSbCanvas');
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    var w = canvas.width, h = canvas.height;
+    var rgb = _hsbToRgb(_cpH, 100, 100);
+    ctx.fillStyle = 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
+    ctx.fillRect(0, 0, w, h);
+    var satGrad = ctx.createLinearGradient(0, 0, w, 0);
+    satGrad.addColorStop(0, 'rgba(255,255,255,1)');
+    satGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = satGrad;
+    ctx.fillRect(0, 0, w, h);
+    var briGrad = ctx.createLinearGradient(0, 0, 0, h);
+    briGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    briGrad.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.fillStyle = briGrad;
+    ctx.fillRect(0, 0, w, h);
+}
+
+// Static — every hue 0-360, wrapping back to red at the bottom same as the
+// top — drawn once, never needs redrawing since it doesn't depend on state.
+function _cpDrawHueCanvas() {
+    var canvas = document.getElementById('cpHueCanvas');
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    var w = canvas.width, h = canvas.height;
+    var grad = ctx.createLinearGradient(0, 0, 0, h);
+    [0, 60, 120, 180, 240, 300, 360].forEach(function(hue) {
+        var rgb = _hsbToRgb(hue % 360, 100, 100);
+        grad.addColorStop(hue / 360, 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')');
+    });
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+}
+
+function _cpSbUpdateFromEvent(e) {
+    var rect = document.getElementById('cpSbWrap').getBoundingClientRect();
+    var x = Math.min(Math.max(0, e.clientX - rect.left), rect.width);
+    var y = Math.min(Math.max(0, e.clientY - rect.top), rect.height);
+    _cpS = (x / rect.width) * 100;
+    _cpBVal = (1 - y / rect.height) * 100;
+    _cpSScrub.set(Math.round(_cpS), true);
+    _cpBrScrub.set(Math.round(_cpBVal), true);
+    _cpSyncFromHsb(false);
+}
+function _cpSbMouseDown(e) {
+    _cpSbDragging = true;
+    _cpSbUpdateFromEvent(e);
+    document.addEventListener('mousemove', _cpSbMouseMove);
+    document.addEventListener('mouseup', _cpSbMouseUp);
+    e.preventDefault();
+}
+function _cpSbMouseMove(e) { if (_cpSbDragging) _cpSbUpdateFromEvent(e); }
+function _cpSbMouseUp() {
+    _cpSbDragging = false;
+    document.removeEventListener('mousemove', _cpSbMouseMove);
+    document.removeEventListener('mouseup', _cpSbMouseUp);
+}
+
+function _cpHueUpdateFromEvent(e) {
+    var rect = document.getElementById('cpHueWrap').getBoundingClientRect();
+    var y = Math.min(Math.max(0, e.clientY - rect.top), rect.height);
+    _cpH = (y / rect.height) * 360;
+    _cpHScrub.set(Math.round(_cpH), true);
+    _cpSyncFromHsb(true);
+}
+function _cpHueMouseDown(e) {
+    _cpHueDragging = true;
+    _cpHueUpdateFromEvent(e);
+    document.addEventListener('mousemove', _cpHueMouseMove);
+    document.addEventListener('mouseup', _cpHueMouseUp);
+    e.preventDefault();
+}
+function _cpHueMouseMove(e) { if (_cpHueDragging) _cpHueUpdateFromEvent(e); }
+function _cpHueMouseUp() {
+    _cpHueDragging = false;
+    document.removeEventListener('mousemove', _cpHueMouseMove);
+    document.removeEventListener('mouseup', _cpHueMouseUp);
+}
+
+// rgb01: [r,g,b] each 0-1 (AE's own color format). onApply(rgb01) fires only
+// on OK — Cancel (or clicking outside/the × button) just closes with no
+// callback, leaving the underlying color untouched.
+function _openColorPicker(rgb01, title, onApply) {
+    _cpOnApply = onApply;
+    document.getElementById('cpTitle').textContent = title;
+    var rgb = [Math.round(rgb01[0] * 255), Math.round(rgb01[1] * 255), Math.round(rgb01[2] * 255)];
+    var hsb = _rgbToHsb(rgb[0], rgb[1], rgb[2]);
+    _cpH = hsb.h; _cpS = hsb.s; _cpBVal = hsb.b;
+    _cpHScrub.set(Math.round(_cpH), true);
+    _cpSScrub.set(Math.round(_cpS), true);
+    _cpBrScrub.set(Math.round(_cpBVal), true);
+    _cpRScrub.set(rgb[0], true);
+    _cpGScrub.set(rgb[1], true);
+    _cpBScrub.set(rgb[2], true);
+    _cpUpdateHexAndSwatch(rgb);
+    _cpDrawSbCanvas();
+    document.getElementById('cpOverlay').classList.remove('cp-hidden');
+    _cpPositionHandles(); // after unhiding — needs the wrap elements' real (non-zero) layout size
+}
+
+function _closeColorPicker(apply) {
+    document.getElementById('cpOverlay').classList.add('cp-hidden');
+    if (apply && _cpOnApply) {
+        _cpOnApply([_cpRScrub.get() / 255, _cpGScrub.get() / 255, _cpBScrub.get() / 255]);
+    }
+    _cpOnApply = null;
+}
+
+// Applies a { type: 'none'|'color'|'mix', value } summary to a Fill/Stroke
+// swatch button. Fill paints its background (a solid dot); stroke paints
+// its border instead (a ring), so the indicator itself reads as an outline.
+function _applySwatchSummary(el, summary, mode) {
+    el.classList.remove('vectools-swatch-none', 'vectools-swatch-mix');
+    el.style.backgroundColor = '';
+    el.style.borderColor = '';
+    if (!summary || summary.type === 'none') { el.classList.add('vectools-swatch-none'); return; }
+    if (summary.type === 'mix') { el.classList.add('vectools-swatch-mix'); return; }
+    var hex = _rgb01ToHex(summary.value);
+    if (mode === 'stroke') el.style.borderColor = hex;
+    else el.style.backgroundColor = hex;
+}
+
+// Direct edits on the HUD's own swatches always override every fill/stroke
+// in scope at once — per-instance editing lives in the full popup, opened
+// via the Fill/Stroke label instead (see _openFillPopup/_openStrokePopup).
+function _pickFillColor() {
+    var summary = _shapeColorHudLast && _shapeColorHudLast.fillSummary;
+    var current = (summary && summary.type === 'color') ? summary.value : [0.5, 0.5, 0.5];
+    _openColorPicker(current, 'Shape Fill Color', function(rgb) {
+        run('lineup_setShapeFillColorAll(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')', function() { _pollShapeColorHud(); });
+    });
+}
+function _pickStrokeColor() {
+    var summary = _shapeColorHudLast && _shapeColorHudLast.strokeColorSummary;
+    var current = (summary && summary.type === 'color') ? summary.value : [0.5, 0.5, 0.5];
+    _openColorPicker(current, 'Shape Stroke Color', function(rgb) {
+        run('lineup_setShapeStrokeColorAll(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')', function() { _pollShapeColorHud(); });
+    });
+}
+
+function _renderShapeColorHud(data) {
+    var fillSwatch = document.getElementById('vectoolsFillSwatch');
+    if (fillSwatch) _applySwatchSummary(fillSwatch, data.fillSummary, 'fill');
+
+    var strokeSwatch = document.getElementById('vectoolsStrokeSwatch');
+    if (strokeSwatch) _applySwatchSummary(strokeSwatch, data.strokeColorSummary, 'stroke');
+
+    if (_headerWidthScrub) {
+        var w = data.strokeWidthSummary;
+        // Always shows *something* — "0 px" rather than going blank when
+        // there's no stroke in scope — so the control stays visible/legible
+        // (and easy to spot while iterating on the HTML/CSS outside AE,
+        // where it never gets real polled data at all).
+        var text = (!w || w.type === 'none') ? '0 px' : (w.type === 'mix' ? 'Mix' : (Math.round(w.value * 10) / 10) + ' px');
+        _headerWidthScrub.render(text); // no-ops itself while the user is mid-drag/edit
+    }
+}
+
+// ── Blue scrubbable px number: drag left/right to change, click (no drag)
+// to type an exact value — shared by the Shape Tools header's own
+// stroke-width field and the Fill/Stroke edit modal's "All Strokes"/
+// per-row width cells (see _makeWidthScrub's call sites).
+// getValue(): () => current numeric value, read fresh each time a
+// drag/edit starts. setValue(v): (v) => apply the new value.
+function _makeWidthScrub(el, getValue, setValue) {
+    var drag = null, editing = false, lastText = el.textContent;
+
+    function render(text) {
+        lastText = text;
+        if (!editing && !drag) el.textContent = text;
+    }
+    function isBusy() { return editing || !!drag; }
+
+    function onMouseDown(e) {
+        if (editing) return;
+        e.preventDefault();
+        drag = { startX: e.clientX, startVal: getValue(), moved: false, lastSent: null };
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    }
+    function onMouseMove(e) {
+        if (!drag) return;
+        var dx = e.clientX - drag.startX;
+        if (!drag.moved && Math.abs(dx) < 3) return; // dead zone — distinguishes a click from a drag
+        drag.moved = true;
+        var newVal = Math.max(0, Math.round((drag.startVal + dx * 0.1) * 10) / 10);
+        if (newVal === drag.lastSent) return;
+        drag.lastSent = newVal;
+        el.textContent = newVal + ' px';
+        setValue(newVal);
+    }
+    function onMouseUp() {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        var d = drag;
+        drag = null;
+        if (d && !d.moved) openEdit(); // a plain click, no drag — edit instead of scrub
+    }
+    function openEdit() {
+        var current = getValue();
+        editing = true;
+        el.textContent = '';
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'vectools-fs-width-edit';
+        input.value = (current || current === 0) ? current : '';
+        el.appendChild(input);
+        input.focus();
+        input.select();
+        var settled = false;
+        function commit(apply) {
+            if (settled) return;
+            settled = true;
+            editing = false;
+            if (apply) {
+                var v = parseFloat(input.value);
+                if (!isNaN(v) && v >= 0) { setValue(v); return; }
+            }
+            el.textContent = lastText; // invalid input, or Escape — just restore the display
+        }
+        input.addEventListener('blur', function() { commit(true); });
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') input.blur();
+            else if (e.key === 'Escape') commit(false);
+        });
+    }
+
+    el.addEventListener('mousedown', onMouseDown);
+    return { render: render, isBusy: isBusy };
+}
+
+// Same "always overrides every stroke in scope" behavior as the color
+// swatches — per-instance width editing lives in the full popup instead.
+var _headerWidthScrub = null;
+function _initHeaderWidthScrub() {
+    var el = document.getElementById('vectoolsStrokeWidth');
+    if (!el) return;
+    _headerWidthScrub = _makeWidthScrub(el,
+        function() {
+            var w = _shapeColorHudLast && _shapeColorHudLast.strokeWidthSummary;
+            return (w && w.type === 'value') ? w.value : 0;
+        },
+        function(v) { run('lineup_setShapeStrokeWidthAll(' + v + ')', function() { _pollShapeColorHud(); }); });
+}
+
+// Throttled to 1s (vs Align's 300ms) — this scan can walk every shape layer
+// in the whole comp when nothing's selected, meaningfully more work per tick
+// than a keyframe-selection check. Same visibility gating as
+// _pollKeyAlignMode — skip the evalScript round-trip entirely when Shape
+// Tools isn't even visible right now.
+// afterUpdate (optional): called once this tick's async round-trip actually
+// lands — regardless of whether anything changed — so a caller that just
+// made an edit (e.g. the enable-toggle popup) can re-render itself from
+// _shapeColorHudLast only once it's genuinely fresh, not before.
+function _pollShapeColorHud(afterUpdate) {
+    var body = document.querySelector('.tool-body[data-block-id="vectortools"]');
+    if (!body || !body.offsetParent) { if (afterUpdate) afterUpdate(); return; }
+    cs.evalScript('lineup_getShapeColorHud()', function(result) {
+        if (result && result !== 'undefined' && result.indexOf('ERROR:') !== 0 && result !== _shapeColorHudLastRaw) {
+            _shapeColorHudLastRaw = result;
+            var data = null;
+            try { data = JSON.parse(result); } catch (e) {}
+            if (data && !data.empty) {
+                _shapeColorHudLast = data;
+                _renderShapeColorHud(data);
+            }
+        }
+        if (afterUpdate) afterUpdate();
+    });
+}
+
+// ── Shape Color HUD: edit modal ──────────────────────────────────────────────
+// A full popup (#shapeEditOverlay, same convention as Settings/Color Picker)
+// rather than a small anchored one, unified across Fill and Stroke as two
+// tabs — switching tabs re-renders #shapeEditBody in place. Each tab lists
+// every instance found in the last polled snapshot individually (editable
+// one at a time, including a per-instance Solid/No Fill(Stroke) checkbox)
+// plus a single "All Fills"/"All Strokes" row and Solid/No Fill(Stroke)
+// toggle that apply to every instance in scope at once.
+
+var _shapeEditPopupMode = null; // 'fill' | 'stroke' — which tab is active
+
+function _closeShapeEditPopup() {
+    var overlay = document.getElementById('shapeEditOverlay');
+    if (overlay) overlay.classList.add('shape-edit-hidden');
+}
+
+function _shapeEditSyncTabs() {
+    Array.prototype.forEach.call(document.querySelectorAll('#shapeEditOverlay .vectools-edit-tab'), function(tab) {
+        tab.classList.toggle('active', tab.getAttribute('data-tab') === _shapeEditPopupMode);
+    });
+}
+
+// Switches tabs within the same open modal instead of closing/reopening.
+function _switchShapeEditTab(mode) {
+    _shapeEditPopupMode = mode;
+    _shapeEditSyncTabs();
+    _renderShapeEditPopup();
+}
+
+// Solid Fill/Stroke = a plain swatch square; No Fill/Stroke = the exact same
+// diagonal-red-slash square already used for "no color anywhere in scope"
+// (.vectools-swatch-none — reused as-is, not redrawn) — matches AE's own
+// swatch iconography for on/off state.
+function _shapeEditOnIcon() {
+    return '<span class="vectools-edit-onoff-icon"></span>';
+}
+function _shapeEditOffIcon() {
+    return '<span class="vectools-edit-onoff-icon vectools-swatch-none"></span>';
+}
+
+function _renderShapeEditPopup() {
+    var data = _shapeColorHudLast;
+    var body = document.getElementById('shapeEditBody');
+    var isFill = _shapeEditPopupMode === 'fill';
+    var items = isFill ? data.fills : data.strokes;
+    var allLabel = isFill ? 'All Fills' : 'All Strokes';
+    var enabledSummary = isFill ? data.fillEnabledSummary : data.strokeEnabledSummary;
+    var onTitle = isFill ? 'Solid Fill' : 'Solid Stroke';
+    var offTitle = isFill ? 'No Fill' : 'No Stroke';
+
+    // Solid/No Fill(Stroke) — toggles every instance's own on/off state (the
+    // same checkbox AE's Contents panel shows for a Fill/Stroke item), not a
+    // color change — see lineup_setShapeFillEnabledAll/lineup_setShapeStrokeEnabledAll.
+    var html = '<div class="vectools-edit-onoff-row">' +
+        '<button type="button" class="vectools-edit-onoff-btn' + (enabledSummary.type === 'all' ? ' active' : '') + '" data-role="on" title="' + onTitle + '">' + _shapeEditOnIcon() + '</button>' +
+        '<button type="button" class="vectools-edit-onoff-btn' + (enabledSummary.type === 'none' ? ' active' : '') + '" data-role="off" title="' + offTitle + '">' + _shapeEditOffIcon() + '</button>' +
+        '</div>';
+
+    // Color cells are plain buttons, not <input type="color"> — that picker
+    // never opens inside AE's CEP host — clicking one opens the in-panel
+    // color picker instead (see _openColorPicker). Width cells are the same
+    // blue scrub/click-to-type control as the Shape Tools header's own
+    // stroke-width field (see _makeWidthScrub).
+    var allWidthText = data.strokeWidthSummary.type === 'value' ? (Math.round(data.strokeWidthSummary.value * 10) / 10) + ' px'
+        : (data.strokeWidthSummary.type === 'mix' ? 'Mix' : '0 px');
+    html += '<div class="vectools-edit-row vectools-edit-all-row">' +
+        '<span class="vectools-edit-row-lbl">' + allLabel + '</span>' +
+        '<button type="button" class="vectools-color-input" data-role="all"></button>' +
+        (isFill ? '' : '<span class="vectools-fs-width" data-role="all-width">' + allWidthText + '</span>') +
+        '</div>';
+    if (!items.length) {
+        html += '<div class="vectools-edit-empty">No ' + (isFill ? 'fills' : 'strokes') + ' found.</div>';
+    } else {
+        html += '<div class="vectools-edit-list">';
+        items.forEach(function(item, i) {
+            var colorVal = isFill ? item.value : item.colorValue;
+            var safeLbl = String(item.layerName).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            html += '<div class="vectools-edit-row' + (item.enabled ? '' : ' vectools-edit-row-off') + '">' +
+                '<span class="vectools-edit-row-lbl" title="' + safeLbl + '">' + safeLbl + '</span>' +
+                '<button type="button" class="vectools-color-input" data-index="' + i + '" style="background-color:' + _rgb01ToHex(colorVal) + '"></button>' +
+                (isFill ? '' : '<span class="vectools-fs-width" data-index="' + i + '">' + (Math.round(item.widthValue * 10) / 10) + ' px</span>') +
+                '</div>';
+        });
+        html += '</div>';
+    }
+    body.innerHTML = html;
+
+    var enableAllFn = isFill ? 'lineup_setShapeFillEnabledAll' : 'lineup_setShapeStrokeEnabledAll';
+    var onBtn = body.querySelector('button[data-role="on"]');
+    var offBtn = body.querySelector('button[data-role="off"]');
+    if (onBtn) onBtn.addEventListener('click', function() {
+        run(enableAllFn + '(1)', function() { _pollShapeColorHud(function() { _renderShapeEditPopup(); }); });
+    });
+    if (offBtn) offBtn.addEventListener('click', function() {
+        run(enableAllFn + '(0)', function() { _pollShapeColorHud(function() { _renderShapeEditPopup(); }); });
+    });
+
+    var allColorBtn = body.querySelector('button[data-role="all"]');
+    if (allColorBtn) {
+        var colorSummary = isFill ? data.fillSummary : data.strokeColorSummary;
+        var allRgb = colorSummary.type === 'color' ? colorSummary.value : [0.5, 0.5, 0.5];
+        if (colorSummary.type === 'color') allColorBtn.style.backgroundColor = _rgb01ToHex(colorSummary.value);
+        allColorBtn.addEventListener('click', function() {
+            _openColorPicker(allRgb, isFill ? 'All Fills' : 'All Strokes', function(rgb) {
+                allRgb = rgb;
+                allColorBtn.style.backgroundColor = _rgb01ToHex(rgb);
+                var fn = isFill ? 'lineup_setShapeFillColorAll' : 'lineup_setShapeStrokeColorAll';
+                run(fn + '(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')', function() { _pollShapeColorHud(); });
+            });
+        });
+    }
+    var allWidthEl = body.querySelector('.vectools-fs-width[data-role="all-width"]');
+    if (allWidthEl) {
+        _makeWidthScrub(allWidthEl,
+            function() { return (data.strokeWidthSummary.type === 'value') ? data.strokeWidthSummary.value : 0; },
+            function(v) { run('lineup_setShapeStrokeWidthAll(' + v + ')', function() { _pollShapeColorHud(); }); });
+    }
+    Array.prototype.forEach.call(body.querySelectorAll('button.vectools-color-input[data-index]'), function(btn) {
+        var idx = parseInt(btn.getAttribute('data-index'), 10);
+        var rowRgb = isFill ? items[idx].value : items[idx].colorValue;
+        btn.addEventListener('click', function() {
+            _openColorPicker(rowRgb, isFill ? 'Shape Fill Color' : 'Shape Stroke Color', function(rgb) {
+                rowRgb = rgb;
+                btn.style.backgroundColor = _rgb01ToHex(rgb);
+                var fn = isFill ? 'lineup_setShapeFillColorAt' : 'lineup_setShapeStrokeColorAt';
+                run(fn + '(' + idx + ',' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')', function() { _pollShapeColorHud(); });
+            });
+        });
+    });
+    Array.prototype.forEach.call(body.querySelectorAll('.vectools-fs-width[data-index]'), function(el) {
+        var idx = parseInt(el.getAttribute('data-index'), 10);
+        _makeWidthScrub(el,
+            function() { return items[idx].widthValue; },
+            function(v) { run('lineup_setShapeStrokeWidthAt(' + idx + ',' + v + ')', function() { _pollShapeColorHud(); }); });
+    });
+}
+
+function _openShapeEditPopup(mode) {
+    if (!_shapeColorHudLast) return; // nothing polled yet — nothing to show
+    _shapeEditPopupMode = mode;
+    _shapeEditSyncTabs();
+    _renderShapeEditPopup();
+    document.getElementById('shapeEditOverlay').classList.remove('shape-edit-hidden');
+}
+function _openFillPopup()   { _openShapeEditPopup('fill'); }
+function _openStrokePopup() { _openShapeEditPopup('stroke'); }
+
 // ── AUTO CROP ─────────────────────────────────────────────────────────────────
 
 function doAutoCrop() {
@@ -2514,7 +3661,7 @@ var QA_INSTANCES = {
     main: {
         storageKey: 'lineup-quick-actions',
         gridId: 'quickActionsGrid',
-        defaultIds: ['duplicateCompDeep', 'consolidateProject', 'projectStructure', 'batchCompSettings', 'batchRename', 'compExport']
+        defaultIds: ['duplicateCompDeep', 'consolidateProject', 'projectStructure', 'batchCompSettings', 'findReplace', 'compExport']
     },
     quickactions2: {
         storageKey: 'lineup-quick-actions-2',
@@ -2568,6 +3715,7 @@ function _qaGetPinned(instKey) {
 }
 
 function _qaSavePinned(instKey, ids) {
+    _editRecordUndoPoint();
     try { localStorage.setItem(QA_INSTANCES[instKey].storageKey, JSON.stringify(ids)); } catch(e) {}
 }
 
@@ -2713,17 +3861,104 @@ function _toggleEditMode() {
     var bar = document.getElementById('editModeBar');
     if (_editMode) {
         _editSnapshot = _captureEditSnapshot();
+        _editUndoStack = [];
+        _editRedoStack = [];
+        _editSyncUndoRedoButtons();
         if (bar) bar.classList.remove('edit-mode-bar-hidden');
         setTimeout(function() { document.addEventListener('mousedown', _editModeOutside); }, 0);
+        _blStartGlow();
     } else {
         _editSnapshot = null;
         if (bar) bar.classList.add('edit-mode-bar-hidden');
         document.removeEventListener('mousedown', _editModeOutside);
         _qaCloseAddPopover();
         _blCloseAddPopover();
+        _blStopGlow();
     }
     _renderAllQuickActions();
     _blRenderAddRow();
+    // Board-editing adds/removes borders and padding right inside the top
+    // group (e.g. Quick Actions tiles gaining a dashed border where they
+    // had none) — _syncAnchorRowUnit's medium-tier row heights are pinned
+    // to exact pixel values computed off Anchor/Quick Actions' rendered
+    // height, and nothing re-measures them on its own when only a class
+    // toggles (no resize). Left stale, Quick Actions grows into Favorite's
+    // frozen track and Anchor's own content (down to the Null button) can
+    // overflow the frozen total height. Re-synced here so entering/exiting
+    // editing always reflects the current DOM.
+    _syncAnchorTiers();
+}
+
+// Soft cursor-follow spotlight across every editable widget at once (see
+// the CSS comment on .bl-draggable::before) — one shared, eased cursor
+// position, continuously written into each widget's own --glow-x/--glow-y
+// as a LOCAL offset (cursor position minus that widget's own top-left).
+//
+// Two perf fixes on top of the original version, both aimed at the same
+// problem: this used to re-run document.querySelectorAll AND
+// getBoundingClientRect on every editable widget on EVERY animation frame,
+// for as long as edit mode stayed open — not just while actively
+// dragging — which is exactly the kind of continuous layout-thrashing
+// that was making the whole panel feel sluggish in AE.
+//   1. The element list and their rects are cached (_blGlowEls/Rects)
+//      instead of re-measured every frame. Widget positions only actually
+//      change on discrete actions (reorder, add/remove, favorite), not
+//      continuously, so a periodic refresh (_blRefreshGlowTargets, every
+//      400ms while editing) is imperceptibly stale at worst and cuts the
+//      expensive DOM query + gBCR calls by ~24x.
+//   2. The cheap part (writing 2 custom properties per widget) still runs
+//      every frame for smooth tracking, but is skipped entirely once the
+//      eased position has converged to the raw cursor and isn't moving —
+//      otherwise this was rewriting identical values 60 times a second
+//      the entire time the mouse sat still, which is most of the time
+//      this runs.
+var _blGlowRAF = null;
+var _blGlowRefreshTimer = null;
+var _blGlowRawX = -9999, _blGlowRawY = -9999;
+var _blGlowX = -9999, _blGlowY = -9999;
+var _blGlowEls = [];
+var _blGlowRects = [];
+
+function _blGlowMove(e) {
+    _blGlowRawX = e.clientX;
+    _blGlowRawY = e.clientY;
+}
+
+function _blRefreshGlowTargets() {
+    _blGlowEls = Array.prototype.slice.call(document.querySelectorAll(
+        '#homeToolGrid.board-editing .bl-draggable, #homeToolGrid.board-editing .tool-box-favorite'
+    ));
+    _blGlowRects = _blGlowEls.map(function(el) { return el.getBoundingClientRect(); });
+}
+
+function _blGlowTick() {
+    // 0.12 is the "slight delay" — how far the eased position catches up
+    // to the raw cursor each frame, same lerp-toward-a-moving-target
+    // pattern as the drag ghost's own 3D tilt.
+    var dx = _blGlowRawX - _blGlowX, dy = _blGlowRawY - _blGlowY;
+    if (Math.abs(dx) > 0.05 || Math.abs(dy) > 0.05) {
+        _blGlowX += dx * 0.12;
+        _blGlowY += dy * 0.12;
+        for (var i = 0; i < _blGlowEls.length; i++) {
+            _blGlowEls[i].style.setProperty('--glow-x', (_blGlowX - _blGlowRects[i].left) + 'px');
+            _blGlowEls[i].style.setProperty('--glow-y', (_blGlowY - _blGlowRects[i].top) + 'px');
+        }
+    }
+    _blGlowRAF = requestAnimationFrame(_blGlowTick);
+}
+
+function _blStartGlow() {
+    if (_blGlowRAF) return;
+    _blRefreshGlowTargets();
+    document.addEventListener('mousemove', _blGlowMove);
+    _blGlowRAF = requestAnimationFrame(_blGlowTick);
+    _blGlowRefreshTimer = setInterval(_blRefreshGlowTargets, 400);
+}
+
+function _blStopGlow() {
+    document.removeEventListener('mousemove', _blGlowMove);
+    if (_blGlowRAF) { cancelAnimationFrame(_blGlowRAF); _blGlowRAF = null; }
+    if (_blGlowRefreshTimer) { clearInterval(_blGlowRefreshTimer); _blGlowRefreshTimer = null; }
 }
 
 // ── Edit mode bar (Save / Cancel / Restore to Default) ──────────────────────
@@ -2751,6 +3986,49 @@ function _restoreEditSnapshot(snap) {
             else localStorage.setItem(key, snap[key]);
         } catch(e) {}
     });
+}
+
+// ── Edit mode undo/redo ───────────────────────────────────────────────────
+// Every mutating edit-mode action (Quick Actions x2 add/remove/reorder,
+// Bottom Layout drag-reorder, Favorite add/remove) funnels through exactly
+// one of _qaSavePinned/_blSaveRows/_favSave regardless of which gesture
+// triggered it — recording the pre-mutation snapshot there, once per
+// function, covers the whole surface without threading undo bookkeeping
+// through every individual drag/click. Same snapshot shape Cancel already
+// uses, just kept as a full history instead of a single slot. Both stacks
+// reset whenever edit mode is (re)entered — undo history doesn't carry
+// across separate editing sessions.
+var _editUndoStack = [];
+var _editRedoStack = [];
+
+function _editRecordUndoPoint() {
+    if (!_editMode) return;
+    _editUndoStack.push(_captureEditSnapshot());
+    _editRedoStack.length = 0;
+    _editSyncUndoRedoButtons();
+}
+
+function _editUndo() {
+    if (!_editMode || !_editUndoStack.length) return;
+    _editRedoStack.push(_captureEditSnapshot());
+    _restoreEditSnapshot(_editUndoStack.pop());
+    _refreshAllEditableWidgets();
+    _editSyncUndoRedoButtons();
+}
+
+function _editRedo() {
+    if (!_editMode || !_editRedoStack.length) return;
+    _editUndoStack.push(_captureEditSnapshot());
+    _restoreEditSnapshot(_editRedoStack.pop());
+    _refreshAllEditableWidgets();
+    _editSyncUndoRedoButtons();
+}
+
+function _editSyncUndoRedoButtons() {
+    var undoBtn = document.getElementById('editModeUndoBtn');
+    var redoBtn = document.getElementById('editModeRedoBtn');
+    if (undoBtn) undoBtn.disabled = _editUndoStack.length === 0;
+    if (redoBtn) redoBtn.disabled = _editRedoStack.length === 0;
 }
 
 // _favApplyLayout already calls _blApplyLayout at its end, so this alone
@@ -2976,17 +4254,21 @@ var BL_STORAGE_KEY = 'lineup-bottom-layout';
 // popover (see _blOpenAddPopover); the icon is cloned straight off each
 // box's own .qa-collapse-icon rather than duplicated by hand.
 var BL_CATALOG = [
-    { id: 'align',         label: 'Align' },
+    { id: 'alignlayers',   label: 'Align' },
     { id: 'distribute',    label: 'Distribute' },
     { id: 'sizing',        label: 'Sizing' },
     { id: 'autocrop',      label: 'Auto Crop' },
     { id: 'sort',          label: 'Layer Sort' },
     { id: 'quickactions2', label: 'Quick Actions (2nd Bar)' },
     { id: 'spellcheck',    label: 'Spell Check' },
-    { id: 'ease',          label: 'Ease Copy' }
+    { id: 'ease',          label: 'Ease Copy' },
+    { id: 'vectortools',   label: 'Shape Tools' }
 ];
 var BL_CATALOG_IDS = BL_CATALOG.map(function(c) { return c.id; });
-var BL_DEFAULT_ROWS = [ ['align'], ['distribute'], ['sizing', 'autocrop'], ['sort'] ];
+// Shape Tools starts unpinned (like Quick Actions 2/Spell Check/Ease Copy),
+// and so does Sort Layers now too — rather than forced into everyone's
+// default layout, both are added via the "+" popover instead.
+var BL_DEFAULT_ROWS = [ ['alignlayers'], ['distribute'], ['sizing', 'autocrop'] ];
 
 var _blDrag = null; // non-null while a drag is in progress
 
@@ -3021,6 +4303,7 @@ function _blGetRows() {
 }
 
 function _blSaveRows(rows) {
+    _editRecordUndoPoint();
     try { localStorage.setItem(BL_STORAGE_KEY, JSON.stringify(rows)); } catch(e) {}
 }
 
@@ -3033,9 +4316,17 @@ function _blPinnedIds() {
 }
 
 // Catalog entries not currently pinned — what the add-widget popover lists.
+// Also excludes whatever's currently favorited: favoriting already pulls a
+// widget's real .tool-body out of Bottom Layout (see _favApplyLayout), but
+// nothing stopped this popover from still offering it — picking it there
+// pinned a brand-new row for the same id and _blApplyLayout moved that one
+// tool-body into it, leaving the favorite page it had just been ripped out
+// of empty/broken. A widget can only live in one place at a time; if it's
+// favorited, that's where it lives.
 function _blAvailableIds() {
     var pinned = _blPinnedIds();
-    return BL_CATALOG_IDS.filter(function(id) { return pinned.indexOf(id) === -1; });
+    var favorited = _favGet();
+    return BL_CATALOG_IDS.filter(function(id) { return pinned.indexOf(id) === -1 && favorited.indexOf(id) === -1; });
 }
 
 // A row with 2 ids renders as span 3 + span 3; a row with 1 id renders as
@@ -3087,8 +4378,8 @@ function _blApplyLayout(rows) {
     if (qa2Grid) _qaSyncAddTiles('quickactions2', qa2Grid);
     // Align/Distribute's own available width can change here (a drag
     // docking/undocking them into a pair, or narrow-stack forcing span 6)
-    // without #homeToolGrid itself resizing, so _syncCtrlRowLabels' own
-    // ResizeObserver (see _initCtrlRowLabels) wouldn't otherwise re-fire.
+    // without #homeToolGrid itself resizing, so _syncAnchorTiers' own
+    // resize-driven call wouldn't otherwise re-fire this.
     _syncCtrlRowLabels();
 }
 
@@ -3103,8 +4394,14 @@ function _blCaptureRects(ids) {
 
 // FLIP: after a reflow, snap each box back to where it visually was via an
 // inverse transform, then transition that transform away to '' — reads as
-// the boxes smoothly sliding/resizing into their new positions.
+// the boxes smoothly sliding/resizing into their new positions. Writes are
+// batched across every box (jump to the inverse transform for ALL of them,
+// ONE forced reflow, THEN start every transition) rather than forcing a
+// separate reflow per box — up to ~7 forced reflows on every drop/add/
+// remove down to at most 1, matching the same batched-FLIP pattern already
+// used correctly in initSettingsDrag elsewhere in this file.
 function _blPlayFlip(ids, oldRects) {
+    var moved = [];
     ids.forEach(function(id) {
         var el = _blBoxEl(id);
         var old = oldRects[id];
@@ -3115,7 +4412,11 @@ function _blPlayFlip(ids, oldRects) {
         if (!dx && !dy) return;
         el.style.transition = 'none';
         el.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
-        void el.offsetWidth; // force reflow so the transition below actually starts from here
+        moved.push(el);
+    });
+    if (!moved.length) return;
+    void moved[0].offsetWidth; // one forced reflow settles every box's jump above at once
+    moved.forEach(function(el) {
         el.style.transition = 'transform 0.12s cubic-bezier(0.4, 0, 0.2, 1)';
         el.style.transform = '';
     });
@@ -3149,82 +4450,198 @@ function _blTargetFromPoint(x, y) {
     return null;
 }
 
-// Resolves exactly one of 4 zones relative to a specific target widget —
-// no dead zone at all, every point over a widget resolves to something:
+// Resolves exactly one zone relative to a specific target widget — no dead
+// zone at all, every point over a widget resolves to something:
 //  - top ~25% of its height -> insert a new full-line row above it
 //  - bottom ~25% -> insert a new full-line row below it
-//  - remaining middle, left half -> dock to its left (if it has room)
-//  - remaining middle, right half -> dock to its right (if it has room)
-// Narrow stack (see _narrowStack) drops the dock-left/right half entirely —
-// every widget renders full width there regardless of its real stored
-// pairing, so a left/right split would be previewing a dock that couldn't
-// possibly show as anything but full-width anyway. Every point just
-// resolves to before/after off a plain 50/50 vertical split instead.
-function _blZoneForTarget(targetBox, baseline, clientX, clientY) {
+//  - remaining middle:
+//     - already half-width (paired, no room to dock a third widget in
+//       anyway) -> the whole remaining middle is one "swap" zone: trade
+//       places with it
+//     - otherwise (full width, has room to pair) -> left half docks left,
+//       right half docks right
+// The top/bottom bands apply either way — losing those for a paired widget
+// would make it impossible to insert a new row directly above/below an
+// existing pair at all, since dock-left/right and swap both only replace
+// what happens in the middle. Narrow stack (see _narrowStack) drops the
+// dock-left/right half (and the swap zone) entirely — every widget renders
+// full width there regardless of its real stored pairing, so neither a
+// left/right split nor a "half-width" swap target would mean anything
+// visually. Every point just resolves to before/after off a plain 50/50
+// vertical split instead.
+// Cumulative offsetLeft/Top from `el` up through its own offsetParent chain
+// to `ancestor` — a zoom-independent alternative to getBoundingClientRect,
+// same idea as _blOffsetRect elsewhere in this file. Requires `ancestor`
+// to actually be a positioned ancestor of `el` (true here: .tool-box is
+// position:relative, so it's always its own descendants' offsetParent
+// somewhere up the chain).
+function _blOffsetFromAncestor(el, ancestor) {
+    var x = 0, y = 0;
+    while (el && el !== ancestor) {
+        x += el.offsetLeft;
+        y += el.offsetTop;
+        el = el.offsetParent;
+    }
+    return { x: x, y: y };
+}
+
+// cursorX/cursorY are the drag cursor's position relative to targetBox's
+// own top-left corner (see _blOnDragMove's own cursor-position math) — NOT
+// clientX/clientY compared against targetBox.getBoundingClientRect(),
+// which is what this used to do. That comparison quietly broke under any
+// panel zoom (the Scale slider defaults to 1.05x, not 1x): every point
+// resolved to before/after and dock-left/dock-right or swap never
+// triggered — invisible in a plain browser tab (zoom 1, bug never fires)
+// but reliably reproducing inside AE's CEF host, matching the exact
+// "getBoundingClientRect vs. a CSS zoom" inconsistency _blOffsetRect
+// already worked around for this same indicator's own positioning.
+function _blZoneForTarget(targetBox, baseline, cursorX, cursorY) {
     var targetId = targetBox.getAttribute('data-block-id');
-    var rowIdx = -1, canDock = false;
+    var rowIdx = -1, canDock = false, posInRow = -1, rowSize = 0;
     baseline.forEach(function(row, i) {
-        if (row.indexOf(targetId) !== -1) { rowIdx = i; canDock = row.length === 1; }
+        var p = row.indexOf(targetId);
+        if (p !== -1) { rowIdx = i; canDock = row.length === 1; posInRow = p; rowSize = row.length; }
     });
     if (rowIdx === -1) return null;
 
-    var r = targetBox.getBoundingClientRect();
+    var w = targetBox.offsetWidth, h = targetBox.offsetHeight;
 
     if (_narrowStack) {
-        var narrowMid = (r.top + r.bottom) / 2;
-        return { targetId: targetId, rowIdx: rowIdx, mode: clientY < narrowMid ? 'before' : 'after' };
+        // posInRow/rowSize travel with the candidate so _blShowIndicator and
+        // _blRowsFromCandidate can tell whether the target is mid-pair —
+        // a paired logical row renders as two separate stacked full-width
+        // rows here, so "before"/"after" a specific widget can mean landing
+        // BETWEEN its own pair (see both functions below), not just before/
+        // after the pair as a whole the way rowIdx alone would imply.
+        return { targetId: targetId, rowIdx: rowIdx, logicalRowIdx: rowIdx, posInRow: posInRow, rowSize: rowSize,
+                 mode: cursorY < h / 2 ? 'before' : 'after' };
     }
 
-    var topBand = r.top + r.height * 0.25;
-    var bottomBand = r.bottom - r.height * 0.25;
+    var topBand = h * 0.25;
+    var bottomBand = h * 0.75;
 
-    if (clientY < topBand) return { targetId: targetId, rowIdx: rowIdx, mode: 'before' };
-    if (clientY > bottomBand) return { targetId: targetId, rowIdx: rowIdx, mode: 'after' };
+    if (cursorY < topBand) return { targetId: targetId, rowIdx: rowIdx, mode: 'before' };
+    if (cursorY > bottomBand) return { targetId: targetId, rowIdx: rowIdx, mode: 'after' };
 
-    // Already paired (no room to dock) — the vertical middle just falls
-    // to whichever half, above/below, is closer.
+    // Already half-width — trading places with it is more useful than
+    // previewing a dock that couldn't fit (there's no room for a third
+    // widget in an already-full pair), so the whole remaining middle band
+    // is one zone regardless of left/right cursor position.
     if (!canDock) {
-        var rowCenter = (r.top + r.bottom) / 2;
-        return { targetId: targetId, rowIdx: rowIdx, mode: clientY < rowCenter ? 'before' : 'after' };
+        return { targetId: targetId, rowIdx: rowIdx, mode: 'swap' };
     }
 
-    var midX = r.left + r.width / 2;
-    return { targetId: targetId, rowIdx: rowIdx, mode: clientX < midX ? 'dock-left' : 'dock-right' };
+    return { targetId: targetId, rowIdx: rowIdx, mode: cursorX < w / 2 ? 'dock-left' : 'dock-right' };
 }
 
-function _blRowsFromCandidate(baseline, draggedId, candidate) {
+// originalRows is the pre-pickup arrangement (draggedId still in its own
+// slot) — only needed for 'swap', which trades two widgets' exact
+// positions and so needs the dragged widget's own slot/partner still
+// intact, unlike every other mode here which builds off `baseline`
+// (draggedId already removed/collapsed out).
+function _blRowsFromCandidate(baseline, draggedId, candidate, originalRows) {
     if (!candidate) return null;
+
+    if (candidate.mode === 'swap') {
+        var rows2 = originalRows.map(function(row) { return row.slice(); });
+        var dRow = -1, dPos = -1, tRow = -1, tPos = -1;
+        rows2.forEach(function(row, i) {
+            var dp = row.indexOf(draggedId);      if (dp !== -1) { dRow = i; dPos = dp; }
+            var tp = row.indexOf(candidate.targetId); if (tp !== -1) { tRow = i; tPos = tp; }
+        });
+        if (dRow === -1 || tRow === -1) return rows2;
+        rows2[dRow][dPos] = candidate.targetId;
+        rows2[tRow][tPos] = draggedId;
+        return rows2;
+    }
+
     var rows = baseline.map(function(row) { return row.slice(); });
+
     if (candidate.mode === 'dock-left' || candidate.mode === 'dock-right') {
         rows[candidate.rowIdx] = candidate.mode === 'dock-left' ? [draggedId, candidate.targetId] : [candidate.targetId, draggedId];
-    } else {
+        return rows;
+    }
+
+    if (!_narrowStack) {
         rows.splice(candidate.mode === 'after' ? candidate.rowIdx + 1 : candidate.rowIdx, 0, [draggedId]);
+        return rows;
+    }
+
+    // Narrow-stack: landing 'before'/'after' a widget that sits at the edge
+    // of its own logical row still means before/after the row as a whole
+    // (pair stays intact). Landing on the INNER edge of a pair (its top half
+    // when it's the second widget, or its bottom half when it's the first)
+    // means the drop is actually BETWEEN the two — split the pair into two
+    // standalone rows with the dragged widget in between, matching exactly
+    // where the drop-line indicator shows it landing.
+    var row = rows[candidate.logicalRowIdx];
+    var atRowEdge = candidate.mode === 'before' ? candidate.posInRow === 0 : candidate.posInRow === row.length - 1;
+    if (atRowEdge) {
+        rows.splice(candidate.mode === 'after' ? candidate.logicalRowIdx + 1 : candidate.logicalRowIdx, 0, [draggedId]);
+    } else {
+        rows.splice(candidate.logicalRowIdx, 1, [row[0]], [draggedId], [row[1]]);
     }
     return rows;
 }
 
 var _blIndicatorEl = null;
+// Lives inside #homeGrid itself (not appended to <body>) so it renders
+// through the exact same CSS zoom that subtree can be under (the Scale
+// slider — its default is already 1.05x, not 1x) as the widgets it tracks.
+// A fixed-to-viewport element positioned from getBoundingClientRect()
+// measurements taken *inside* a zoomed ancestor is exactly the setup where
+// Chromium/CEF's zoom handling has a long history of inconsistency — being
+// a real child of the same zoomed subtree sidesteps that instead of
+// depending on it resolving correctly.
 function _blIndicator() {
     if (!_blIndicatorEl) {
         _blIndicatorEl = document.createElement('div');
         _blIndicatorEl.className = 'bl-drop-indicator';
-        document.body.appendChild(_blIndicatorEl);
+        document.getElementById('homeGrid').appendChild(_blIndicatorEl);
     }
     return _blIndicatorEl;
 }
 
-// The rect of whichever row sits at baseline[rowIdx] — either id in a
-// paired row shares the same top/bottom by construction, so the first is
-// enough. Returns null past either end (no neighboring row there).
-function _blRowRect(baseline, rowIdx) {
+// offsetLeft/offsetTop/offsetWidth/offsetHeight describe an element's
+// position in the CSS LAYOUT tree, relative to its offsetParent — every
+// .bl-draggable .tool-box is a direct child of #homeGrid, which is also
+// _blIndicatorEl's own offsetParent (see _blIndicator), so these numbers are
+// exactly what the indicator's own top/left/width/height need. Deliberately
+// NOT getBoundingClientRect(): that reports the final RENDERED/painted
+// position, and #homeGrid's subtree can be under a CSS zoom (the Scale
+// slider — its default is already 1.05x, not 1x) that Chromium/CEF has a
+// long history of resolving inconsistently for getBoundingClientRect —
+// offsetLeft/Top never touch that rendered/zoomed space at all, so there's
+// no zoom ambiguity to get wrong in the first place.
+function _blOffsetRect(el) {
+    if (!el) return null;
+    var left = el.offsetLeft, top = el.offsetTop, width = el.offsetWidth, height = el.offsetHeight;
+    return { left: left, top: top, width: width, height: height, right: left + width, bottom: top + height };
+}
+
+// The rect of whichever row sits at baseline[rowIdx]. Normally either id in
+// a paired row shares the same top/bottom by construction, so the first is
+// enough — but in narrow-stack every widget is forced full-width (see
+// data-span in _blApplyLayout), so a paired row like [align, distribute]
+// actually renders as TWO separate stacked full-width rows, not one. Which
+// of the pair is actually adjacent to the target then depends on which side
+// this row is being measured from: 'last' when it sits ABOVE the target
+// (its bottom-most stacked widget is what touches the target), 'first'
+// (the default) when it sits BELOW. Returns null past either end (no
+// neighboring row there).
+function _blRowRect(baseline, rowIdx, edge) {
     if (rowIdx < 0 || rowIdx >= baseline.length) return null;
-    var el = _blBoxEl(baseline[rowIdx][0]);
-    return el ? el.getBoundingClientRect() : null;
+    var row = baseline[rowIdx];
+    var id = (_narrowStack && edge === 'last') ? row[row.length - 1] : row[0];
+    return _blOffsetRect(_blBoxEl(id));
 }
 
 // Pure visual feedback with zero effect on layout — nothing else on the
 // board moves until you actually drop, so there's no moving-target fight
 // to land a dock. Two looks depending on what the candidate means:
+//  - swap: a dashed box over the WHOLE target widget (an already half-width
+//    one — see _blZoneForTarget) — reads as "trade places with this",
+//    matching _blRowsFromCandidate's own 'swap' handling exactly.
 //  - dock-left/right: a dashed box over the half of the target widget
 //    that the dragged box would actually occupy (the target itself will
 //    shrink into the other half) — reads as "your box goes here" rather
@@ -3244,28 +4661,57 @@ function _blRowRect(baseline, rowIdx) {
 function _blShowIndicator(targetBox, candidate, baseline) {
     var mode = candidate.mode;
     var el = _blIndicator();
-    var r = targetBox.getBoundingClientRect();
+    // offsetLeft/Top/Width/Height, not getBoundingClientRect — see
+    // _blOffsetRect's own comment for why (avoids relying on how a CSS zoom
+    // on an ancestor resolves for getBoundingClientRect, which is where a
+    // still-visible position/size mismatch traced back to).
+    var r = _blOffsetRect(targetBox);
+    var homeGrid = document.getElementById('homeGrid');
     el.style.display = 'block';
 
-    if (mode === 'dock-left' || mode === 'dock-right') {
+    if (mode === 'swap') {
         el.className = 'bl-drop-indicator bl-drop-indicator-box';
-        var halfWidth = (r.width - 10) / 2; // same half-width math .bl-pack uses (10 = grid gap)
+        el.style.top    = r.top + 'px';
+        el.style.height = r.height + 'px';
+        el.style.width  = r.width + 'px';
+        el.style.left   = r.left + 'px';
+    } else if (mode === 'dock-left' || mode === 'dock-right') {
+        el.className = 'bl-drop-indicator bl-drop-indicator-box';
+        var halfWidth = (r.width - 8) / 2; // same half-width math .bl-pack uses (8 = grid gap, .tool-col)
         el.style.top    = r.top + 'px';
         el.style.height = r.height + 'px';
         el.style.width  = halfWidth + 'px';
         el.style.left   = (mode === 'dock-left' ? r.left : r.right - halfWidth) + 'px';
     } else {
         el.className = 'bl-drop-indicator bl-drop-indicator-line';
-        var gridRect = document.getElementById('homeGrid').getBoundingClientRect();
-        var lineWidth = gridRect.width * 0.95;
+        var lineWidth = homeGrid.offsetWidth * 0.95;
         var THICK = 6;
-        el.style.left   = (gridRect.left + gridRect.width * 0.025) + 'px';
+        el.style.left   = (homeGrid.offsetWidth * 0.025) + 'px';
         el.style.width  = lineWidth + 'px';
         el.style.height = THICK + 'px';
 
-        var neighborRect = mode === 'before'
-            ? _blRowRect(baseline, candidate.rowIdx - 1)
-            : _blRowRect(baseline, candidate.rowIdx + 1);
+        var neighborRect;
+        if (_narrowStack) {
+            // The true neighbor here is whichever specific widget sits next
+            // to the target — which, for a widget mid-pair, is its OWN
+            // pair-mate stacked right there (not "the previous/next LOGICAL
+            // row", which for a pair only names ONE of its two members and
+            // may not even be the one actually touching the target).
+            var row = baseline[candidate.logicalRowIdx];
+            if (mode === 'before') {
+                neighborRect = candidate.posInRow > 0
+                    ? _blOffsetRect(_blBoxEl(row[candidate.posInRow - 1]))
+                    : _blRowRect(baseline, candidate.logicalRowIdx - 1, 'last');
+            } else {
+                neighborRect = candidate.posInRow < row.length - 1
+                    ? _blOffsetRect(_blBoxEl(row[candidate.posInRow + 1]))
+                    : _blRowRect(baseline, candidate.logicalRowIdx + 1, 'first');
+            }
+        } else {
+            neighborRect = mode === 'before'
+                ? _blRowRect(baseline, candidate.rowIdx - 1)
+                : _blRowRect(baseline, candidate.rowIdx + 1);
+        }
         var centerY;
         if (mode === 'before') {
             centerY = neighborRect ? (neighborRect.bottom + r.top) / 2 : r.top - 6;
@@ -3319,6 +4765,7 @@ function _blStartDrag(id, startX, startY) {
     document.body.appendChild(ghost);
 
     var originalRows = _blGetRows();
+    var favBoxAtStart = _favSlotEl();
     _blDrag = {
         id: id,
         sourceBox: box,
@@ -3327,12 +4774,60 @@ function _blStartDrag(id, startX, startY) {
         heldHeight: rect.height,
         lockedLeft: rect.left,
         originalRows: originalRows,
+        // Precomputed once — _blOnDragMove's no-op check used to
+        // JSON.stringify this SAME, never-changing array again on every
+        // single mousemove just to compare against it.
+        originalRowsJSON: JSON.stringify(originalRows),
         baseline: _blRemoveFromRows(originalRows, id),
-        candidate: null // {targetId, rowIdx, mode} | null
+        // The Favorite slot doesn't move mid-drag (nothing else is
+        // reflowing while the source box stays put), so its rect is
+        // measured once here rather than via a fresh getBoundingClientRect
+        // on every mousemove.
+        favBox: favBoxAtStart,
+        favRect: favBoxAtStart ? favBoxAtStart.getBoundingClientRect() : null,
+        candidate: null, // {targetId, rowIdx, mode} | null
+        // 3D tilt state (see _blTiltTick) — velocity is raw cursor delta
+        // per mousemove, tiltX/tiltY are the actual eased rotation the
+        // ghost renders. Decaying velocity itself every frame (not just
+        // easing rotation toward it) is what makes the tilt flatten back
+        // out on its own when the cursor stops, without needing to detect
+        // "drag went idle" as a separate case.
+        tiltVX: 0, tiltVY: 0,
+        tiltX: 0, tiltY: 0,
+        tiltLastX: startX, tiltLastY: startY,
+        tiltRAF: null
     };
     document.body.classList.add('bl-drag-active');
     document.addEventListener('mousemove', _blOnDragMove);
     document.addEventListener('mouseup', _blOnDragEnd);
+    _blDrag.tiltRAF = requestAnimationFrame(_blTiltTick);
+}
+
+// Runs every frame for the whole drag, independent of mousemove firing —
+// that's what lets the tilt actually decay back to flat once the cursor
+// stops moving, rather than freezing at whatever angle it last had.
+// Velocity decays geometrically each tick (so it self-zeroes shortly after
+// motion stops); the rendered rotation then eases toward that decaying
+// velocity-derived target, which is the "follows at a delay" lag — the
+// rotation is always chasing a target that's already falling back toward
+// zero, never instantly snapping to the cursor's raw motion.
+function _blTiltTick() {
+    if (!_blDrag) return;
+    // Decay 0.82->0.75 (velocity itself dies out faster once motion stops)
+    // and ease 0.18->0.24 (rendered rotation catches up to that decaying
+    // target faster too) — both tightened so it settles back to flat
+    // quicker, independent of the +10% magnitude bump below.
+    _blDrag.tiltVX *= 0.75;
+    _blDrag.tiltVY *= 0.75;
+    // Clamp (19.2->21.1), velocity multiplier (1.68->1.85), and perspective
+    // (720->648, see below) all +10% more for a more pronounced tilt.
+    var targetY = Math.max(-21.1, Math.min(21.1, _blDrag.tiltVX * 1.85));
+    var targetX = Math.max(-21.1, Math.min(21.1, -_blDrag.tiltVY * 1.85));
+    _blDrag.tiltX += (targetX - _blDrag.tiltX) * 0.24;
+    _blDrag.tiltY += (targetY - _blDrag.tiltY) * 0.24;
+    _blDrag.ghost.style.transform =
+        'perspective(648px) rotateX(' + _blDrag.tiltX.toFixed(2) + 'deg) rotateY(' + _blDrag.tiltY.toFixed(2) + 'deg)';
+    _blDrag.tiltRAF = requestAnimationFrame(_blTiltTick);
 }
 
 function _blOnDragMove(e) {
@@ -3340,11 +4835,53 @@ function _blOnDragMove(e) {
     _blDrag.ghost.style.left = (_narrowStack ? _blDrag.lockedLeft : (e.clientX - _blDrag.heldWidth / 2)) + 'px';
     _blDrag.ghost.style.top  = (e.clientY - _blDrag.heldHeight / 2) + 'px';
 
+    // Raw per-event cursor delta — _blTiltTick (running every frame,
+    // separately) is what actually turns this into the eased, decaying
+    // rotation; this just feeds it the latest real motion.
+    _blDrag.tiltVX = e.clientX - _blDrag.tiltLastX;
+    _blDrag.tiltVY = e.clientY - _blDrag.tiltLastY;
+    _blDrag.tiltLastX = e.clientX;
+    _blDrag.tiltLastY = e.clientY;
+
+    // Dropping directly onto the Favorite slot stars the dragged widget
+    // instead of reordering it (see _blOnDragEnd) — a plain point-in-rect
+    // test against #sec-favorite, checked first and independent of the
+    // .bl-draggable hit-test below: the favorite slot lives in the
+    // top group, a completely separate area from the reorderable board,
+    // so the two can never spatially conflict. Both the element and its
+    // rect are cached on _blDrag at drag start — nothing else reflows
+    // while the source box stays put, so the slot's position can't
+    // change mid-drag, and re-measuring it on every single mousemove was
+    // pure waste.
+    var favBox = _blDrag.favBox;
+    var overFav = false;
+    if (favBox) {
+        var fr = _blDrag.favRect;
+        overFav = e.clientX >= fr.left && e.clientX <= fr.right && e.clientY >= fr.top && e.clientY <= fr.bottom;
+    }
+    _blDrag.overFav = overFav;
+    if (favBox) favBox.classList.toggle('bl-fav-drop-target', overFav);
+    if (overFav) {
+        _blDrag.candidate = null;
+        _blHideIndicator();
+        return;
+    }
+
     // The source box is still sitting in its real grid slot (just dimmed
     // and pointer-events:none), so hit-testing naturally sees through it —
     // no explicit self-exclusion needed.
     var targetBox = _blTargetFromPoint(e.clientX, e.clientY);
-    var candidate = targetBox ? _blZoneForTarget(targetBox, _blDrag.baseline, e.clientX, e.clientY) : null;
+    // e.offsetX/offsetY are relative to e.target itself (whatever's
+    // directly under the cursor) — resolved by the browser's own hit-test
+    // pipeline rather than a separate getBoundingClientRect() query, so
+    // they stay accurate under a panel zoom where gBCR doesn't (see
+    // _blZoneForTarget's own comment). Adding e.target's cumulative offset
+    // up to targetBox converts that into "cursor position within
+    // targetBox" without ever touching gBCR.
+    var cursorInBox = targetBox ? _blOffsetFromAncestor(e.target, targetBox) : null;
+    var candidate = targetBox
+        ? _blZoneForTarget(targetBox, _blDrag.baseline, e.offsetX + cursorInBox.x, e.offsetY + cursorInBox.y)
+        : null;
 
     // The source box's own row is never removed from the board (it's just
     // dimmed in place), so the gap on either side of it isn't real empty
@@ -3353,7 +4890,11 @@ function _blOnDragMove(e) {
     // arrangement. That's not a meaningful placement, and having it show
     // up as its own indicator (redundant with just... not moving it) was
     // confusing, so it's suppressed the same as any other dead zone.
-    if (candidate && JSON.stringify(_blRowsFromCandidate(_blDrag.baseline, _blDrag.id, candidate)) === JSON.stringify(_blDrag.originalRows)) {
+    // originalRowsJSON is precomputed once at drag start (see _blStartDrag)
+    // — this array never changes for the duration of the drag, so
+    // re-stringifying it here on every mousemove (on top of the candidate
+    // side, which does have to be computed fresh) was redundant work.
+    if (candidate && JSON.stringify(_blRowsFromCandidate(_blDrag.baseline, _blDrag.id, candidate, _blDrag.originalRows)) === _blDrag.originalRowsJSON) {
         candidate = null;
     }
 
@@ -3367,8 +4908,28 @@ function _blOnDragEnd() {
     if (!_blDrag) return;
     document.removeEventListener('mousemove', _blOnDragMove);
     document.removeEventListener('mouseup', _blOnDragEnd);
+    if (_blDrag.tiltRAF) cancelAnimationFrame(_blDrag.tiltRAF);
 
-    var finalRows = _blRowsFromCandidate(_blDrag.baseline, _blDrag.id, _blDrag.candidate) || _blGetRows();
+    var favBox = _favSlotEl();
+    if (favBox) favBox.classList.remove('bl-fav-drop-target');
+
+    // Dropped on the Favorite slot — same _favAdd used by clicking a
+    // widget's own star badge (paging/eviction/jump-to-new-page all
+    // included), just reached by dragging onto the slot instead. Skips
+    // the whole reorder path below entirely; the widget stays exactly
+    // where it was on the board (favoriting doesn't remove it from
+    // there, same as the star-click path).
+    if (_blDrag.overFav) {
+        var favId = _blDrag.id;
+        _blDrag.sourceBox.classList.remove('bl-dragging-source');
+        _blDrag.ghost.remove();
+        document.body.classList.remove('bl-drag-active');
+        _blDrag = null;
+        _favAdd(favId);
+        return;
+    }
+
+    var finalRows = _blRowsFromCandidate(_blDrag.baseline, _blDrag.id, _blDrag.candidate, _blDrag.originalRows) || _blGetRows();
     var droppedId = _blDrag.id;
 
     // The other 4 boxes haven't moved all drag long, so their current
@@ -3424,7 +4985,7 @@ var _favActiveIndex = 0;
 function _favGet() {
     var raw;
     try { raw = localStorage.getItem(FAV_KEY); } catch(e) {}
-    if (raw === null) return ['ease']; // key never written -> first-run default
+    if (raw === null) return ['ease', 'vectortools']; // key never written -> first-run default (page 1, page 2)
     var ids;
     try { ids = JSON.parse(raw); } catch(e) {}
     if (!Array.isArray(ids)) return [];
@@ -3436,6 +4997,7 @@ function _favGet() {
 }
 
 function _favSave(ids) {
+    _editRecordUndoPoint();
     try { localStorage.setItem(FAV_KEY, JSON.stringify(ids)); } catch(e) {}
 }
 
@@ -4427,12 +5989,6 @@ function applyProjectStructure() {
     });
 }
 
-// ── SHAPE RIGS ────────────────────────────────────────────────────────────────
-
-function doRig()       { run('lineup_rig()'); }
-function doDerig()     { run('lineup_derig()'); }
-function doRecalcRig() { run('lineup_recalcRig()'); }
-
 // ── Panel scale ───────────────────────────────────────────────────────────────
 
 // Bumped ~30% up from [0.65, 0.8, 0.95] — reads noticeably too small when
@@ -4524,16 +6080,84 @@ function _renderClassicSettingsList() {
     initSettingsDrag();
 }
 
+// Always reopens on the grid page (page 1), search cleared — never resumes
+// mid-group from whatever was open last time.
 function openHelp() {
     document.getElementById('helpOverlay').classList.remove('help-hidden');
+    var search = document.getElementById('helpSearchInput');
+    if (search) search.value = '';
+    _helpSearch('');
+    _closeHelpGroup();
 }
 
 function closeHelp() {
     document.getElementById('helpOverlay').classList.add('help-hidden');
 }
 
-function toggleHelpSection(hdr) {
-    hdr.parentElement.classList.toggle('collapsed');
+// Grid (page 1) <-> one group's own detail page (page 2+) — only one
+// .help-page is ever .help-page-active at a time. Detail pages carry the
+// exact same content each group always had; only the grid/pagination
+// chrome around them is new.
+function _openHelpGroup(id) {
+    Array.prototype.forEach.call(document.querySelectorAll('#helpOverlay .help-page'), function(p) {
+        p.classList.remove('help-page-active');
+    });
+    var detail = document.querySelector('.help-page-detail[data-help-group="' + id + '"]');
+    if (detail) detail.classList.add('help-page-active');
+    var body = document.querySelector('#helpOverlay .help-body');
+    if (body) body.scrollTop = 0;
+}
+function _closeHelpGroup() {
+    Array.prototype.forEach.call(document.querySelectorAll('#helpOverlay .help-page'), function(p) {
+        p.classList.remove('help-page-active');
+    });
+    var grid = document.getElementById('helpPageGrid');
+    if (grid) grid.classList.add('help-page-active');
+}
+
+// Searches every detail page's own .help-key/.help-desc text directly off
+// the DOM (hidden pages still have their full text — no separate search
+// index to keep in sync with the actual content) and lists matches as
+// clickable rows, each jumping straight to its source group's detail page.
+// Swaps the grid out for the results list while a query is active; clearing
+// the box brings the grid back.
+function _helpSearch(query) {
+    query = query.trim().toLowerCase();
+    var gridEl = document.getElementById('helpGrid');
+    var resultsEl = document.getElementById('helpSearchResults');
+    if (!gridEl || !resultsEl) return;
+    if (!query) {
+        gridEl.classList.remove('help-grid-hidden');
+        resultsEl.classList.remove('visible');
+        resultsEl.innerHTML = '';
+        return;
+    }
+    gridEl.classList.add('help-grid-hidden');
+    var html = '';
+    var count = 0;
+    Array.prototype.forEach.call(document.querySelectorAll('#helpOverlay .help-page-detail'), function(page) {
+        var groupId = page.getAttribute('data-help-group');
+        var titleEl = page.querySelector('.help-detail-title-text');
+        var groupTitle = titleEl ? titleEl.textContent : '';
+        Array.prototype.forEach.call(page.querySelectorAll('.help-item'), function(item) {
+            var keyEl = item.querySelector('.help-key');
+            var descEl = item.querySelector('.help-desc');
+            var key = keyEl ? keyEl.textContent : '';
+            var desc = descEl ? descEl.textContent : '';
+            if ((groupTitle + ' ' + key + ' ' + desc).toLowerCase().indexOf(query) === -1) return;
+            count++;
+            html += '<button type="button" class="help-result" onclick="_openHelpGroup(\'' + groupId + '\')">' +
+                '<span class="help-result-group">' + _helpEsc(groupTitle) + '</span>' +
+                '<span class="help-result-key">' + _helpEsc(key) + '</span>' +
+                '<span class="help-result-desc">' + _helpEsc(desc) + '</span>' +
+                '</button>';
+        });
+    });
+    resultsEl.innerHTML = count ? html : '<div class="help-result-empty">No matches for “' + _helpEsc(query) + '”</div>';
+    resultsEl.classList.add('visible');
+}
+function _helpEsc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function buildSettingsRow(secEl) {
@@ -4713,6 +6337,16 @@ var _bcsStartField  = null;
 var _bcsDirty       = false;
 var _bcsCompNames   = []; // every comp selected when the panel was opened
 var _bcsExcluded    = {}; // index (into _bcsCompNames) -> true, removed from the batch
+var _bcsActiveTab   = 'settings'; // 'settings' | 'rename' — Batch Rename lives here as a second tab
+
+function switchBcsTab(tab) {
+    _bcsActiveTab = tab;
+    document.querySelectorAll('.bcs-ui-tab').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+    document.getElementById('bcsTabSettings').classList.toggle('active', tab === 'settings');
+    document.getElementById('bcsTabRename').classList.toggle('active',   tab === 'rename');
+}
 
 function _bcsParIndexForValue(v) {
     var best = 0, bestDiff = Infinity;
@@ -4945,7 +6579,11 @@ function _bcsRenderCompList() {
     }
 }
 
-function openBatchCompSettings() {
+// initialTab lets a caller land directly on 'rename' (see openBatchRename,
+// kept around purely so the Classic-mode Organize panel's existing "Batch
+// Rename" button — a separate, hand-authored UI surface — keeps working
+// unchanged) — defaults to the Settings tab otherwise.
+function openBatchCompSettings(initialTab) {
     cs.evalScript('lineup_getBatchCompSettingsSeed()', function (result) {
         if (!result || result === 'undefined') {
             // No live ExtendScript bridge — e.g. previewing index.html directly in a
@@ -4990,12 +6628,26 @@ function openBatchCompSettings() {
         _bcsStartField.render(start);
 
         _bcsClearDirty();
+
+        // Rename tab shares the exact same "selected comps" source as
+        // Settings above (both filter proj.selection down to CompItems),
+        // so it's seeded straight from `names` here instead of a second,
+        // redundant evalScript round-trip to lineup_getBatchRenameSeed.
+        _brnCompNames = names;
+        _brnOrder = names.map(function (_, i) { return i; });
+        document.getElementById('brnPattern').value = '';
+        document.getElementById('brnStart').value   = '1';
+        _brnRenderCompList();
+        _brnClearDirty();
+
+        switchBcsTab(initialTab === 'rename' ? 'rename' : 'settings');
         document.getElementById('bcsOverlay').classList.remove('bcs-hidden');
     });
 }
 
 function closeBatchCompSettings() {
     document.getElementById('bcsOverlay').classList.add('bcs-hidden');
+    _brnClearDirty();
     _bcsClearDirty();
 }
 
@@ -5161,6 +6813,28 @@ function _brnRenderCompList() {
     _brnInitDrag();
 }
 
+// Lightweight counterpart to _brnRenderCompList for pattern/start-number
+// edits specifically — those change every row's displayed name but never
+// the row structure, drag handles, or listeners, so there's no need to
+// tear down and rebuild the whole list (innerHTML parsing + re-querying +
+// re-wiring a remove-click and a drag-handle mousedown per row) on every
+// single keystroke. Only used when the row COUNT/ORDER is already known
+// to match _brnOrder (i.e. nothing structural changed since the last full
+// render) — reorder/remove/init still go through the full rebuild above.
+function _brnUpdatePreviewNames() {
+    var list    = document.getElementById('brnCompList');
+    var pattern = document.getElementById('brnPattern').value;
+    var start   = parseInt(document.getElementById('brnStart').value, 10);
+    if (isNaN(start)) start = 1;
+
+    var rows = list.querySelectorAll('.bcs-comp-name');
+    for (var pos = 0; pos < _brnOrder.length && pos < rows.length; pos++) {
+        var origIdx  = _brnOrder[pos];
+        var origName = _brnCompNames[origIdx];
+        rows[pos].textContent = _brnApplyPattern(pattern, start + pos, pos + 1) || origName;
+    }
+}
+
 // Drag-to-reorder, same mechanic as the Settings section list: grab the handle,
 // a ghost row follows the cursor, other rows slide to show the live insertion
 // point, and on release _brnOrder is spliced to match — which changes numbering.
@@ -5247,33 +6921,18 @@ function _brnInitDrag() {
 }
 
 function _brnInit() {
-    document.getElementById('brnPattern').addEventListener('input', function () { _brnRenderCompList(); _brnMarkDirty(); });
-    document.getElementById('brnStart').addEventListener('input',   function () { _brnRenderCompList(); _brnMarkDirty(); });
+    document.getElementById('brnPattern').addEventListener('input', function () { _brnUpdatePreviewNames(); _brnMarkDirty(); });
+    document.getElementById('brnStart').addEventListener('input',   function () { _brnUpdatePreviewNames(); _brnMarkDirty(); });
 }
 
+// Batch Rename is now the second tab of the Batch Comp Settings modal (see
+// switchBcsTab/openBatchCompSettings above) rather than its own dialog —
+// this just opens that modal straight to the Rename tab, kept as its own
+// named function purely so the Classic-mode Organize panel's existing
+// "Batch Rename" button (a separate, hand-authored UI surface, untouched
+// here) keeps working with no markup changes.
 function openBatchRename() {
-    cs.evalScript('lineup_getBatchRenameSeed()', function (result) {
-        if (!result || result === 'undefined') {
-            // No live ExtendScript bridge — preview with nothing selected.
-            result = '';
-        }
-        if (result.indexOf('ERROR:') === 0) {
-            showToast(result.replace(/^ERROR:\s*/, ''));
-            return;
-        }
-        _brnCompNames = result.length > 0 ? result.split('|') : [];
-        _brnOrder = _brnCompNames.map(function (_, i) { return i; });
-        document.getElementById('brnPattern').value = '';
-        document.getElementById('brnStart').value   = '1';
-        _brnRenderCompList();
-        _brnClearDirty();
-        document.getElementById('brnOverlay').classList.remove('brn-hidden');
-    });
-}
-
-function closeBatchRename() {
-    document.getElementById('brnOverlay').classList.add('brn-hidden');
-    _brnClearDirty();
+    openBatchCompSettings('rename');
 }
 
 // Wraps a user-typed string as a safely-escaped ExtendScript string literal
@@ -5301,12 +6960,12 @@ function applyBatchRename() {
         _esQuote(_brnOrder.join(',')) + ')';
 
     cs.evalScript(script, function (result) {
-        if (!result || result === 'undefined') { closeBatchRename(); return; }
+        if (!result || result === 'undefined') { closeBatchCompSettings(); return; }
         if (result.indexOf('ERROR:') === 0) {
             showToast(result.replace(/^ERROR:\s*/, ''));
             return;
         }
-        closeBatchRename();
+        closeBatchCompSettings();
     });
 }
 
@@ -5460,8 +7119,8 @@ function applyCompExport() {
 
 document.addEventListener('DOMContentLoaded', function() {
     restoreActiveTab();
+    _shapeSelInit();
     _initAnchorTiers();
-    _initCtrlRowLabels();
     restoreClassicOrder();
     restoreClassicCollapsed();
     restoreLayoutMode();
@@ -5470,11 +7129,17 @@ document.addEventListener('DOMContentLoaded', function() {
     _blApplyLayout();
     restoreHighContrast();
     initToolsSearch();
+    _initToolsFilterCompact();
     restoreCollapsed();
     restoreScale();
     _bcsInit();
     _brnInit();
     _easePreviewFetch();
+    _cpInitScrubs();
+    _cpDrawHueCanvas();
+    _initHeaderWidthScrub();
+    setInterval(_pollKeyAlignMode, 300);
+    setInterval(_pollShapeColorHud, 1000);
 
     // Favorites: load persisted state, render bar, wire up right-click context menus
     _loadFavorites();

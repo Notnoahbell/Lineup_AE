@@ -62,19 +62,170 @@ body.high-contrast input[type="number"] {
     color: #ffffff;
 }
 body.high-contrast .keyframe-toggle-diamond { border-color: #909090; }
+body.high-contrast .keyframe-toggle-hourglass path { stroke: #909090; }
 body.high-contrast .tab-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
 body.high-contrast .tab-btn.active { background: #163e73; border-color: #4d9bff; color: #ffffff; }
-body.high-contrast .tools-search-row { background: #000000; border: 1px solid #909090; }
+body.high-contrast .tools-search-input { background: #000000; border: 1px solid #909090; }
+/* #toolsSearchInput (an ID selector) is what actually paints the search
+   bar's background/border — its own specificity outranks the plain class
+   rule right above regardless of source order, which was silently
+   winning and leaving the bar dark gray instead of high-contrast black. */
+body.high-contrast #toolsSearchInput { background: #000000; border-color: #909090; }
 body.high-contrast .settings-tab-row { background: #000000; border-color: #909090; }
 body.high-contrast .tools-grid-btn { color: #e0e0e0; border-color: #909090; }
 body.high-contrast .tools-filter-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
 body.high-contrast .tools-filter-btn.active { background: #163e73; border-color: #4d9bff; color: #ffffff; }
 body.high-contrast .tools-grid-btn:hover { background: #3a3a3a; color: #ffffff; }
+/* The drawer's own card backdrop had no high-contrast override at all —
+   stayed the normal dark-gray card regardless of the setting. Scrollbar
+   thumb bumped up too so it's still visible against a now-black track. */
+body.high-contrast .tools-grid { background: #000000; border-color: #909090; }
+/* background (the shorthand) resets EVERY sub-property it covers,
+   including background-clip — without re-declaring padding-box here too,
+   this quietly reverted it to the shorthand's own default (border-box),
+   which let the thumb's color paint straight through the 8px transparent
+   border meant to inset it, filling the whole 24px track instead of just
+   the intended 8px-wide pill. Same class of shorthand-reset bug as
+   border:none clobbering border-width elsewhere in this file. */
+body.high-contrast .tools-grid::-webkit-scrollbar-thumb { background: #909090; background-clip: padding-box; }
+body.high-contrast .tools-grid::-webkit-scrollbar-thumb:hover { background: #ffffff; background-clip: padding-box; }
+/* Home's own top widget section (Anchor/Quick Actions/Favorite's shared
+   backdrop) had no override either — same dark-gray-card gap as the Tools
+   drawer above. */
+body.high-contrast .home-top-group { background: #000000; border-color: #909090; }
+/* Editing Layout bar — background/border/text and the ghost (Undo/Redo/
+   Restore/Cancel) buttons were all hardcoded hex with nothing re-pointed
+   to the shared variables, so none of them changed in high contrast. Save
+   already uses var(--accent), which is already high-contrast-aware. */
+body.high-contrast .edit-mode-bar { background: #000000; border-bottom-color: #909090; }
+body.high-contrast .edit-mode-bar-text { color: #e0e0e0; }
+body.high-contrast .edit-mode-bar-btn-ghost,
+body.high-contrast .edit-mode-bar-icon-btn { border-color: #909090; color: #e0e0e0; }
+body.high-contrast .edit-mode-bar-btn-ghost:hover,
+body.high-contrast .edit-mode-bar-icon-btn:hover { background: #3a3a3a; color: #ffffff; border-color: #ffffff; }
+/* Quick Actions tiles (both the 3x2 bars and the 1x6 single-row shape) —
+   color/border were hardcoded; background already tracks var(--bg-btn). */
+body.high-contrast .quick-actions-btn { color: #e0e0e0; border-color: #909090; }
+body.high-contrast .quick-actions-btn:hover { background: #3a3a3a; color: #ffffff; }
+body.high-contrast .qa-grid-1x6 { border-color: #909090; }
 /* .btn is generic/shared (Check for Updates and many others) — its own
    color already tracks var(--text), just never had a background/border
    override anywhere, so it stayed a normal dark gray in high contrast. */
 body.high-contrast .btn { background: #000000; border-color: #909090; }
 body.high-contrast .btn:hover { background: #3a3a3a; border-color: #ffffff; }
+
+/* ── Right-click popups/menus — none of these had ANY high-contrast
+   coverage before. All of .fav-ctx/.shape-sel-ctx (right-click menus) and
+   .grid-picker/.radial-picker/.path-picker/.z-picker/.props-picker (the
+   distribute pickers, also opened via right-click off their own star/
+   button) share the exact same hardcoded palette (container #1e1e1e/
+   #333333, inputs #131313/#3a3a3a/#a0a0a0), so they're grouped together
+   below rather than repeating the same three overrides five times. */
+body.high-contrast .fav-ctx,
+body.high-contrast .shape-sel-ctx,
+body.high-contrast .grid-picker,
+body.high-contrast .radial-picker,
+body.high-contrast .path-picker,
+body.high-contrast .z-picker,
+body.high-contrast .props-picker {
+    background: #000000;
+    border-color: #909090;
+}
+body.high-contrast .fav-ctx-item,
+body.high-contrast .shape-sel-ctx-icon-btn {
+    color: #e0e0e0;
+}
+body.high-contrast .fav-ctx-item:hover,
+body.high-contrast .shape-sel-ctx-icon-btn:hover {
+    background: #3a3a3a;
+    color: #ffffff;
+}
+body.high-contrast .shape-sel-ctx-icon-btn.active { border-color: #ffffff; }
+body.high-contrast .fav-ctx-item.fav-active { color: #ffd75e; }
+body.high-contrast .fav-ctx-item.fav-active:hover { color: #ffe08a; background: #3a3a3a; }
+/* The pickers' own text inputs (grid W/H, radial/path/z start/end,
+   gap, step) all share this identical !important-heavy rule shape —
+   re-declared with !important to match specificity/win the same way
+   the originals do. */
+body.high-contrast .grid-picker-top input,
+body.high-contrast .grid-picker-gap-input,
+body.high-contrast .radial-picker-top input,
+body.high-contrast .path-picker-top input,
+body.high-contrast .z-picker-inputs input,
+body.high-contrast .z-step-input {
+    background: #000000 !important;
+    border-color: #909090 !important;
+    color: #ffffff !important;
+}
+body.high-contrast .grid-picker-confirm { border-color: #909090; color: #6db4ff; }
+body.high-contrast .grid-picker-confirm:hover { border-color: #ffffff; color: #8ac0ff; }
+body.high-contrast .grid-picker-cell { background: #2c2c2c; border-color: #555555; }
+body.high-contrast .radial-preview,
+body.high-contrast .path-preview { background: #000000; }
+body.high-contrast .radial-comp-bg { background: #1a1a1a; border-color: #909090; }
+body.high-contrast .z-cam-icon { background: #000000; color: #e0e0e0; }
+body.high-contrast .z-track-line { background: #909090; }
+body.high-contrast .z-track-dot { background: #b0b0b0; }
+body.high-contrast .z-track-handle { border-color: #000000; }
+body.high-contrast .props-header-row { border-bottom-color: #909090; }
+/* The little star toggle inside each picker's own header row. */
+body.high-contrast .picker-star-btn { color: #909090; }
+body.high-contrast .picker-star-btn:hover { color: #d0d0d0; background: #3a3a3a; border-color: #909090; }
+body.high-contrast .picker-star-btn.fav-active { color: #ffd75e; }
+body.high-contrast .picker-star-btn.fav-active:hover { color: #ffe08a; background: #3a3a3a; border-color: #909090; }
+/* Shape Tools' Fill/Stroke edit modal — a .settings-overlay/.settings-modal
+   like the others (covered by the shared rule above already); just needs
+   its own content (row labels, color swatch buttons) covered here. */
+body.high-contrast .vectools-edit-row-lbl { color: #e0e0e0; }
+body.high-contrast .vectools-color-input {
+    background: #000000 !important;
+    border-color: #909090 !important;
+    color: #ffffff !important;
+}
+body.high-contrast .vectools-fs-swatch-fill { border-color: #909090; }
+body.high-contrast .vectools-fs-swatch-stroke { border-color: #909090; }
+
+/* .settings-modal/.settings-hdr are the shared dialog chrome EVERY full
+   popup (Help, Color Picker, Comp Export, Batch Comp Settings, Project
+   Structure, Spell Check, Find/Replace, Fill/Stroke edit, Update Confirm,
+   What's New) sits inside — none of them had any high-contrast coverage at
+   all, so the whole family stayed a plain dark-gray box regardless of the
+   setting. Covered once here rather than per-dialog. */
+body.high-contrast .settings-modal { background: #000000; border-color: #909090; }
+body.high-contrast .settings-hdr { border-bottom-color: #909090; }
+body.high-contrast .settings-hdr-icon { color: #e0e0e0; }
+body.high-contrast .settings-title { color: #ffffff; }
+
+/* Help — search bar, the tile grid, search results, and every detail
+   page's back button/header/item text were all hardcoded hex with no
+   theme-variable backing, so none of it responded to high contrast. */
+body.high-contrast .help-search-row { background: #000000; border-color: #909090; }
+body.high-contrast .help-search-icon { color: #a0a0a0; }
+body.high-contrast .help-search-input { color: #ffffff; }
+body.high-contrast .help-search-input::placeholder { color: #909090; }
+body.high-contrast .help-tile { background: #000000; border-color: #909090; color: #e0e0e0; }
+body.high-contrast .help-tile:hover { background: #3a3a3a; border-color: #ffffff; color: #ffffff; }
+body.high-contrast .help-result { background: #000000; border-color: #909090; }
+body.high-contrast .help-result:hover { background: #3a3a3a; border-color: #ffffff; }
+body.high-contrast .help-result-group { color: #a0a0a0; }
+body.high-contrast .help-result-key { color: #ffffff; }
+body.high-contrast .help-result-desc { color: #c0c0c0; }
+body.high-contrast .help-result-empty { color: #a0a0a0; }
+body.high-contrast .help-back-btn { color: #c0c0c0; }
+body.high-contrast .help-back-btn:hover { background: #3a3a3a; color: #ffffff; }
+body.high-contrast .help-detail-title-text { color: #ffffff; }
+body.high-contrast .help-item { background: #000000; border-color: #909090; }
+body.high-contrast .help-key { color: #ffffff; }
+body.high-contrast .help-desc { color: #c0c0c0; }
+body.high-contrast .help-desc em { color: #e0e0e0; }
+body.high-contrast .help-inline-icon { color: #c0c0c0; }
+body.high-contrast .help-icon-strip svg { color: #c0c0c0; }
+body.high-contrast .help-sec-group { background: #000000; border-color: #909090; }
+body.high-contrast .help-item.sec { border-top-color: #909090; }
+body.high-contrast .help-item.sec .help-key { color: #e0e0e0; }
+body.high-contrast .help-item.sec .help-desc { color: #a0a0a0; }
+body.high-contrast .help-item.sec .help-inline-icon { color: #a0a0a0; }
+body.high-contrast .help-item.sec .help-icon-strip svg { color: #a0a0a0; }
 
 /* Settings popup — .settings-tab-row above already covers its plain rows;
    these are the rest of its own chrome (modal box, Layout toggle, the
@@ -166,111 +317,304 @@ body.layout-classic .tab-bar {
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
-/* ── Tools tab: full-width search bar, filter tags below it, small tiles ─── */
+/* Same cap/centering as .tab-bar and .tool-grid (Home's own tab-panel) —
+   without it, the search bar/filters/grid all stretched edge-to-edge on a
+   wide panel instead of staying aligned under the tab bar above them.
+   Also the layout grid for the whole tab: search spans full width up top,
+   then filter tags (1/3) sit to the left of the tools drawer (2/3) below
+   it — a 1fr/2fr column split so that ratio holds at any panel width, not
+   just at 570px. align-items:start keeps the shorter filter column pinned
+   to the top instead of stretching to match the drawer's full height.
+   display:grid is set only on #tab-tools.active (not here) — an ID
+   selector's display would otherwise outrank .tab-panel's own
+   display:none by specificity and show this tab even while inactive,
+   which is exactly what was leaking the search bar onto the Home tab. */
+#tab-tools {
+    width: 100%;
+    max-width: 570px;
+    margin: 0 auto;
+    /* minmax(0, ...) not plain 1fr/2fr — an 'fr' track's implicit min-width
+       is auto, which pins it to its content's min-content size; the filter
+       buttons' white-space:nowrap labels ("Spellcheck") made that floor
+       wide enough that the column could never actually shrink small
+       enough to cross the compact breakpoint below. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    grid-template-areas:
+        "search  search"
+        "filters body";
+    align-items: start;
+    gap: 10px;
+    padding: 10px 10px;
+    /* Animates the 1fr/2fr -> 1fr/4fr swap below (.compact) — same sleek
+       slide as the label fade instead of the drawer just jumping wider. */
+    transition: grid-template-columns 0.2s ease;
+}
+#tab-tools.active { display: grid; }
+
+/* ── Tools tab: full-width search bar, filter tags in a left column, the
+   tools drawer in a right column ──────────────────────────────────────── */
 .tools-search-row {
+    grid-area: search;
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin: 10px 10px 0;
-    padding: 12px 12px;
-    background: #1a1a1a;
-    border: none;
-    border-radius: 9px;
+    gap: 10px;
 }
-.tools-search-icon { width: 15px; height: 15px; color: var(--text-dim); flex-shrink: 0; }
-.tools-search-input {
+.tools-search-icon { width: 18px; height: 18px; color: var(--text-dim); flex-shrink: 0; }
+/* The visible dark pill is the INPUT itself, not .tools-search-row above —
+   background/padding used to live on the row, which just added invisible
+   space around the icon while the input's own native pill (Chromium's
+   default text-input rendering, which "background:none;border:none;" alone
+   doesn't fully suppress without appearance:none) stayed exactly the same
+   size regardless. Moved here so growing padding actually grows the box
+   that's visibly rendering as the bar.
+   Targeted by #toolsSearchInput (not .tools-search-input) specifically —
+   the generic input[type="text"] rule further down (used by the app's many
+   small numeric fields) sets its own padding/height/width, and that
+   selector's specificity (a type + an attribute selector) actually
+   OUTRANKS a plain class regardless of source order, so .tools-search-input
+   alone was silently losing padding/height to it. An ID selector beats
+   both unconditionally. */
+#toolsSearchInput {
     flex: 1;
     min-width: 0;
-    background: none;
-    border: none;
+    appearance: none;
+    -webkit-appearance: none;
+    background: #101010; /* darker than the page (--bg: #1c1c1c), not lighter — same shade as .tools-grid/.home-top-group's own card background */
+    border: 1px solid #383838; /* same border color the app's other text inputs use */
+    border-radius: 7px;
     color: var(--text);
-    font-size: 12px;
+    font-size: 14px;
     outline: none;
-    padding: 0;
+    padding: 20px 14px; /* bumped vertical up from 14px for more visible space above/below the text */
 }
-.tools-search-input::placeholder { color: var(--text-dimmer); }
+#toolsSearchInput::placeholder { color: var(--text-dimmer); }
 
+/* Stacked (not wrapped) now that this is a column of its own beside the
+   drawer rather than a row above it — same width as the buttons inside it. */
 .tools-filter-group {
+    grid-area: filters;
     display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin: 8px 10px 0;
+    flex-direction: column;
+    gap: 8px;
 }
+/* #tab-tools.compact (not .tools-filter-group.compact — see below) is
+   toggled by _syncToolsFilterCompact in main.js — a single
+   ResizeObserver-driven breakpoint on the panel's own width (same "observe
+   width" technique _syncAnchorTiers already uses for the Home tab's own
+   zoom), not a value tied continuously to resize. Deliberately NOT scaled
+   gradually as the panel narrows: interpolating gap/padding/label-width
+   continuously against live resize meant that at some in-between width
+   you'd see a half-clipped word (e.g. "Auto Cro") sitting there
+   indefinitely while dragging. Snapping the whole label to opacity:0 at
+   once and letting the transitions below animate the snap itself gives a
+   clean fade + slide into a square icon-only button instead, with no
+   legible partial-word state to get stuck on. Toggled on #tab-tools (the
+   grid container) rather than .tools-filter-group (a grid item) because
+   the column-width rule below needs to reach the container's own
+   grid-template-columns, not just this column's items. */
 .tools-filter-btn {
-    padding: 5px 10px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 10px 14px;
     background: #1e1e1e;
     border: 1px solid #323232;
-    border-radius: 6px;
+    border-radius: 8px;
     color: var(--text-dim);
-    font-size: 10px;
+    font-size: 13px;
     font-family: inherit;
+    text-align: left;
     white-space: nowrap;
     cursor: pointer;
-    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear,
+                gap 0.2s ease, padding 0.2s ease;
 }
 .tools-filter-btn:hover  { background: #2a2a2a; border-color: #444444; color: #d0d0d0; }
 .tools-filter-btn.active { background: #3c3c3c; border-color: #6a6a6a; color: #F9F9F4; }
-
-.tools-body {
+/* currentColor throughout, so each icon tracks the button's own state
+   (dim/hover/active) rather than needing its own separate color rules. */
+.tools-filter-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.tools-filter-label {
+    opacity: 1;
+    max-width: 90px;
+    overflow: hidden;
+    /* Same 0.2s ease as .tools-filter-btn's gap/padding and #tab-tools'
+       grid-template-columns — was 0.15s for opacity specifically, which
+       finished slightly before the rest of the slide and read as
+       out-of-sync. */
+    transition: opacity 0.2s ease, max-width 0.2s ease;
+}
+/* 1:4 instead of the normal 1:2 — the filter column drops from 1/3 to 1/5
+   of the width once it's icon-only, giving the drawer beside it the room
+   back instead of just centering the icon in an unchanged-width column. */
+#tab-tools.compact {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 4fr);
+}
+#tab-tools.compact .tools-filter-btn {
+    gap: 0;
     padding: 10px;
+    justify-content: center;
+}
+#tab-tools.compact .tools-filter-label {
+    opacity: 0;
+    max-width: 0;
+}
+.tools-body {
+    grid-area: body;
+    position: relative; /* anchors the bottom-fade overlay below */
+}
+/* Fades the drawer's scrollable tiles into its own card background at the
+   bottom edge, hinting there's more to scroll to. Lives on .tools-body
+   (not .tools-grid itself) on purpose: .tools-grid is a CSS Grid
+   container, so a pseudo-element there would become an unwanted extra
+   grid item instead of a plain overlay — and being outside the actual
+   overflow:auto element is what keeps this fixed in place over the scroll
+   area instead of scrolling away with the tiles underneath it.
+   backdrop-filter blur + a mask-image (fading the blur itself, the same
+   way the gradient below fades its color) is the "blur it more" — a
+   frosted-glass intensifying toward the bottom, not just a flat gradient.
+   Darker end color (#0a0a0a) than .tools-grid's own #101010 background. */
+.tools-body::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 40px;
+    border-radius: 0 0 15px 15px;
+    background: linear-gradient(to bottom, transparent, #0a0a0a);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black);
+    mask-image: linear-gradient(to bottom, transparent, black);
+    pointer-events: none;
 }
 
 /* Column count adapts to the panel's width instead of the tiles shrinking
-   indefinitely: 2 across when narrow, stepping up to 3 then 4 as the panel
-   widens. Each tile is a 1fr grid cell, so within a given column count the
-   tiles themselves scale up to fill the extra width — capped at 4 across
-   even on a very wide panel, so tiles just keep growing past that point.
-   Cropped to the remaining viewport height and scrollable, so a long tool
-   list can't push the footer off-screen (the page itself can't scroll). */
+   indefinitely: 1 across at the smallest breakpoint, stepping up through
+   2 to 3 across as the panel widens. Each tile is a 1fr grid cell, so
+   within a given column count the tiles themselves scale up to fill the
+   extra width — capped at 3 across even on a very wide panel (a 4th tier
+   made tiles too small), so tiles just keep growing past that point
+   instead of adding a 4th column. Cropped to the remaining viewport
+   height and scrollable, so a long tool list can't push the footer
+   off-screen (the page itself can't scroll). */
 .tools-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 10px;
     align-content: start;
     max-height: calc(100vh - 220px);
     min-height: 100px;
     overflow-y: auto;
-    padding-right: 2px;
+    padding: 8px; /* even on all sides — the default, whenever nothing actually overflows to scroll */
+    /* Same card look as .home-top-group (Home tab's own widget backdrop),
+       so this "drawer" of tool tiles reads as its own distinct surface
+       instead of floating directly on the page background. */
+    background: #101010;
+    border: 1px solid #262626;
+    border-radius: 15px;
 }
-@media (min-width: 320px) {
+/* Only while the tool list actually overflows (toggled by
+   _syncToolsGridScrollGap in main.js, since CSS alone can't detect
+   overflow) does the right side drop to 0 — that's what centers the
+   scrollbar thumb in the tile-to-card-edge gap (see the thumb comment
+   below). Reserving that same 0px unconditionally (the previous attempt,
+   via scrollbar-gutter:stable to keep the gap from jumping) traded the
+   asymmetry for an oversized empty gutter on the right whenever there was
+   nothing to scroll — worse than the original bug, since now it happened
+   every time the list was short instead of only sometimes. Toggling this
+   class is what actually keeps both wrong states from ever showing:
+   even padding with nothing to scroll, centered thumb once there is. */
+.tools-grid.tools-grid-scrollable {
+    padding-right: 0;
+}
+/* Three tiers — the filter column beside this only takes 1/3 of
+   #tab-tools' width normally, and shrinks further to 1/5 once it goes
+   icon-only (see #tab-tools.compact), so the drawer has room to step all
+   the way down to 1 column at the panel's own ~220px minimum width
+   instead of bottoming out at 2. First threshold (350px) deliberately
+   matches TOOLS_FILTER_COMPACT_BREAKPOINT in main.js, so the sidebar
+   collapsing to icon-only and the drawer dropping to 1 column happen at
+   the same width instead of two slightly-offset breakpoints. */
+@media (min-width: 350px) {
+    .tools-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 400px) {
     .tools-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-@media (min-width: 420px) {
-    .tools-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-.tools-grid::-webkit-scrollbar           { display: block; width: 5px; }
+/* Centering the thumb in the full tile-to-card-edge gap, worked out from
+   scratch: the scrollbar track always sits flush against the border (no
+   CSS lever moves it), so the ONLY gap on the card-edge side of the thumb
+   is whatever the thumb's own border eats on that side. For the gap on
+   the tile side to match it, .tools-grid's padding-right has to be 0 (see
+   above) — any nonzero value there only ever adds to the tile-side gap,
+   with nothing to balance it against on the card-edge side. With
+   padding-right at 0, a SYMMETRIC border on the thumb is what then makes
+   both gaps equal by construction. Track widened from 12px to 28px (and
+   the border from 2px to 10px each side) to land on the same total gap
+   size as before (28px) while actually centering the 8px-visible thumb
+   within it, instead of shrinking the gap down to keep the old 12px
+   track. Still symmetric, not asymmetric — asymmetric border+radius on
+   this pseudo-element is what caused the rounding to look cut off
+   earlier, so that constraint stands regardless of the width numbers. */
+.tools-grid::-webkit-scrollbar           { display: block; width: 24px; } /* track only — thumb itself stays 8px visible (24 - 8x2 border) */
 .tools-grid::-webkit-scrollbar-track     { background: transparent; }
-.tools-grid::-webkit-scrollbar-thumb     { background: #2a2a2a; border-radius: 100px; }
-.tools-grid::-webkit-scrollbar-thumb:hover { background: #444; }
+.tools-grid::-webkit-scrollbar-thumb {
+    background: #2a2a2a;
+    background-clip: padding-box;
+    border: 8px solid transparent; /* -20% from 10px — less gap each side, thumb width unaffected since it's still symmetric */
+    border-radius: 20px;
+}
+.tools-grid::-webkit-scrollbar-thumb:hover { background: #444; background-clip: padding-box; }
 
+/* Base (smallest breakpoint, 1 column — see .tools-grid above) is a
+   rectangular row, icon on the left and the label on the right, same
+   idea as .tools-filter-btn in the sidebar next to it: at 1 column wide
+   the tile already spans the full drawer width, so a stacked square tile
+   would just waste that width on empty side padding instead of using it
+   to show the label. From 350px (2 columns) up, it switches to the
+   square icon-only-with-caption tile instead — see the media query below. */
 .tools-grid-btn {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    justify-content: center;
-    gap: 3px;
+    justify-content: flex-start;
+    gap: 10px;
     min-width: 0;
-    aspect-ratio: 1 / 1;
-    padding: 2px;
+    padding: 10px 14px;
     background: var(--bg-btn);
     border: 1px solid #323232;
-    border-radius: 8px;
+    border-radius: 14px;
     color: #a0a0a0;
     cursor: pointer;
-    text-align: center;
+    text-align: left;
     overflow: hidden;
     transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
 }
+/* No hover transform (scale) here — a tile in the rightmost column
+   bulging outward on hover overlapped the native scrollbar's own
+   rendering layer and produced a visible white-box glitch, seemingly a
+   Chromium/CEF compositing quirk between CSS transforms and native
+   scrollbar overlays rather than something fixable with a small tweak. */
 .tools-grid-btn:hover  { background: var(--bg-btn-h); border-color: var(--border-h); color: #F9F9F4; }
 .tools-grid-btn:active { background: var(--bg-btn-act); border-color: var(--accent); color: #fff; }
 .tools-grid-btn svg {
-    width: 24%;
-    height: 24%;
+    width: 18px;
+    height: 18px;
     flex-shrink: 0;
     pointer-events: none;
+    transition: transform 0.1s ease;
 }
+/* Scales the icon, not the button — the button's own box stays a fixed
+   size (that's the actual fix for the scrollbar glitch above), and this
+   still reads as the button reacting to hover. */
+.tools-grid-btn:hover svg { transform: scale(1.15); }
 .tools-grid-btn span {
-    font-size: 10px;
+    min-width: 0; /* lets it actually shrink/ellipsize in the row layout above, instead of the default min-width:auto (its own text's full width) forcing the button wider */
+    font-size: 12px;
     line-height: 1.1;
     max-width: 100%;
     overflow: hidden;
@@ -278,6 +622,33 @@ body.layout-classic .tab-bar {
     white-space: nowrap;
 }
 .tools-grid-btn-hidden { display: none; }
+
+/* 2/3-column tiers: square icon tile, label caption underneath —
+   percentage icon sizing here (not a fixed px like the row version above)
+   is deliberate, since each tile's own size already scales with the
+   column count/panel width and the icon should track that. Same 350px
+   threshold as .tools-grid's own 2-column breakpoint above (kept in sync
+   on purpose — the row layout only makes sense while the grid is still
+   1 column). */
+@media (min-width: 350px) {
+    .tools-grid-btn {
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 3px;
+        aspect-ratio: 1 / 1;
+        padding: 10px;
+        text-align: center;
+    }
+    .tools-grid-btn svg { width: 24%; height: 24%; }
+    .tools-grid-btn span { font-size: 10px; }
+}
+/* Largest tier (3 columns) — tiles themselves are biggest here too, so the
+   icon can size up along with them instead of looking small/lost inside
+   the extra room. */
+@media (min-width: 400px) {
+    .tools-grid-btn svg { width: 32%; height: 32%; }
+}
 
 /* ── Settings tab ─────────────────────────────────────────────────────────── */
 /* No margin of its own — .settings-modal-box's own gap (see below) already
@@ -345,7 +716,7 @@ body.layout-classic .tab-bar {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
-    gap: 10px;
+    gap: 8px; /* -20% from 10px, between-widget spacing only — padding (outer edge) unchanged */
     padding: 10px;
     /* Still flexes/shrinks freely below this — it's only a ceiling. Without
        it, a wide panel stretches every button/dropdown/icon in the 6-column
@@ -376,11 +747,12 @@ body.layout-classic .tool-grid {
    which is exactly the unpredictable behavior that approach was replaced
    to avoid. */
 .tool-col {
+    position: relative; /* anchors .bl-drop-indicator (see its own comment) */
     display: grid;
     grid-template-columns: repeat(6, 1fr);
     grid-auto-rows: auto;
     grid-auto-flow: row;
-    gap: 10px;
+    gap: 8px; /* -20% from 10px */
     width: 100%;
 }
 
@@ -389,10 +761,19 @@ body.layout-classic .tool-grid {
    two groups read as visually distinct at a glance. */
 .home-top-group {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    /* minmax(0, 1fr), not plain 1fr — a bare 'fr' track's implicit
+       min-width is auto, i.e. its own content's min-content size. Anchor's
+       column and Quick Actions/Favorite's column are both 3 of these 6
+       tracks; if Anchor's own natural content (the Null button/dropdown
+       column, especially once anchor-medium stacks them) ever needs more
+       than a clean 50/50 split would give it, auto-min lets its track grow
+       past that and steal width from the other column instead of Anchor
+       just compressing/wrapping in place — starving Favorite of room it
+       was supposed to have and pushing its own content past its edge. */
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     grid-auto-rows: auto;
     grid-auto-flow: row;
-    gap: 10px;
+    gap: 8px; /* -20% from 10px */
     width: 100%;
     background: #101010;
     border: 1px solid #262626;
@@ -573,25 +954,25 @@ body.layout-classic .tool-grid {
    their full-line/one-line form here once narrow-stack forces the slot
    itself full width — undoing each half-line-specific rule declared
    alongside its normal Bottom Layout counterpart further down this file. */
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="align"] .ctrl-row,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="alignlayers"] .ctrl-row,
 #homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .ctrl-row {
     flex-wrap: wrap;
 }
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="align"] .ctrl-row > .lbl,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="alignlayers"] .ctrl-row > .lbl,
 #homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .ctrl-row > .lbl {
     display: inline;
 }
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="align"] .btn-group-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="alignlayers"] .btn-group-wide,
 #homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .btn-group-wide {
     display: flex;
     gap: 4px;
     height: auto;
 }
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="align"] .btn-group-wide .vsep,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="alignlayers"] .btn-group-wide .vsep,
 #homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .btn-group-wide .vsep {
     display: block;
 }
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="align"] .icon-btn-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="alignlayers"] .icon-btn-wide,
 #homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .icon-btn-wide {
     height: 32px;
     min-height: 0;
@@ -666,6 +1047,22 @@ body.layout-classic .tool-grid {
     line-height: 1.3;
 }
 .fav-empty-hint svg { width: 16px; height: 16px; }
+
+/* Drag-to-favorite drop target (see _blOnDragMove/_blOnDragEnd in
+   main.js) — toggled while a compatible Bottom Layout drag hovers
+   directly over the Favorite slot, an alternative to clicking a widget's
+   own star badge. Gold to match that badge's own hover color. Scoped
+   under #homeToolGrid.board-editing (2 IDs total) specifically so it
+   outranks the board-editing empty-slot background rule above (1 ID + 3
+   classes) regardless of whether the slot is currently empty or filled. */
+#homeToolGrid.board-editing #sec-favorite.bl-fav-drop-target {
+    /* 1.5px to match every other dashed outline in edit mode (the widget
+       outline, the add-row tile) — was 2px, whose natural dash rendering
+       came out visibly bigger than the rest. */
+    outline: 1.5px dashed #f0c05a;
+    outline-offset: 2px;
+    background: rgba(240, 192, 90, 0.08);
+}
 /* .fav-pages is an empty, otherwise-invisible flex:1 sibling whenever
    there's nothing favorited — leaving it in flow would split the box's
    height with .fav-empty-hint 50/50, centering the hint in only the top
@@ -706,7 +1103,11 @@ body.layout-classic .tool-grid {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 8px;
+    /* Each .fav-dot already carries its own 6px padding (for a bigger hit
+       area, see below) on top of this gap — a small gap here is enough on
+       its own to keep adjacent hit boxes from touching, so the visible
+       dots themselves read as close together instead of spaced way out. */
+    gap: 2px;
     flex-shrink: 0;
     padding-top: 6px;
 }
@@ -716,15 +1117,26 @@ body.layout-classic .tool-grid {
 .fav-dot {
     width: 6.5px;
     height: 6.5px;
-    padding: 0;
-    background: #555555;
+    box-sizing: content-box;
+    /* Padding grows the actual clickable hit area well past the visible
+       dot — background-clip below keeps the painted circle itself at the
+       original 6.5px, so nothing looks any bigger, only easier to hit.
+       Every color change below uses background-COLOR specifically, not
+       the background shorthand — the shorthand implicitly resets
+       background-clip to its own default (border-box) as part of the same
+       declaration, and :hover/.active's higher specificity would then win
+       over this rule's own content-box, painting the whole padded hit box
+       instead of just the small dot. */
+    padding: 6px;
+    background-color: #555555;
+    background-clip: content-box;
     border: none;
     border-radius: 50%;
     cursor: pointer;
-    transition: background 0.1s linear, transform 0.1s linear;
+    transition: background-color 0.1s linear;
 }
-.fav-dot:hover { background: #888888; }
-.fav-dot.active { background: #F9F9F4; }
+.fav-dot:hover { background-color: #888888; }
+.fav-dot.active { background-color: #F9F9F4; }
 
 .tool-box[data-span="3"] { grid-column: span 3; }
 .tool-box[data-span="6"] { grid-column: span 6; }
@@ -759,8 +1171,7 @@ body.layout-classic .tool-grid {
 
 /* ── Classic layout (original collapsible sections) ──────────────────────── */
 /* Hidden unless Settings > Layout is set to Classic (see setLayoutMode in
-   main.js). Reuses the .section/.section-hdr/.section-body classes the
-   Shape Rigs section already relies on further down the page.
+   main.js).
    Explicit width/flex here (rather than leaving it to size off its
    content) is what keeps the column itself spanning the full panel —
    chevron flush against the right edge — even once the content below
@@ -1018,6 +1429,19 @@ body.layout-classic .tool-grid {
 .tool-box[data-rowspan="1"] {
     min-height: var(--home-anchor-unit);
 }
+/* anchor-medium pins Quick Actions/Favorite's heights explicitly instead
+   (see _syncAnchorRowUnit's medium branch) — that branch never touches
+   --home-anchor-unit, so it stays frozen at whatever it last was set to
+   while normal/narrow-stack tier was active. Left unscoped, that stale
+   value could floor a rowspan-1 box taller than the row track medium just
+   explicitly pinned it to, spilling its content past #homeTopGroup's own
+   bottom edge — exactly what a favorited widget's box was doing right
+   after shrinking down from the normal tier. Medium's own mechanism is
+   the sole authority on these heights, so the generic floor above should
+   never apply while it's active. */
+#homeToolGrid.anchor-medium #homeTopGroup .tool-box[data-rowspan="1"] {
+    min-height: 0;
+}
 
 /* Organize quick actions — 3x2 grid of icon-only tiles. */
 .organize-grid {
@@ -1246,9 +1670,59 @@ body.layout-classic .tool-grid {
     position: relative;
     /* outline (not border) so it doesn't shift layout the way an actual
        border would. Makes it unmistakable which boxes are currently
-       pick-up-able versus just dimmed along for the ride. */
-    outline: 2px dashed rgba(150, 150, 150, 0.6);
+       pick-up-able versus just dimmed along for the ride. 1.5px to match
+       every other dashed line in the app (the add-row tile, the drop
+       indicator, etc.) — this one was 2px, visibly heavier than the rest.
+       outline itself is never clipped by overflow (painted outside the
+       box, same as box-shadow), so it's unaffected by overflow:hidden
+       below. */
+    outline: 1.5px dashed rgba(150, 150, 150, 0.6);
     outline-offset: 2px;
+    /* filter:blur() on the glow ::before ignores this element's own
+       bounds entirely (unlike a background, which naturally clips to its
+       box) — without clipping it here, the blur bled straight through
+       into neighboring widgets regardless of the :hover-only opacity
+       gate. Safe to add: the drag handle/remove-X/favorite-star badges
+       are all positioned with non-negative offsets already inside this
+       box, so none of them get cut off by it. */
+    overflow: hidden;
+}
+/* Soft spotlight following the cursor, but only shown on whichever widget
+   is actually hovered (see the opacity/:hover rule below this one).
+   _blGlowTick in main.js still keeps ONE shared, eased (delayed) cursor
+   position and writes it into --glow-x/--glow-y on EVERY widget every
+   frame, each expressed relative to that widget's own box — kept that way
+   (rather than only updating the hovered one) so the glow is already
+   correctly positioned the instant hover starts, with no first-frame
+   snap. border-radius:inherit is what confines the gradient to each
+   widget's own rounded shape — a background naturally clips to its own
+   box, so no overflow:hidden is needed on the widget itself (which would
+   risk clipping the drag handle or remove-badge that sit right at its
+   edges). Defaults far off-screen so nothing shows before the JS has
+   actually placed a real position. */
+#homeToolGrid.board-editing .bl-draggable::before,
+#homeToolGrid.board-editing .tool-box-favorite::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(circle 160px at var(--glow-x, -9999px) var(--glow-y, -9999px), rgba(255,255,255,0.027), transparent 70%);
+    /* A real blur (not just a softer gradient) for a much hazier look —
+       contained to this widget's own box by the overflow:hidden on the
+       rule above (filter:blur ignores an element's own bounds entirely
+       otherwise, which is what was bleeding into neighboring widgets). */
+    filter: blur(55px);
+    pointer-events: none;
+    /* Only the widget actually under the cursor shows its glow now — the
+       JS still keeps --glow-x/--glow-y current on every widget every
+       frame (harmless, since this hides all but one of them), so the
+       glow is already correctly positioned the instant hover starts. */
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+#homeToolGrid.board-editing .bl-draggable:hover::before,
+#homeToolGrid.board-editing .tool-box-favorite:hover::before {
+    opacity: 1;
 }
 #homeToolGrid.board-editing .bl-draggable {
     cursor: grab;
@@ -1273,6 +1747,14 @@ body.layout-classic .tool-grid {
     transform: translate(-50%, -50%) scale(1);
 }
 #homeToolGrid.board-editing .quick-actions-btn {
+    /* border-width explicitly, not left to cascade — .qa-grid-1x6 (the
+       single-row shape) sets its own tiles to border:none, and that
+       shorthand resets border-width to its initial "medium" (~3px)
+       browser default even though the style itself is invisible. Without
+       repeating 1px here, this dashed override inherited that leftover
+       medium width instead of the 1px every other grid shape uses,
+       rendering roughly 2-3x as thick specifically in the 1x6 layout. */
+    border-width: 1px;
     border-style: dashed;
     border-color: #555555;
     pointer-events: none;
@@ -1458,28 +1940,47 @@ body.layout-classic .tool-grid {
     box-shadow: 0 8px 24px rgba(0,0,0,0.45);
     pointer-events: none;
     margin: 0;
+    /* Position (left/top) stays plain inline styles set every mousemove;
+       the 3D tilt (see _blTiltTick in main.js) is a SEPARATE transform
+       (perspective + rotateX/rotateY) driven every animation frame, so
+       will-change just hints the compositor this one specific property
+       is about to change continuously and rapidly for the drag's duration. */
+    will-change: transform;
 }
 
-/* Pure visual "drop here" feedback, fixed position (viewport coordinates,
-   matching getBoundingClientRect) with no layout participation at all,
-   unlike the old live-reflow placeholder. Sits behind the dragged ghost
+/* Pure visual "drop here" feedback, positioned absolutely within #homeGrid
+   (not fixed to the viewport) with no layout participation at all, unlike
+   the old live-reflow placeholder. Absolute-inside-#homeGrid rather than
+   fixed-to-viewport is deliberate: #homeGrid's own subtree can be under a
+   CSS zoom (the Scale slider — its default is already 1.05x, not 1x) that
+   Chromium/CEF has a long history of resolving inconsistently for
+   getBoundingClientRect. _blShowIndicator in main.js positions this element
+   using offsetLeft/Top/Width/Height instead (see _blOffsetRect there) — a
+   CSS-layout-tree measurement relative to this element's own offsetParent
+   (#homeGrid) that never touches that ambiguous rendered/zoomed space at
+   all, rather than trying to reconcile two getBoundingClientRect readings
+   taken inside a zoomed subtree. Sits behind the dragged ghost
    (.bl-drag-ghost is z-index:1000) rather than on top of it. Two looks —
    see _blShowIndicator in main.js for when each applies. */
 .bl-drop-indicator {
     display: none;
-    position: fixed;
+    position: absolute;
     pointer-events: none;
     z-index: 500;
     /* Four 1px dashed background strips standing in for a border, shared
        by both looks below — background (unlike border-image) still
-       respects border-radius, so rounded corners are unaffected. */
+       respects border-radius, so rounded corners are unaffected.
+       8px dash+gap unit (was 22px — 2-3x bigger than the browser's own
+       natural dash rendering for the 1.5px/2px borders used everywhere
+       else in edit mode, which was what made this one read as oversized
+       next to them). */
     background-image:
         linear-gradient(90deg, rgba(122, 170, 255, 0.7) 54%, transparent 0),
         linear-gradient(90deg, rgba(122, 170, 255, 0.7) 54%, transparent 0),
         linear-gradient(rgba(122, 170, 255, 0.7) 54%, transparent 0),
         linear-gradient(rgba(122, 170, 255, 0.7) 54%, transparent 0);
     background-position: top left, bottom left, top left, top right;
-    background-size: 22px 1px, 22px 1px, 1px 22px, 1px 22px;
+    background-size: 8px 1px, 8px 1px, 1px 8px, 1px 8px;
     background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
 }
 .bl-drop-indicator-box {
@@ -1632,7 +2133,7 @@ body.bl-drag-active {
    The Favorite slot is half-width itself whenever the top group isn't in
    narrow-stack, so it gets this same half-line treatment by default —
    reverted back to one-line under narrow-stack (see that section above). */
-.tool-box[data-block-id="align"][data-span="3"] .ctrl-row,
+.tool-box[data-block-id="alignlayers"][data-span="3"] .ctrl-row,
 .tool-box[data-block-id="distribute"][data-span="3"] .ctrl-row,
 /* Full width too now, not just half — see .ctrl-row-tight below, which
    needs this off at any span for its own overflow check to mean anything
@@ -1640,18 +2141,18 @@ body.bl-drag-active {
    crowding once wrapping has already "resolved" it by moving Offset to
    its own line). Classic isn't included — its own fixed ~360px column
    wraps fine as-is and was never part of this crowding complaint. */
-.tool-box[data-block-id="align"][data-span="6"] .ctrl-row,
+.tool-box[data-block-id="alignlayers"][data-span="6"] .ctrl-row,
 .tool-box[data-block-id="distribute"][data-span="6"] .ctrl-row,
 /* Sort Layers has the same issue at full width — "Sort Layers based on"
    plus both selects wrapping the Property/Axis dropdowns onto their own
    line instead of just dropping the label first (see .ctrl-row-tight,
    extended to cover 'sort' too in _syncCtrlRowLabels). */
 .tool-box[data-block-id="sort"][data-span="6"] .ctrl-row,
-#sec-favorite .tool-body[data-block-id="align"] .ctrl-row,
+#sec-favorite .tool-body[data-block-id="alignlayers"] .ctrl-row,
 #sec-favorite .tool-body[data-block-id="distribute"] .ctrl-row {
     flex-wrap: nowrap;
 }
-.tool-box[data-block-id="align"][data-span="3"] .ctrl-row .sec-icon,
+.tool-box[data-block-id="alignlayers"][data-span="3"] .ctrl-row .sec-icon,
 .tool-box[data-block-id="distribute"][data-span="3"] .ctrl-row .sec-icon {
     flex-shrink: 0;
 }
@@ -1661,9 +2162,9 @@ body.bl-drag-active {
    get tight there too (see .ctrl-row-tight, toggled by _syncCtrlRowLabels
    in main.js) — dropping the label first keeps Offset from being pushed
    onto its own line as early as it used to. */
-.tool-box[data-block-id="align"][data-span="3"] .ctrl-row > .lbl,
+.tool-box[data-block-id="alignlayers"][data-span="3"] .ctrl-row > .lbl,
 .tool-box[data-block-id="distribute"][data-span="3"] .ctrl-row > .lbl,
-#sec-favorite .tool-body[data-block-id="align"] .ctrl-row > .lbl,
+#sec-favorite .tool-body[data-block-id="alignlayers"] .ctrl-row > .lbl,
 #sec-favorite .tool-body[data-block-id="distribute"] .ctrl-row > .lbl,
 .ctrl-row.ctrl-row-tight > .lbl {
     display: none;
@@ -1674,19 +2175,49 @@ body.bl-drag-active {
 .ctrl-row.ctrl-row-tighter .keyframe-toggle-lbl {
     display: none;
 }
-/* A <select> won't shrink below its content's natural width by default
-   (min-width:auto on flex items) — that's what was actually pushing
-   Offset off the right edge; this lets it compress instead of overflowing.
-   Deliberately NOT extended to full width (data-span="6") — tried that,
-   but it shrinks "Composition"/etc. down to unreadable well before the
-   checkbox/diamond actually needs the room. Full width instead only ever
-   drops text (.ctrl-row-tight/-tighter above) and accepts the dropdown
-   staying full natural width as the higher priority of the two. */
-.tool-box[data-block-id="align"][data-span="3"] #alignMode,
-.tool-box[data-block-id="distribute"][data-span="3"] #distMode,
-#sec-favorite .tool-body[data-block-id="align"] #alignMode,
-#sec-favorite .tool-body[data-block-id="distribute"] #distMode {
+/* Absolute last resort, once EVEN the tighter tier above isn't enough —
+   the keyframe-align toggle added one more fixed-size item to this
+   already-tight nowrap row (see .key-align-toggle), which at extreme
+   widths (full-width/data-span="6" below ~250px) was enough to push
+   Offset (or, with the toggle now forced always-visible for testing, the
+   toggle itself) past the panel's own right edge instead of just looking
+   cramped. Tightening the row's own gap and finally letting #alignMode
+   shrink here — normally the higher-priority element that never compresses
+   (see the half-width rule further below) — reclaims just enough width to
+   keep everything inside the panel instead of visibly overflowing it; this
+   only ever engages once nothing else is left to give. */
+.ctrl-row.ctrl-row-tighter {
+    gap: 3px;
+}
+.ctrl-row.ctrl-row-tighter #alignMode,
+.ctrl-row.ctrl-row-tighter #distMode {
     min-width: 0;
+}
+/* Sort's Property/Axis selects had no equivalent — fine at its own
+   half-width span (there's still a whole line to itself), but the
+   Favorite slot's already-zoomed, already-narrower column has less room
+   left over than that, and with nothing to shrink these below their
+   natural content width, they'd rather overflow the row than compress. */
+.tool-box[data-block-id="sort"][data-span="3"] #sortProp,
+.tool-box[data-block-id="sort"][data-span="3"] #sortAxis,
+#sec-favorite .tool-body[data-block-id="sort"] #sortProp,
+#sec-favorite .tool-body[data-block-id="sort"] #sortAxis {
+    min-width: 0;
+}
+
+/* Align/Distribute at half width: the dropdown is the higher priority of
+   the two and no longer compresses at all here (it used to get min-width:0
+   same as Sort's selects above) — "Offset" 's own word is what gives up
+   its room instead, dropped unconditionally rather than only once
+   _syncCtrlRowLabels' JS measures actual overflow (.ctrl-row-tighter,
+   below, still exists as a further-still fallback for truly extreme
+   widths). The keyframe-align toggle has no text of its own to drop —
+   it's already just an icon — so it has nothing further to give up here. */
+.tool-box[data-block-id="alignlayers"][data-span="3"] .keyframe-toggle-lbl,
+.tool-box[data-block-id="distribute"][data-span="3"] .keyframe-toggle-lbl,
+#sec-favorite .tool-body[data-block-id="alignlayers"] .keyframe-toggle-lbl,
+#sec-favorite .tool-body[data-block-id="distribute"] .keyframe-toggle-lbl {
+    display: none;
 }
 
 .keyframe-toggle input {
@@ -1713,6 +2244,53 @@ body.bl-drag-active {
 .keyframe-toggle-lbl { white-space: nowrap; }
 .keyframe-toggle input:checked ~ .keyframe-toggle-lbl { color: var(--text); }
 
+/* Align's keyframe-mode override toggle — sits right after the "Align to"
+   dropdown (not pushed to the far right like Offset, which keeps its own
+   .keyframe-toggle margin-left:auto). Only appears while keyframes are
+   actually selected (.key-align-toggle-visible, set/cleared by
+   _pollKeyAlignMode in main.js) — faded via opacity/max-width rather than
+   display:none so it animates in/out instead of popping. */
+.key-align-toggle {
+    /* The base .keyframe-toggle class (shared with Offset) carries its
+       own padding-left:8px, which nothing here was overriding — the
+       actual gap was .ctrl-row's 5px + that 8px minus this margin, not
+       just .ctrl-row's 5px alone, which is why it stayed visibly wide
+       even with a negative margin already applied. Zeroing that padding
+       out here first, THEN pulling in tighter than .ctrl-row's own 5px
+       gap with the negative margin, is what actually closes it up. */
+    padding-left: 0;
+    margin-left: -8px;
+    overflow: hidden;
+    opacity: 0;
+    max-width: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease, max-width 0.15s ease;
+}
+.key-align-toggle.key-align-toggle-visible {
+    opacity: 1;
+    max-width: 28px; /* just enough for the hourglass icon itself */
+    pointer-events: auto;
+}
+.keyframe-toggle-hourglass {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+}
+.keyframe-toggle-hourglass svg { width: 100%; height: 100%; display: block; }
+.keyframe-toggle-hourglass path {
+    fill: none;
+    stroke: #565656;
+    stroke-width: 1.4;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    transition: fill 0.1s linear, stroke 0.1s linear;
+}
+.key-align-toggle:hover .keyframe-toggle-hourglass path { stroke: #8a8a8a; }
+.key-align-toggle input:checked ~ .keyframe-toggle-hourglass path {
+    fill: #e8c140;
+    stroke: #e8c140;
+}
+
 /* Full-width Align/Distribute bars — a single pill-shaped group (like the
    original button groups) stretched edge-to-edge, buttons sharing the space
    evenly instead of clustering at a fixed size. Height is capped so the row
@@ -1726,6 +2304,7 @@ body.bl-drag-active {
 }
 
 .icon-btn-wide {
+    position: relative;
     flex: 1 1 0;
     min-width: 0;
     width: auto;
@@ -1747,17 +2326,359 @@ body.bl-drag-active {
 .icon-btn-wide svg    { width: 19px; height: 19px; pointer-events: none; transition: transform 0.03s linear; }
 .icon-btn-wide:hover svg { transform: scale(1.08); }
 
+/* Shape Tools' Fill/Stroke HUD — modeled on AE's own Tools-panel swatches
+   (see _pollShapeColorHud/_renderShapeColorHud in main.js), sharing the
+   header row (.ctrl-row) rather than its own line, pushed to the right of
+   the icon/title to use the header's otherwise-empty space. Small,
+   left-aligned within itself, no boxed "bar" around it. */
+.vectools-fillstroke {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+}
+.vectools-fs-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: 3px 4px;
+    border-radius: 5px;
+    color: var(--text-dim);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+/* Entry into the Fill/Stroke modal that replaces the Fill:/Stroke: labels
+   once they disappear at smaller widths (see the label-hiding rule further
+   down) — hidden here by default since the labels themselves are the click
+   target whenever they're actually visible; only shown once they aren't. */
+.vectools-fs-props-btn {
+    display: none;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: background 0.05s linear, color 0.05s linear;
+}
+.vectools-fs-props-btn:hover { background: #2c2c2c; color: #e0e0e0; }
+.vectools-fs-props-btn svg { width: 14px; height: 14px; pointer-events: none; }
+/* Clicking the swatch opens the in-panel color picker (neither
+   <input type="color"> nor ExtendScript's $.colorPicker() work/match AE's
+   own dialog inside the CEP host — see _openColorPicker in main.js) and
+   overrides every instance in scope at once — see
+   _pickFillColor/_pickStrokeColor. */
+.vectools-fs-swatch {
+    flex-shrink: 0;
+    width: 20px;
+    height: 15px;
+    border-radius: 2px;
+    box-sizing: border-box;
+    padding: 0;
+    background: none;
+    cursor: pointer;
+}
+/* Fill — a solid dot, colored via background. */
+.vectools-fs-swatch-fill {
+    border: 1px solid rgba(255,255,255,0.14);
+    background-color: #2a2a2a;
+}
+/* Stroke — a ring, colored via border instead of background, so the
+   indicator itself reads as an outline rather than a filled shape. */
+.vectools-fs-swatch-stroke {
+    border: 3px solid #4a4a4a;
+    background: none;
+}
+/* The label opens the full popup for per-instance editing — its own
+   click target, separate from the swatch (set-all) and, for Stroke, the
+   width field (scrub/type, also set-all). */
+.vectools-fs-lbl {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: #4fa8ff;
+    cursor: pointer;
+    white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.vectools-fs-lbl:hover { color: #7abcff; text-decoration: underline; }
+/* Stroke width — styled and behaves like AE's own scrubby number fields:
+   blue, drag left/right to change every stroke in scope, click (no drag)
+   to type an exact value instead. */
+.vectools-fs-width {
+    display: inline-block;
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 40px;
+    font-variant-numeric: tabular-nums;
+    margin-left: 1px;
+    padding: 1px 3px;
+    border-radius: 3px;
+    color: #4fa8ff;
+    cursor: ew-resize;
+    user-select: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background 0.05s linear;
+}
+.vectools-fs-width:hover { background: rgba(79,168,255,0.14); }
+.vectools-fs-width-edit {
+    width: 42px;
+    box-sizing: border-box;
+    background: #1a1a1a;
+    border: 1px solid #4fa8ff;
+    border-radius: 3px;
+    color: #4fa8ff;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    padding: 1px 3px;
+}
+.vectools-fs-width-edit:focus { outline: none; }
+/* "No fill/stroke anywhere in scope" — a diagonal red slash, the same
+   convention AE itself uses (see the reference screenshot this whole HUD
+   is modeled on). Applies !important over both the fill dot's background
+   and the stroke ring's border so either indicator falls back the same
+   filled-square-with-slash way when there's nothing to show a color for. */
+.vectools-swatch-none {
+    border-color: rgba(255,255,255,0.14) !important;
+    background-color: #2a2a2a !important;
+    background-image: linear-gradient(
+        to top right,
+        transparent calc(50% - 1px),
+        #e05050 50%,
+        transparent calc(50% + 1px)
+    );
+}
+/* "Mix" — scope has more than one distinct value — a neutral checkerboard
+   rather than any one color, so it doesn't read as an actual color. */
+.vectools-swatch-mix {
+    border-color: rgba(255,255,255,0.14) !important;
+    background-color: #2a2a2a !important;
+    background-image:
+        linear-gradient(45deg, #4a4a4a 25%, transparent 25%, transparent 75%, #4a4a4a 75%),
+        linear-gradient(45deg, #4a4a4a 25%, transparent 25%, transparent 75%, #4a4a4a 75%);
+    background-size: 6px 6px;
+    background-position: 0 0, 3px 3px;
+}
+
+/* Fill/Stroke edit modal — a full popup (.settings-overlay/.settings-modal,
+   same convention as Settings/Color Picker) rather than a small anchored
+   one, unified across Fill/Stroke as two tabs (see _switchShapeEditTab in
+   main.js) that swap #shapeEditBody's content in place. */
+.shape-edit-hidden { display: none !important; }
+.shape-edit-modal {
+    width: calc(100vw - 20px);
+    max-width: 300px;
+    max-height: calc(100vh - 20px);
+    box-sizing: border-box;
+}
+.vectools-edit-body { gap: 8px; }
+/* Same two-tab visual language as Batch Comp Settings' .bcs-ui-tab. */
+.vectools-edit-tabs {
+    display: flex;
+    flex-shrink: 0;
+    gap: 2px;
+    padding: 6px 8px 0;
+    border-bottom: 1px solid #272727;
+}
+.vectools-edit-tab {
+    background: none;
+    border: none;
+    border-radius: 5px 5px 0 0;
+    color: #707070;
+    font: inherit;
+    font-size: 11px;
+    padding: 5px 12px;
+    cursor: pointer;
+    margin-bottom: -1px;
+    transition: color 0.1s linear, background 0.1s linear;
+}
+.vectools-edit-tab:hover { color: #a0a0a0; background: #262626; }
+.vectools-edit-tab.active { color: #e0e0e0; background: #2c2c2c; }
+/* Solid Fill/Stroke vs No Fill/Stroke — icon-only buttons (see
+   _shapeEditOnIcon/_shapeEditOffIcon in main.js) that toggle every
+   instance's own on/off state (see
+   lineup_setShapeFillEnabledAll/lineup_setShapeStrokeEnabledAll), not a
+   color change. Neither side is highlighted when scope is mixed. */
+.vectools-edit-onoff-row {
+    display: flex;
+    gap: 6px;
+}
+.vectools-edit-onoff-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #232323;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #909090;
+    padding: 7px;
+    cursor: pointer;
+    transition: background 0.05s linear, color 0.05s linear, border-color 0.05s linear;
+}
+.vectools-edit-onoff-btn:hover { background: #2c2c2c; color: #c0c0c0; }
+.vectools-edit-onoff-btn.active {
+    background: rgba(79,168,255,0.16);
+    border-color: #4fa8ff;
+    color: #7abcff;
+}
+/* The icon itself — a plain swatch square for Solid, or (with
+   .vectools-swatch-none layered on, reusing that exact rule rather than
+   redrawing it) the same diagonal-red-slash square used everywhere else in
+   this HUD for "no color in scope". */
+.vectools-edit-onoff-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background-color: #6b6b6b;
+    pointer-events: none;
+}
+.vectools-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 8px;
+    border-radius: 5px;
+}
+.vectools-edit-all-row {
+    border-bottom: 1px solid #333;
+    border-radius: 0;
+    padding-bottom: 8px;
+    margin-bottom: 2px;
+}
+.vectools-edit-row-lbl {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #a0a0a0;
+    font-size: 11px;
+}
+.vectools-edit-all-row .vectools-edit-row-lbl {
+    color: #e0e0e0;
+    font-weight: 600;
+}
+/* A shape whose Fill/Stroke is currently off (per the item's own .enabled,
+   toggled only via the Solid/No Fill(Stroke) buttons above — no per-row
+   control) shows dimmed rather than just vanishing from the list. */
+.vectools-edit-row-off .vectools-edit-row-lbl,
+.vectools-edit-row-off .vectools-color-input,
+.vectools-edit-row-off .vectools-fs-width {
+    opacity: 0.4;
+}
+.vectools-edit-list {
+    max-height: 220px;
+    overflow-y: auto;
+}
+.vectools-edit-empty {
+    padding: 6px 8px 4px;
+    color: #707070;
+    font-size: 11px;
+}
+/* Clicking opens the in-panel color picker — see _openColorPicker in
+   main.js — <input type="color">'s own picker never opens inside AE's CEP
+   panel host, so these are plain buttons with their color set inline. */
+.vectools-color-input {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 4px;
+    background-color: #2a2a2a;
+    cursor: pointer;
+}
+/* Default (paired half-width, data-span="3" — not enough room for both
+   toolbars on one line): stack the two .btn-row-wide groups vertically,
+   each full width, same as any other stacked control. */
+.vectortools-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+/* Full width and alone in its own row (data-span="6"): both toolbars fit
+   on one line, so they sit side by side instead, each flexed to exactly
+   half the row (flex:1 1 0 on both, same even-split trick as pairing two
+   half-width widgets elsewhere) — Merge/Explode's taskbar comes first in
+   the markup, so it naturally ends up on the left, no extra margin
+   needed. Buttons keep their usual flex:1 (see .icon-btn-wide) and just
+   stretch across whichever half they now belong to. Excluded under
+   narrow-stack, where data-span is forced to 6 for every widget
+   regardless of real pairing — the panel itself is too narrow there for
+   this to actually fit. */
+#homeToolGrid:not(.narrow-stack) .tool-box[data-block-id="vectortools"][data-span="6"] .vectortools-rows {
+    flex-direction: row;
+    align-items: center;
+}
+#homeToolGrid:not(.narrow-stack) .tool-box[data-block-id="vectortools"][data-span="6"] .vectortools-rows > .btn-row-wide {
+    width: auto;
+    flex: 1 1 0;
+    min-width: 0;
+}
+/* Align Left/Center/Right: whenever selected keyframes make these buttons
+   retime keyframes instead of moving layer position, each crossfades its
+   whole icon into a keyframe-flavored one (hourglass bezier glyph on
+   Left/Right, a playhead-cap glyph on Center) — fill:currentColor throughout,
+   so it matches the icon's own color/hover/active state exactly like the
+   icon it replaces. Both icons stay in the flow-removed, stacked on top of
+   each other via position:absolute, so toggling opacity (not display) is
+   what actually gets the fade instead of a hard cut. Targets .tool-body
+   directly (not a wrapper id) since this single node physically relocates
+   between the Compact grid, Classic section, and Favorite slot rather than
+   being cloned. */
+/* .icon-btn-wide prefix (not just the bare class) is required here — it
+   outranks the generic ".icon-btn-wide svg { transition: transform ... }"
+   rule above by class count, so this transition (with opacity added) is the
+   one that actually wins instead of being silently dropped to transform-only. */
+.icon-btn-wide .key-align-default-icon,
+.icon-btn-wide .key-align-keyframe-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    transition: opacity 0.15s ease, transform 0.03s linear;
+}
+.icon-btn-wide:hover .key-align-default-icon,
+.icon-btn-wide:hover .key-align-keyframe-icon {
+    transform: translate(-50%, -50%) scale(1.08);
+}
+/* Resting state (not the rules above) is what actually owns opacity, so
+   nothing here fights that combined rule's specificity for it. */
+.key-align-keyframe-icon { opacity: 0; }
+.tool-body[data-block-id="alignlayers"].key-align-mode .key-align-default-icon  { opacity: 0; }
+.tool-body[data-block-id="alignlayers"].key-align-mode .key-align-keyframe-icon { opacity: 1; }
+
 /* Every block is 2 tiles tall regardless of width, but a button row only
    needs its own content height — grow the wrapper and center within it so
    it fills the tile instead of leaving dead space below. Organize/Ease
    handle this via their own grid/row instead. */
-.tool-box[data-block-id="align"] .btn-row-wide,
+.tool-box[data-block-id="alignlayers"] .btn-row-wide,
 .tool-box[data-block-id="distribute"] .btn-row-wide,
 .tool-box[data-block-id="sizing"] .btn-row-wide,
 .tool-box[data-block-id="autocrop"] .btn-row-wide,
 .tool-box[data-block-id="spellcheck"] .btn-row-wide,
 .tool-box[data-block-id="sort"] .btn-row-wide,
-#sec-favorite .tool-body[data-block-id="align"] .btn-row-wide,
+#sec-favorite .tool-body[data-block-id="alignlayers"] .btn-row-wide,
 #sec-favorite .tool-body[data-block-id="distribute"] .btn-row-wide,
 #sec-favorite .tool-body[data-block-id="sizing"] .btn-row-wide,
 #sec-favorite .tool-body[data-block-id="autocrop"] .btn-row-wide,
@@ -1775,9 +2696,9 @@ body.bl-drag-active {
    those; auto-rows: 1fr fills whatever height the wrapper above gave it.
    The Favorite slot is half-width by default too (see above), so it gets
    the same reflow — reverted back to one row under narrow-stack. */
-.tool-box[data-block-id="align"][data-span="3"] .btn-group-wide,
+.tool-box[data-block-id="alignlayers"][data-span="3"] .btn-group-wide,
 .tool-box[data-block-id="distribute"][data-span="3"] .btn-group-wide,
-#sec-favorite .tool-body[data-block-id="align"] .btn-group-wide,
+#sec-favorite .tool-body[data-block-id="alignlayers"] .btn-group-wide,
 #sec-favorite .tool-body[data-block-id="distribute"] .btn-group-wide {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1785,19 +2706,43 @@ body.bl-drag-active {
     gap: 5px;
     height: 100%;
 }
-.tool-box[data-block-id="align"][data-span="3"] .btn-group-wide .vsep,
+.tool-box[data-block-id="alignlayers"][data-span="3"] .btn-group-wide .vsep,
 .tool-box[data-block-id="distribute"][data-span="3"] .btn-group-wide .vsep,
-#sec-favorite .tool-body[data-block-id="align"] .btn-group-wide .vsep,
+#sec-favorite .tool-body[data-block-id="alignlayers"] .btn-group-wide .vsep,
 #sec-favorite .tool-body[data-block-id="distribute"] .btn-group-wide .vsep {
     display: none;
 }
-.tool-box[data-block-id="align"][data-span="3"] .icon-btn-wide,
+.tool-box[data-block-id="alignlayers"][data-span="3"] .icon-btn-wide,
 .tool-box[data-block-id="distribute"][data-span="3"] .icon-btn-wide,
-#sec-favorite .tool-body[data-block-id="align"] .icon-btn-wide,
+#sec-favorite .tool-body[data-block-id="alignlayers"] .icon-btn-wide,
 #sec-favorite .tool-body[data-block-id="distribute"] .icon-btn-wide {
     height: 100%;
     min-height: 38px; /* ~20% taller than the full-width row's fixed 32px, so the 3x2 grid gets more vertical breathing room */
     max-height: none;
+}
+
+/* Narrow-stack forces EVERY widget to data-span="6" (see _blApplyLayout in
+   main.js), so Align/Distribute never get the 3x2 grid reflow above —
+   they're stuck in the single-row layout meant for a full-width slot in a
+   normal (wide) panel, except narrow-stack's whole panel is much narrower
+   than that. 6 buttons (7 counting the vsep) in one row need real
+   compression there, not just flex-shrink — .icon-btn-wide's min-width:0
+   already lets the buttons themselves shrink arbitrarily, but their SVG
+   icons stay a fixed 19px and start overflowing their own button (reading
+   as buttons "bleeding" into each other) well before that. */
+#homeToolGrid.narrow-stack .tool-box[data-block-id="alignlayers"] .btn-group-wide,
+#homeToolGrid.narrow-stack .tool-box[data-block-id="distribute"] .btn-group-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="alignlayers"] .btn-group-wide,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .btn-group-wide {
+    gap: 2px;
+    padding: 2px;
+}
+#homeToolGrid.narrow-stack .tool-box[data-block-id="alignlayers"] .icon-btn-wide svg,
+#homeToolGrid.narrow-stack .tool-box[data-block-id="distribute"] .icon-btn-wide svg,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="alignlayers"] .icon-btn-wide svg,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="distribute"] .icon-btn-wide svg {
+    width: 14px;
+    height: 14px;
 }
 
 /* Sizing/AutoCrop only have 3 buttons, so they stay a single flex row at
@@ -1836,6 +2781,23 @@ body.bl-drag-active {
 .tool-box[data-block-id="sort"][data-span="3"] .icon-btn-wide,
 #sec-favorite .tool-body[data-block-id="sizing"] .icon-btn-wide,
 #sec-favorite .tool-body[data-block-id="sort"] .icon-btn-wide {
+    height: 100%;
+    min-height: 38px;
+    max-height: none;
+}
+
+/* Shape Tools' two toolbars (Select Paths/Change Stroke Type/Color
+   Management, and Merge/Explode) are the same "single row, no 3x2 reflow"
+   shape as Sizing/AutoCrop/Sort above, but never got this same half-width/
+   Favorite-slot treatment — its buttons stayed pinned to the full-width
+   row's fixed 32px there, leaving dead space below rather than filling the
+   taller box the half-width tile/Favorite slot actually gives them. */
+.tool-box[data-block-id="vectortools"][data-span="3"] .btn-group-wide,
+#sec-favorite .tool-body[data-block-id="vectortools"] .btn-group-wide {
+    height: 100%;
+}
+.tool-box[data-block-id="vectortools"][data-span="3"] .icon-btn-wide,
+#sec-favorite .tool-body[data-block-id="vectortools"] .icon-btn-wide {
     height: 100%;
     min-height: 38px;
     max-height: none;
@@ -1886,13 +2848,6 @@ body.bl-drag-active {
     pointer-events: none;
     transform: translate(-50%, -50%) scale(0.6);
     transition: opacity 0.16s ease, transform 0.16s ease;
-}
-
-.beta-tag {
-    font-size: 9px;
-    font-weight: 400;
-    color: var(--text-dimmer);
-    letter-spacing: 0.03em;
 }
 
 .chev {
@@ -1949,6 +2904,60 @@ body.bl-drag-active {
     display: none;
 }
 
+/* Shape Tools: half width (data-span="3") or the Favorite slot always
+   drops "Shape Tools", same as Sizing/Auto Crop/Sort above — there's
+   simply never enough room there for both it and the Fill/Stroke HUD. */
+#sec-vectortools[data-span="3"] .vectortools-title-compact-only,
+#sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-title-compact-only {
+    display: none;
+}
+/* One line (data-span="6") keeps it — there's normally room for both —
+   except once the panel itself has gotten genuinely narrow (see
+   _syncVectortoolsTitle/VECTORTOOLS_TITLE_DROP_WIDTH in main.js, which
+   toggles this class), at which point it drops there too. */
+.tool-box[data-block-id="vectortools"].vectortools-one-line-tiny .vectortools-title-compact-only {
+    display: none;
+}
+/* The header row itself must not wrap the HUD below the icon when it's
+   tight — force it to stay on one line and shrink instead (its own
+   min-width:0/overflow/ellipsis chain, see .vectools-fillstroke and
+   .vectools-fs-lbl/.vectools-fs-width above, already handles the actual
+   compression). */
+.tool-box[data-block-id="vectortools"] .ctrl-row,
+#sec-favorite .tool-body[data-block-id="vectortools"] .ctrl-row {
+    flex-wrap: nowrap;
+}
+/* The Fill/Stroke HUD's own click targets (swatch, width) were sized for
+   sharing a full-width header alongside the title text — once the title
+   drops out above, there's no reason to keep them that small, and at half
+   width/in the Favorite slot they read as fiddly to click otherwise. */
+.tool-box[data-block-id="vectortools"][data-span="3"] .vectools-fs-item,
+#sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-item {
+    padding: 4px 5px;
+    gap: 5px;
+}
+.tool-box[data-block-id="vectortools"][data-span="3"] .vectools-fs-swatch,
+#sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-swatch {
+    width: 24px;
+    height: 18px;
+}
+.tool-box[data-block-id="vectortools"][data-span="3"] .vectools-fs-width,
+#sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-width {
+    font-size: 12px;
+    max-width: 48px;
+}
+/* Below the room a full "Fill:"/"Stroke:" label needs, drop the word and
+   keep just the swatch (plus width, for Stroke) — the properties button
+   takes over as the click target into the modal at this width instead. */
+.tool-box[data-block-id="vectortools"][data-span="3"] .vectools-fs-lbl,
+#sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-lbl {
+    display: none;
+}
+.tool-box[data-block-id="vectortools"][data-span="3"] .vectools-fs-props-btn,
+#sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-props-btn {
+    display: flex;
+}
+
 /* "Sort Layers based on" only fits alongside the Property/Axis selects at
    full width — half width (docked half) drops it and keeps just the icon.
    Same half-line-by-default exception as Sizing/Auto Crop above applies to
@@ -1987,6 +2996,12 @@ body.bl-drag-active {
    header, so this copy (relocated along with the rest of its tool-body)
    would otherwise duplicate it. */
 #homeClassic .ac-title-compact-only {
+    display: none;
+}
+
+/* Shape Tools' title, same reasoning — Classic's own section header
+   already shows "Shape Tools". */
+#homeClassic .vectortools-title-compact-only {
     display: none;
 }
 
@@ -2644,9 +3659,6 @@ input[type="checkbox"]:checked::after {
 
 .icon-btn.btn-trash:hover  { background: rgba(192,50,50,0.18); border-color: #b03535; color: #e07070; }
 .icon-btn.btn-trash:active { background: #b03535; border-color: #b03535; color: #fff; }
-
-.icon-btn.btn-recalc:hover  { background: rgba(210,130,30,0.18); border-color: #c07820; color: #f0a840; }
-.icon-btn.btn-recalc:active { background: #c07820; border-color: #c07820; color: #fff; }
 
 .icon-btn:disabled {
     opacity: 0.28;
@@ -3384,6 +4396,12 @@ input.gap-inline-input {
 }
 .edit-mode-bar-btn:active { transform: scale(0.96); }
 
+/* Margin, not a text-node space — .edit-mode-bar-btn is display:flex,
+   which trims leading/trailing whitespace at a flex item's own
+   boundaries, so a plain " Default" leading space inside this span was
+   silently getting collapsed away, running the two words together. */
+.edit-mode-bar-btn-suffix { margin-left: 0.3em; }
+
 .edit-mode-bar-btn-ghost {
     background: transparent;
     border: 1px solid #3a3a3a;
@@ -3398,12 +4416,37 @@ input.gap-inline-input {
 }
 .edit-mode-bar-btn-save:hover { background: #3680ea; border-color: #3680ea; }
 
+/* Undo/Redo — icon-only, fixed square size rather than the flex:1 text
+   buttons above, since there's no label to ever need room for. Disabled
+   (via the plain disabled attribute, toggled by _editSyncUndoRedoButtons)
+   whenever that direction's stack is empty. */
+.edit-mode-bar-icon-btn {
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid #3a3a3a;
+    border-radius: 5px;
+    color: #a0a0a0;
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear, transform 0.06s ease;
+}
+.edit-mode-bar-icon-btn:hover  { background: #262626; color: #d0d0d0; border-color: #4a4a4a; }
+.edit-mode-bar-icon-btn:active { transform: scale(0.96); }
+.edit-mode-bar-icon-btn:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+.edit-mode-bar-icon-btn svg { width: 15px; height: 15px; pointer-events: none; }
+
 @media (max-width: 329px) {
     .edit-mode-bar-inner { gap: 4px; padding: 0 6px; }
     .edit-mode-bar-text { display: none; }
     .edit-mode-bar-actions { flex: 1; gap: 4px; }
     .edit-mode-bar-btn { flex: 1; padding: 0 4px; font-size: 10px; }
     .edit-mode-bar-btn-suffix { display: none; }
+    .edit-mode-bar-icon-btn { width: 26px; height: 26px; }
 }
 
 /* ── Footer ───────────────────────────────────────────────────────────────── */
@@ -3830,6 +4873,102 @@ body.layout-classic #quickActionsEditBtn { width: 0; opacity: 0; pointer-events:
     color: #fff;
 }
 .btn.btn-blue:hover { background: #3680ea; border-color: #3680ea; }
+
+/* ── Color Picker modal ───────────────────────────────────────────────────────
+   A from-scratch HSB picker (see _openColorPicker/_cpSetHSB in main.js) —
+   <input type="color"> never opens inside AE's CEP host, and $.colorPicker()
+   only opens the OS-level panel rather than AE's own dialog, which isn't
+   scriptable at all. Sized narrow (the panel itself defaults to 280px, see
+   .bcs-modal above) rather than matching AE's own wide two-column layout. */
+.cp-hidden { display: none !important; }
+/* Opened FROM the Fill/Stroke edit modal (clicking a swatch there) without
+   that modal ever hiding itself underneath — needs to stack strictly above
+   it (both share .settings-overlay's base z-index:1000, which alone would
+   fall back to DOM order) so it doesn't render behind #shapeEditOverlay.
+   Closing (Cancel/OK) just un-hides this one, revealing that modal again. */
+#cpOverlay { z-index: 1001; }
+.cp-modal {
+    width: calc(100vw - 20px);
+    max-width: 240px;
+    box-sizing: border-box;
+}
+.cp-body { gap: 8px; }
+.cp-sb-row { display: flex; gap: 8px; align-items: stretch; }
+/* Saturation/Brightness square — drawn once per hue change (see
+   _cpDrawSbCanvas): a solid hue fill, a white→transparent gradient across X
+   for saturation, a transparent→black gradient down Y for brightness. */
+.cp-sb-wrap {
+    position: relative;
+    flex: 1 1 auto;
+    aspect-ratio: 5 / 4;
+    min-width: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: crosshair;
+}
+.cp-sb-wrap canvas { width: 100%; height: 100%; display: block; }
+.cp-sb-handle {
+    position: absolute;
+    left: 0; top: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.4);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+/* Hue strip — a static rainbow gradient (0-360°, wraps back to red at the
+   bottom same as the top), drawn once at open. */
+.cp-hue-wrap {
+    position: relative;
+    width: 16px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: ns-resize;
+}
+.cp-hue-wrap canvas { width: 100%; height: 100%; display: block; }
+.cp-hue-handle {
+    position: absolute;
+    left: -2px; right: -2px;
+    top: 0;
+    height: 4px;
+    box-sizing: border-box;
+    border-radius: 2px;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+.cp-fields-row { display: flex; gap: 8px; }
+.cp-field { display: flex; align-items: center; gap: 4px; flex: 1 1 0; min-width: 0; }
+.cp-field-lbl { font-size: 10px; color: #808080; flex-shrink: 0; }
+.cp-field-unit { font-size: 10px; color: #606060; margin-left: -2px; flex-shrink: 0; }
+.cp-scrub { width: 100%; min-width: 0; }
+.cp-hex-row { display: flex; align-items: center; gap: 6px; }
+.cp-swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.14);
+    flex-shrink: 0;
+}
+.cp-hex-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: #131313;
+    border: 1px solid #383838;
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 11px;
+    height: 22px;
+    box-sizing: border-box;
+    padding: 0 7px;
+    text-transform: uppercase;
+}
+.cp-hex-input:focus { outline: none; border-color: var(--accent); }
+.cp-actions { justify-content: flex-end; gap: 6px; margin-top: 4px; }
 
 /* ── Project Structure modal ─────────────────────────────────────────────────── */
 
@@ -4653,24 +5792,48 @@ input.find-input::placeholder { color: #3e3e3e; }
 .chain-btn:not(.locked) .chain-a { transform: translate(-1.6px, -1.2px) rotate(-14deg); }
 .chain-btn:not(.locked) .chain-b { transform: translate(1.6px, 1.2px) rotate(-14deg); }
 
-/* ── Batch Rename overlay ─────────────────────────────────────────────────── */
-
-.brn-hidden { display: none !important; }
-
-.brn-modal {
-    width: calc(100vw - 20px);
-    max-width: 320px;
-    max-height: calc(100vh - 20px);
-    overflow-y: auto;
-    box-sizing: border-box;
+/* ── Batch Comp Settings tabs (Settings / Rename) ─────────────────────────────
+   Same two-tab pattern as Find and Replace's Basic/Advanced (.find-ui-tab*),
+   kept as its own feature-prefixed copy rather than reused directly since
+   it's a different modal — see switchBcsTab in main.js. */
+.bcs-ui-tabs {
+    display: flex;
+    flex-shrink: 0;
+    background: #131313;
+    border-bottom: 1px solid #252525;
+    padding: 5px 8px 0 0;
+    gap: 2px;
 }
 
-.brn-hint {
-    color: #585858;
-    font-size: 10px;
-    white-space: normal;
-    line-height: 1.3;
+.bcs-ui-tab {
+    position: relative;
+    background: #131313;
+    border: 1px solid #252525;
+    border-bottom: 1px solid #252525;
+    border-radius: 5px 5px 0 0;
+    color: #3e3e3e;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 5px 12px 5px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.1s, background 0.1s;
+    margin-bottom: -1px;
 }
+.bcs-ui-tab:hover { color: #666; background: #1a1a1a; }
+.bcs-ui-tab.active {
+    background: #1e1e1e;
+    border-color: #313131;
+    border-bottom-color: #1e1e1e;
+    color: #c8c8c8;
+}
+
+/* .bcs-tab-panel also always carries .settings-body (display:flex; column;
+   gap:8px) — .active needs to restore flex specifically, not block, or its
+   higher specificity (two classes vs .settings-body's one) would silently
+   collapse that stacking back to normal block flow whenever a panel's shown. */
+.bcs-tab-panel { display: none; }
+.bcs-tab-panel.active { display: flex; }
 
 /* ── Comp Export overlay ──────────────────────────────────────────────────── */
 
@@ -4705,18 +5868,24 @@ input.find-input::placeholder { color: #3e3e3e; }
 
 .help-hidden { display: none !important; }
 
+/* Noticeably larger than the old fixed 288px/80vh — still a flex column
+   (header, then .help-body flexing to fill whatever's left) — scales with
+   the panel's own width the same way Batch Comp Settings/Project
+   Structure's modals already do, capped so it doesn't sprawl once the
+   panel is floated wide. */
 .help-modal {
-    width: 288px;
-    max-height: 80vh;
+    width: calc(100vw - 20px);
+    max-width: 476px;
+    max-height: min(90vh, 600px);
     display: flex;
     flex-direction: column;
 }
 
 .help-body {
-    padding: 8px 6px 10px 10px;
+    padding: 10px;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 8px;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #343434 #161616;
@@ -4727,35 +5896,129 @@ input.find-input::placeholder { color: #3e3e3e; }
 .help-body::-webkit-scrollbar-thumb    { background: #343434; border-radius: 3px; }
 .help-body::-webkit-scrollbar-thumb:hover { background: #444; }
 
-.help-section { display: flex; flex-direction: column; gap: 3px; }
+/* Paginated: the grid (search + tiles, page 1) and each group's own detail
+   page (page 2+) all share .help-page, but only one is ever
+   .help-page-active at a time — see _openHelpGroup/_closeHelpGroup in
+   main.js. */
+.help-page { display: none; flex-direction: column; gap: 8px; }
+.help-page.help-page-active { display: flex; }
 
-.help-section-hdr {
+.help-search-row {
     display: flex;
     align-items: center;
     gap: 7px;
-    padding: 7px 9px;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
+    padding: 7px 10px;
+    background: #131313;
+    border: 1px solid #262626;
     border-radius: 8px;
+}
+.help-search-icon { width: 13px; height: 13px; flex-shrink: 0; color: #5e5e5e; }
+.help-search-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: none;
+    border: none;
+    color: #d0d0d0;
+    font: inherit;
+    font-size: 11.5px;
+}
+.help-search-input:focus { outline: none; }
+.help-search-input::placeholder { color: #4a4a4a; }
+
+.help-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+}
+.help-grid-hidden { display: none; }
+
+.help-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 14px 6px;
+    background: #161616;
+    border: 1px solid #262626;
+    border-radius: 10px;
+    color: #a0a0a0;
     cursor: pointer;
-    user-select: none;
-    transition: background 0.05s;
+    text-align: center;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
 }
-.help-section-hdr:hover { background: #212121; }
-
-.help-sec-icon   { width: 13px; height: 13px; flex-shrink: 0; }
-
-.help-sec-title  { font-size: 11.5px; font-weight: 600; color: #c8c8c8; flex: 1; }
-
-.help-chev {
-    width: 10px; height: 10px;
-    color: #484848;
-    transition: transform 0.15s ease;
-    flex-shrink: 0;
+/* No hover transform on the tile itself — scaling the icon instead avoids
+   a Chromium/CEF compositing glitch already seen on .tools-grid-btn's own
+   hover (see its own comment) when a scaled tile's box overlaps the
+   scrollbar's rendering layer. */
+.help-tile:hover { background: #1e1e1e; border-color: #333; color: #e0e0e0; }
+.help-tile-icon { width: 22px; height: 22px; flex-shrink: 0; transition: transform 0.1s ease; }
+.help-tile:hover .help-tile-icon { transform: scale(1.12); }
+.help-tile-title {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.25;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.help-section.collapsed .help-chev  { transform: rotate(-90deg); }
-.help-section.collapsed .help-items { display: none; }
+.help-search-results { display: none; flex-direction: column; gap: 5px; }
+.help-search-results.visible { display: flex; }
+.help-result {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 7px 9px;
+    background: #131313;
+    border: 1px solid #222;
+    border-radius: 7px;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.05s linear, border-color 0.05s linear;
+}
+.help-result:hover { background: #1a1a1a; border-color: #2e2e2e; }
+.help-result-group {
+    font-size: 9px;
+    color: #5e5e5e;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.help-result-key { font-size: 11px; font-weight: 600; color: #b8b8b8; }
+.help-result-desc { font-size: 10.5px; color: #5e5e5e; line-height: 1.4; }
+.help-result-empty { padding: 10px 2px; color: #4a4a4a; font-size: 11px; text-align: center; }
+
+/* Detail page (page 2+) — one specific group, always fully expanded
+   (nothing left to collapse now that only one page is ever shown). */
+.help-back-btn {
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 9px 5px 7px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    color: #6e6e6e;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.05s linear, color 0.05s linear;
+}
+.help-back-btn:hover { background: #1a1a1a; color: #c8c8c8; }
+.help-back-btn svg { width: 9px; height: 9px; flex-shrink: 0; }
+
+.help-detail-hdr {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 2px 4px;
+}
+.help-detail-title-text { font-size: 13px; font-weight: 600; color: #d8d8d8; }
+
+.help-detail-hdr .help-sec-icon { width: 15px; height: 15px; flex-shrink: 0; }
 
 .help-items { display: flex; flex-direction: column; gap: 2px; padding: 0 2px; }
 
@@ -4774,14 +6037,6 @@ input.find-input::placeholder { color: #3e3e3e; }
 .help-desc { font-size: 10.5px; color: #5e5e5e; line-height: 1.45; }
 
 .help-desc em { font-style: normal; color: #7a7a7a; }
-
-.help-beta {
-    font-size: 9px;
-    color: #484848;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-weight: 400;
-}
 
 .help-key-row {
     display: flex;
@@ -4989,6 +6244,69 @@ input[type="range"].scale-slider::-webkit-slider-thumb:hover {
 .fav-ctx-item svg { width: 14px; height: 14px; flex-shrink: 0; pointer-events: none; }
 .fav-ctx-item.fav-active { color: #e8c140; }
 .fav-ctx-item.fav-active:hover { color: #f0d060; background: #2c2c2c; }
+
+/* ── Shape selection mode (Path/Fill/Stroke) — AE-native-toolbar style ───────── */
+/* Small corner triangle — the same "this button has more options via a
+   flyout" affordance AE's own grouped tools (Rectangle/Ellipse/Polygon,
+   etc.) use, so this reads as the same kind of control rather than a
+   plain one-shot button. Painted with a border trick (not a rotated
+   square) so it stays a crisp triangle at any size. */
+.shape-sel-btn { position: relative; }
+.shape-sel-btn::after {
+    content: '';
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 0 0 5px 5px;
+    border-color: transparent transparent currentColor transparent;
+    opacity: 0.55;
+    pointer-events: none;
+}
+/* The flyout itself — .shape-sel-ctx-row holds one icon+label button per
+   mode, stacked vertically below the anchor button (or above it, if there
+   isn't room — see _openShapeSelCtx in main.js). Sits inside a plain
+   .fav-ctx shell, reused as-is since that's already a generic dropdown
+   container with nothing favorite-specific about its own styling.
+   align-items defaults to stretch here (no override), which is what
+   makes every row match the width of the widest label automatically
+   without needing to size them explicitly. */
+.shape-sel-ctx-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.shape-sel-ctx-icon-btn {
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: #a0a0a0;
+    cursor: pointer;
+    padding: 0 10px 0 6px;
+    white-space: nowrap;
+    transition: background 0.05s, color 0.05s, border-color 0.05s;
+}
+.shape-sel-ctx-icon-btn:hover { background: #2c2c2c; color: #e0e0e0; }
+.shape-sel-ctx-icon-btn.active { background: var(--bg-btn-act); color: #fff; border-color: var(--accent); }
+.shape-sel-ctx-icon-btn svg { width: 18px; height: 18px; flex-shrink: 0; pointer-events: none; }
+.shape-sel-ctx-lbl { font-size: 11px; }
+/* Toggled by _openShapeSelCtx once it measures that the labeled layout
+   above wouldn't actually fit the panel's own width — icon-only,
+   centered in a fixed square instead, same shape as the flyout's very
+   first version. */
+.shape-sel-ctx.compact .shape-sel-ctx-icon-btn {
+    width: 30px;
+    justify-content: center;
+    padding: 0;
+}
+.shape-sel-ctx.compact .shape-sel-ctx-lbl { display: none; }
 
 /* ── Star button inside existing picker popups ──────────────────────────────── */
 

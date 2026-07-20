@@ -151,6 +151,26 @@ function fromComp(layer, compPoint) {
     return [rx / (scale[0] / 100) + anchor[0], ry / (scale[1] / 100) + anchor[1]];
 }
 
+// The exact inverse of fromComp above — a point in `layer`'s own local
+// space, walked back UP through its own transform and then its parent
+// chain, into true comp space. (AE's ExtendScript Layer object has no
+// toComp/fromComp of its own — those only exist inside expressions — and
+// LST.toComp's offset param (see LST.js) does `offset -= value` on plain
+// arrays, which silently NaNs instead of subtracting componentwise, so
+// this stays independent of it rather than risk the same bug.)
+function toComp(layer, localPoint) {
+    var pos = layer.position.value;
+    var anchor = layer.anchorPoint.value;
+    var scale = layer.scale.value;
+    var rotation = layer.rotation.value * (Math.PI / 180);
+    var ux = (localPoint[0] - anchor[0]) * (scale[0] / 100);
+    var uy = (localPoint[1] - anchor[1]) * (scale[1] / 100);
+    var cos = Math.cos(rotation), sin = Math.sin(rotation);
+    var rx = cos * ux - sin * uy, ry = sin * ux + cos * uy;
+    var parentPoint = [rx + pos[0], ry + pos[1]];
+    return layer.parent ? toComp(layer.parent, parentPoint) : parentPoint;
+}
+
 // Linear (rotation+scale) part of what fromComp applies at one ancestor level —
 // converts a delta expressed in `ancestor`'s PARENT space into a delta expressed
 // in `ancestor`'s OWN local space. For a delta (as opposed to a point), the
@@ -237,60 +257,1757 @@ function pasteAnchor(layer, newAnchor) {
     } catch (err) { alert("Anchor Paste ERROR:\n" + err.toString()); }
 }
 
-function derigLayers(comp, targetLayers) {
-    function readExpr(layer) {
-        try { var p = layer.position; if (p && p.expressionEnabled) return p.expression || ""; } catch (e) {}
-        try { var xf = layer.position.getSeparationFollower(0); if (xf && xf.expressionEnabled) return xf.expression || ""; } catch (e) {}
-        return "";
+// ── KEYFRAME ALIGN ────────────────────────────────────────────────────────────
+// Horizontal align (left/centerX/right) redirects here whenever keyframes are
+// selected on a selected layer's properties, instead of moving layer position —
+// there's no sensible "vertical align" for a 1D time axis, so top/centerY/bottom
+// always fall through to the normal position-align path below.
+
+// Collects every selected keyframe, grouped by property, across all selected
+// layers — {prop, indices}[]. Shared by the align action and the lightweight
+// poll the panel uses to swap the button icons live.
+function lineup_collectSelectedKeyGroups(comp) {
+    var groups = [];
+    var layers = comp.selectedLayers;
+    for (var i = 0; i < layers.length; i++) {
+        var sel = layers[i].selectedProperties;
+        if (!sel) continue;
+        for (var j = 0; j < sel.length; j++) {
+            var prop = sel[j];
+            if (!(prop instanceof Property) || prop.numKeys < 1) continue;
+            var indices = [];
+            for (var k = 1; k <= prop.numKeys; k++) {
+                if (prop.keySelected(k)) indices.push(k);
+            }
+            if (indices.length > 0) groups.push({ prop: prop, indices: indices });
+        }
     }
-    function clearExpr(layer) {
-        try {
-            if (layer.position.dimensionsSeparated) collapsePosition(layer);
-            var p = layer.position;
-            if (p && p.expressionEnabled) { p.expressionEnabled = false; p.expression = ""; }
-        } catch (e) {}
+    return groups;
+}
+
+// Cheap poll target for the panel: "1" as soon as any keyframe is selected.
+function lineup_hasSelectedKeyframes() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "0";
+        return lineup_collectSelectedKeyGroups(comp).length > 0 ? "1" : "0";
+    } catch (err) {
+        return "0";
     }
-    var rigNames = [];
-    for (var i = 0; i < targetLayers.length; i++) {
-        var expr = readExpr(targetLayers[i]);
-        if (expr) {
-            var marker = 'thisComp.layer("', si = expr.indexOf(marker);
-            if (si !== -1) {
-                si += marker.length;
-                var ei = expr.indexOf('"', si);
-                if (ei !== -1) {
-                    var rn = expr.substring(si, ei);
-                    if (rn.indexOf("Path Rig") === 0) {
-                        var known = false;
-                        for (var k = 0; k < rigNames.length; k++) { if (rigNames[k] === rn) { known = true; break; } }
-                        if (!known) rigNames.push(rn);
-                    }
-                }
+}
+
+// Moves one keyframe to newTime, preserving value/interpolation/ease/spatial
+// tangents as best it can. AE has no "move this keyframe's time" call, so this
+// removes and re-adds it — best-effort restoration is wrapped per-field so a
+// failure to restore a cosmetic (ease/tangent) detail doesn't lose the move.
+function lineup_retimeKey(prop, keyIndex, newTime) {
+    if (prop.keyTime(keyIndex) === newTime) return;
+    try { if (prop.keyRoving(keyIndex)) return; } catch (e) {}
+
+    var value   = prop.keyValue(keyIndex);
+    var inType  = prop.keyInInterpolationType(keyIndex);
+    var outType = prop.keyOutInterpolationType(keyIndex);
+    // Ease/auto-bezier/continuous only mean anything (and are only readable
+    // as meaningful) when BOTH sides are Bezier — restoring them on a
+    // Linear/Hold key is what was silently flipping it back to Bezier, since
+    // setTemporalEaseAtKey only makes sense for — and forces — a Bezier key.
+    var bothBezier = (inType === KeyframeInterpolationType.BEZIER && outType === KeyframeInterpolationType.BEZIER);
+    var inEase = null, outEase = null, wasAutoBezier = false, wasContinuous = false;
+    var inTan = null, outTan = null, isSpatial = false, wasSpatialContinuous = false, wasSpatialAutoBezier = false;
+
+    if (bothBezier) {
+        try { inEase  = prop.keyInTemporalEase(keyIndex); }  catch (e) {}
+        try { outEase = prop.keyOutTemporalEase(keyIndex); } catch (e) {}
+        try { wasAutoBezier = prop.keyTemporalAutoBezier(keyIndex); } catch (e) {}
+        try { wasContinuous = prop.keyTemporalContinuous(keyIndex); }  catch (e) {}
+    }
+    try {
+        if (prop.isSpatial) {
+            isSpatial = true;
+            inTan  = prop.keyInSpatialTangent(keyIndex);
+            outTan = prop.keyOutSpatialTangent(keyIndex);
+            try { wasSpatialContinuous = prop.keySpatialContinuous(keyIndex); } catch (e) {}
+            if (wasSpatialContinuous) { try { wasSpatialAutoBezier = prop.keySpatialAutoBezier(keyIndex); } catch (e) {} }
+        }
+    } catch (e) { isSpatial = false; }
+
+    prop.removeKey(keyIndex);
+    prop.setValueAtTime(newTime, value);
+    var ni = prop.nearestKeyIndex(newTime);
+
+    try { prop.setInterpolationTypeAtKey(ni, inType, outType); } catch (e) {}
+
+    if (bothBezier) {
+        if (wasAutoBezier) {
+            // Auto-Bezier computes its own ease from the surrounding keys —
+            // just flip the flag back on rather than fighting it with the
+            // stale explicit values captured above.
+            try { prop.setTemporalAutoBezierAtKey(ni, true); } catch (e) {}
+        } else if (inEase && outEase) {
+            try { prop.setTemporalEaseAtKey(ni, inEase, outEase); } catch (e) {}
+            try { prop.setTemporalContinuousAtKey(ni, wasContinuous); } catch (e) {}
+        }
+    }
+
+    if (isSpatial) {
+        try { prop.setSpatialTangentsAtKey(ni, inTan, outTan); } catch (e) {}
+        try { prop.setSpatialContinuousAtKey(ni, wasSpatialContinuous); } catch (e) {}
+        if (wasSpatialContinuous && wasSpatialAutoBezier) {
+            try { prop.setSpatialAutoBezierAtKey(ni, true); } catch (e) {}
+        }
+    }
+    // Not reselected here — removeKey/setValueAtTime on a LATER key of this
+    // same property can clear selection on keys already processed, so
+    // reselection happens in one final pass after every key has moved (see
+    // lineup_alignKeyframes below) instead of per-key here.
+}
+
+function lineup_roundToFrame(t, frameDuration) {
+    return Math.round(t / frameDuration) * frameDuration;
+}
+
+// alignIdx here is always 0 (left), 1 (centerX) or 2 (right).
+// Each property's own selected keys form a bounding box [earliest, latest]
+// (a single selected key is just a zero-width box). Left/Center/Right moves
+// that box's left/center/right edge to a shared target, then shifts every
+// key in the box by the SAME delta — a rigid translation, so relative
+// timing and easing between the keys is untouched no matter how many are
+// selected on that property. The target itself is shared across every
+// property being aligned (mirroring how position-align shares one anchor
+// across layers): Selection mode uses the earliest/playhead/latest time
+// found anywhere in the whole selection; Composition mode uses the
+// playhead/comp's center frame/comp's last frame.
+function lineup_alignKeyframes(alignIdx, alignToSelection, comp, groups) {
+    try {
+        var allTimes = [];
+        for (var g = 0; g < groups.length; g++) {
+            var grp = groups[g];
+            for (var i = 0; i < grp.indices.length; i++) allTimes.push(grp.prop.keyTime(grp.indices[i]));
+        }
+        if (allTimes.length === 0) return "ERROR: No keyframes selected";
+
+        var target;
+        if (alignIdx === 0) {
+            target = alignToSelection ? Math.min.apply(Math, allTimes) : comp.time;
+        } else if (alignIdx === 2) {
+            target = alignToSelection ? Math.max.apply(Math, allTimes) : (comp.duration - comp.frameDuration);
+        } else {
+            target = alignToSelection ? comp.time : lineup_roundToFrame(comp.duration / 2, comp.frameDuration);
+        }
+
+        app.beginUndoGroup("Align Keyframes");
+        var newTimesByGroup = [];
+        for (var g = 0; g < groups.length; g++) {
+            var prop = groups[g].prop;
+            var origTimes = [];
+            for (var i = 0; i < groups[g].indices.length; i++) origTimes.push(prop.keyTime(groups[g].indices[i]));
+
+            var boxMin = Math.min.apply(Math, origTimes);
+            var boxMax = Math.max.apply(Math, origTimes);
+            var delta;
+            if (alignIdx === 0)      delta = target - boxMin;
+            else if (alignIdx === 2) delta = target - boxMax;
+            else                     delta = target - (boxMin + boxMax) / 2;
+
+            // Each key ends up at its own distinct new time (a rigid shift,
+            // not a collapse onto one point), so — unlike a collapse — no
+            // two originally-selected keys on this property can land on the
+            // same time and collide; re-locating by ORIGINAL time via
+            // nearestKeyIndex right before moving each one is still what
+            // keeps this correct as sibling moves shift indices around.
+            var newTimes = [];
+            for (var i = 0; i < origTimes.length; i++) {
+                var nt = origTimes[i] + delta;
+                newTimes.push(nt);
+                lineup_retimeKey(prop, prop.nearestKeyIndex(origTimes[i]), nt);
+            }
+            newTimesByGroup.push(newTimes);
+        }
+        // Reselect every shifted key at its own new time — the whole box
+        // moved together rather than collapsing onto one point, so (unlike
+        // before) there can be several surviving keys per property to
+        // reselect, not just one. Done last since AE can clear a property's
+        // keyframe selection as a side effect of the removeKey/
+        // setValueAtTime calls above. Deliberately does not set
+        // prop.selected — that selects the whole property, which in turn
+        // marks every keyframe on it selected, not just the moved ones.
+        for (var g = 0; g < groups.length; g++) {
+            var prop = groups[g].prop;
+            var newTimes = newTimesByGroup[g];
+            for (var i = 0; i < newTimes.length; i++) {
+                try { prop.setSelectedAtKey(prop.nearestKeyIndex(newTimes[i]), true); } catch (e) {}
             }
         }
-        clearExpr(targetLayers[i]);
-        try {
-            var fxGrp = targetLayers[i].property("ADBE Effect Parade");
-            if (fxGrp) {
-                for (var j = fxGrp.numProperties; j >= 1; j--) {
-                    try { if (fxGrp.property(j).name === "Progress") { fxGrp.property(j).remove(); break; } } catch (e) {}
-                }
-            }
-        } catch (e) {}
+        app.endUndoGroup();
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
     }
-    for (var r = 0; r < rigNames.length; r++) {
-        var rn = rigNames[r], stillUsed = false;
-        for (var li = 1; li <= comp.numLayers; li++) {
+}
+
+// ── SHAPE ALIGN ───────────────────────────────────────────────────────────────
+// All 6 buttons redirect here whenever a shape-layer Contents item (a Group,
+// or a Rect/Ellipse/Star/Path directly) is selected on a selected layer —
+// unlike keyframes, shapes have real width/height, so vertical align applies
+// same as horizontal. Each item's own bounding box lives in whatever
+// coordinate space its immediate parent (a nested Group, or the layer itself)
+// defines, so getting it into comp space — and an align delta back down to
+// that item's own position — means walking the FULL chain: every ancestor
+// Group's own transform (position/anchor/scale/skew/rotation), then the
+// layer's own transform, then the layer's parent chain (reusing
+// compDeltaToPositionDelta/oneLevelDelta/LST.toComp for that last stretch,
+// same as plain layer align already does).
+// Caveat: the 2D-only math here (no camera-perspective correction, unlike
+// getLayerCompBounds' 3D refinement loop) assumes the layer itself isn't
+// 3D-tilted — fine for the vast majority of (2D) shape layers.
+
+var LINEUP_SHAPE_MATCHNAMES = {
+    "ADBE Vector Group": 1,
+    "ADBE Vector Shape - Rect": 1,
+    "ADBE Vector Shape - Ellipse": 1,
+    "ADBE Vector Shape - Star": 1,
+    "ADBE Vector Shape - Group": 1 // Path
+};
+
+function lineup_collectSelectedShapeItems(comp) {
+    var out = [];
+    var layers = comp.selectedLayers;
+    for (var i = 0; i < layers.length; i++) {
+        var sel = layers[i].selectedProperties;
+        if (!sel) continue;
+        for (var j = 0; j < sel.length; j++) {
+            var p = sel[j], mn;
+            try { mn = p.matchName; } catch (e) { continue; }
+            if (LINEUP_SHAPE_MATCHNAMES[mn]) out.push({ layer: layers[i], item: p });
+        }
+    }
+    return out;
+}
+
+function lineup_hasSelectedShapeItems() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "0";
+        return lineup_collectSelectedShapeItems(comp).length > 0 ? "1" : "0";
+    } catch (err) {
+        return "0";
+    }
+}
+
+// Cheap poll target for the Grid Distribute picker — lets it guess a
+// cols x rows shape sized to how many layers are actually selected instead
+// of just repeating whatever was picked last time.
+function lineup_getSelectedLayerCount() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "0";
+        return String(comp.selectedLayers.length);
+    } catch (err) {
+        return "0";
+    }
+}
+
+// Walks from a shape item up to (but not including) the layer, collecting
+// every ancestor "ADBE Vector Group" it's nested inside — immediate parent
+// group first, outward. Skips over the plain "ADBE Vectors Group"/"ADBE Root
+// Vectors Group" content-list wrappers that sit between groups (they carry
+// no transform of their own).
+function lineup_ancestorVectorGroups(item) {
+    var groups = [];
+    var cur = item;
+    while (true) {
+        var parent;
+        try { parent = cur.propertyGroup(1); } catch (e) { break; }
+        if (!parent) break;
+        var mn;
+        try { mn = parent.matchName; } catch (e) { mn = null; }
+        if (mn === "ADBE Vector Group") groups.push(parent);
+        else if (mn !== "ADBE Vectors Group" && mn !== "ADBE Root Vectors Group") break;
+        cur = parent;
+        if (mn === "ADBE Root Vectors Group") break; // next level up is the layer itself
+    }
+    return groups;
+}
+
+// Forward point transform through one Group's own transform (child-local ->
+// this group's parent space): translate to anchor, scale, skew, rotate,
+// translate to position — the same order AE's own Group Transform UI lists
+// its properties in.
+function lineup_vecTransformPoint(tg, x, y) {
+    var anchor = tg.property("ADBE Vector Anchor").value;
+    var position = tg.property("ADBE Vector Position").value;
+    var scale = tg.property("ADBE Vector Scale").value;
+    var skew = tg.property("ADBE Vector Skew").value;
+    var skewAxis = tg.property("ADBE Vector Skew Axis").value;
+    var rotation = tg.property("ADBE Vector Rotation").value;
+
+    var px = x - anchor[0], py = y - anchor[1];
+    px = px * (scale[0] / 100); py = py * (scale[1] / 100);
+    if (skew) {
+        var axisRad = skewAxis * Math.PI / 180;
+        var ca = Math.cos(axisRad), sa = Math.sin(axisRad);
+        var xr =  ca * px + sa * py;
+        var yr = -sa * px + ca * py;
+        xr = xr + yr * Math.tan(skew * Math.PI / 180);
+        px = ca * xr - sa * yr;
+        py = sa * xr + ca * yr;
+    }
+    var rad = rotation * Math.PI / 180;
+    var cos = Math.cos(rad), sin = Math.sin(rad);
+    var rx = cos * px - sin * py, ry = sin * px + cos * py;
+    return [rx + position[0], ry + position[1]];
+}
+
+// Inverse LINEAR map only (no anchor/position — translation is irrelevant to
+// how a delta transforms) — the delta-space counterpart of
+// lineup_vecTransformPoint, same relationship oneLevelDelta has to LST.toComp.
+function lineup_vecGroupInverseDelta(tg, dx, dy) {
+    var scale = tg.property("ADBE Vector Scale").value;
+    var skew = tg.property("ADBE Vector Skew").value;
+    var skewAxis = tg.property("ADBE Vector Skew Axis").value;
+    var rotation = tg.property("ADBE Vector Rotation").value;
+
+    var rad = -rotation * Math.PI / 180;
+    var cos = Math.cos(rad), sin = Math.sin(rad);
+    var x = cos * dx - sin * dy, y = sin * dx + cos * dy;
+
+    if (skew) {
+        var axisRad = skewAxis * Math.PI / 180;
+        var ca = Math.cos(axisRad), sa = Math.sin(axisRad);
+        var xr =  ca * x + sa * y;
+        var yr = -sa * x + ca * y;
+        xr = xr - yr * Math.tan(skew * Math.PI / 180);
+        x = ca * xr - sa * yr;
+        y = sa * xr + ca * yr;
+    }
+    return [x / (scale[0] / 100 || 1), y / (scale[1] / 100 || 1)];
+}
+
+function lineup_transformBBoxThroughGroup(tg, box) {
+    var c1 = lineup_vecTransformPoint(tg, box.left,  box.top);
+    var c2 = lineup_vecTransformPoint(tg, box.right, box.top);
+    var c3 = lineup_vecTransformPoint(tg, box.right, box.bottom);
+    var c4 = lineup_vecTransformPoint(tg, box.left,  box.bottom);
+    var xs = [c1[0], c2[0], c3[0], c4[0]], ys = [c1[1], c2[1], c3[1], c4[1]];
+    return {
+        left: Math.min.apply(null, xs), top: Math.min.apply(null, ys),
+        right: Math.max.apply(null, xs), bottom: Math.max.apply(null, ys)
+    };
+}
+
+// Bounding box of one Contents item, in whatever space its immediate parent
+// (a Group's own Contents list, or the layer's root Contents) defines — a
+// Group's own transform is already applied here (via
+// lineup_transformBBoxThroughGroup), so the result is ready to union with
+// sibling items in that same parent space.
+function lineup_shapeItemBBoxInParentSpace(item) {
+    var mn = item.matchName;
+    if (mn === "ADBE Vector Shape - Rect" || mn === "ADBE Vector Shape - Ellipse") {
+        var posName = (mn === "ADBE Vector Shape - Rect") ? "ADBE Vector Rect Position" : "ADBE Vector Ellipse Position";
+        var sizeName = (mn === "ADBE Vector Shape - Rect") ? "ADBE Vector Rect Size" : "ADBE Vector Ellipse Size";
+        var pos = item.property(posName).value, size = item.property(sizeName).value;
+        return { left: pos[0]-size[0]/2, top: pos[1]-size[1]/2, right: pos[0]+size[0]/2, bottom: pos[1]+size[1]/2 };
+    }
+    if (mn === "ADBE Vector Shape - Star") {
+        // Treated as its bounding circle (outer radius) rather than the exact
+        // rotated star/polygon envelope — a safe superset, and exact for the
+        // common case of Type = Polygon or a symmetric star.
+        var pos = item.property("ADBE Vector Star Position").value;
+        var r = item.property("ADBE Vector Star Outer Radius").value;
+        return { left: pos[0]-r, top: pos[1]-r, right: pos[0]+r, bottom: pos[1]+r };
+    }
+    if (mn === "ADBE Vector Shape - Group") { // Path
+        var shapeVal = item.property("ADBE Vector Shape").value;
+        var verts = shapeVal.vertices, inT = shapeVal.inTangents, outT = shapeVal.outTangents;
+        if (!verts || verts.length === 0) return null;
+        var lf=Infinity, tp=Infinity, rt=-Infinity, bt=-Infinity;
+        for (var v = 0; v < verts.length; v++) {
+            // Tangent handles can pull a bezier segment's curve outside the
+            // vertex hull — including vertex+tangent as candidate points
+            // keeps this a safe (if not perfectly tight) superset.
+            var cands = [verts[v], [verts[v][0]+inT[v][0], verts[v][1]+inT[v][1]], [verts[v][0]+outT[v][0], verts[v][1]+outT[v][1]]];
+            for (var c = 0; c < cands.length; c++) {
+                var px = cands[c][0], py = cands[c][1];
+                if (px<lf) lf=px; if (py<tp) tp=py; if (px>rt) rt=px; if (py>bt) bt=py;
+            }
+        }
+        return { left: lf, top: tp, right: rt, bottom: bt };
+    }
+    if (mn === "ADBE Vector Group") {
+        var childBox = lineup_shapeGroupContentsBBox(item.property("ADBE Vectors Group"));
+        if (!childBox) return null;
+        return lineup_transformBBoxThroughGroup(item.property("ADBE Vector Transform Group"), childBox);
+    }
+    return null;
+}
+
+function lineup_shapeGroupContentsBBox(contents) {
+    var lf=Infinity, tp=Infinity, rt=-Infinity, bt=-Infinity, found=false;
+    for (var i = 1; i <= contents.numProperties; i++) {
+        var r;
+        try { r = lineup_shapeItemBBoxInParentSpace(contents.property(i)); } catch (e) { r = null; }
+        if (!r) continue;
+        found = true;
+        if (r.left<lf) lf=r.left; if (r.top<tp) tp=r.top;
+        if (r.right>rt) rt=r.right; if (r.bottom>bt) bt=r.bottom;
+    }
+    return found ? { left:lf, top:tp, right:rt, bottom:bt } : null;
+}
+
+// Own-parent-space bbox, walked outward through every ancestor Group's own
+// transform, landing in the same layer-content space sourceRectAtTime/masks
+// use — from there LST.toComp (below) does the rest, same as layer align.
+function lineup_shapeItemBBoxInLayerSpace(item) {
+    var box = lineup_shapeItemBBoxInParentSpace(item);
+    if (!box) return null;
+    var ancestors = lineup_ancestorVectorGroups(item);
+    for (var i = 0; i < ancestors.length; i++) {
+        box = lineup_transformBBoxThroughGroup(ancestors[i].property("ADBE Vector Transform Group"), box);
+    }
+    return box;
+}
+
+function lineup_shapeItemCompBounds(layer, item) {
+    var r = lineup_shapeItemBBoxInLayerSpace(item);
+    if (!r) return null;
+    var p1 = LST.toComp(layer, [r.left,  r.top,    0]);
+    var p2 = LST.toComp(layer, [r.right, r.top,    0]);
+    var p3 = LST.toComp(layer, [r.right, r.bottom, 0]);
+    var p4 = LST.toComp(layer, [r.left,  r.bottom, 0]);
+    var xs = [p1[0], p2[0], p3[0], p4[0]], ys = [p1[1], p2[1], p3[1], p4[1]];
+    return {
+        left: Math.min.apply(null, xs), right: Math.max.apply(null, xs),
+        top: Math.min.apply(null, ys), bottom: Math.max.apply(null, ys),
+        width: Math.max.apply(null, xs) - Math.min.apply(null, xs),
+        height: Math.max.apply(null, ys) - Math.min.apply(null, ys)
+    };
+}
+
+// Comp delta -> the delta to add to this shape item's own position, walking
+// the same chain as lineup_shapeItemCompBounds in reverse: ancestor-layer
+// chain, the layer's own transform, then every ancestor Group's own
+// transform (outermost group first, mirroring compDeltaToPositionDelta's
+// own top-down ancestor walk).
+function lineup_compDeltaToShapeItemDelta(layer, item, dCompX, dCompY) {
+    var d = compDeltaToPositionDelta(layer, dCompX, dCompY);
+    d = oneLevelDelta(layer, d[0], d[1]);
+    var ancestors = lineup_ancestorVectorGroups(item);
+    for (var i = ancestors.length - 1; i >= 0; i--) {
+        d = lineup_vecGroupInverseDelta(ancestors[i].property("ADBE Vector Transform Group"), d[0], d[1]);
+    }
+    return d;
+}
+
+function lineup_applyShapeVec2Delta(prop, dx, dy, offsetKeys, t) {
+    if (offsetKeys && prop.numKeys > 0) {
+        for (var k = 1; k <= prop.numKeys; k++) {
+            var v = prop.keyValue(k);
+            prop.setValueAtKey(k, [v[0]+dx, v[1]+dy]);
+        }
+        return;
+    }
+    var v = prop.value, nv = [v[0]+dx, v[1]+dy];
+    if (prop.numKeys > 0) prop.setValueAtTime(t, nv); else prop.setValue(nv);
+}
+
+function lineup_applyShapePathDelta(pathProp, dx, dy, offsetKeys, t) {
+    function shifted(shapeVal) {
+        var s = new Shape();
+        var verts = [];
+        for (var i = 0; i < shapeVal.vertices.length; i++) verts.push([shapeVal.vertices[i][0]+dx, shapeVal.vertices[i][1]+dy]);
+        s.vertices = verts;
+        s.inTangents = shapeVal.inTangents;   // relative offsets, untouched by a rigid shift
+        s.outTangents = shapeVal.outTangents;
+        s.closed = shapeVal.closed;
+        return s;
+    }
+    if (offsetKeys && pathProp.numKeys > 0) {
+        for (var k = 1; k <= pathProp.numKeys; k++) pathProp.setValueAtKey(k, shifted(pathProp.keyValue(k)));
+        return;
+    }
+    var nv = shifted(pathProp.value);
+    if (pathProp.numKeys > 0) pathProp.setValueAtTime(t, nv); else pathProp.setValue(nv);
+}
+
+function lineup_shiftShapeItem(item, dx, dy, offsetKeys, t) {
+    var mn = item.matchName;
+    if (mn === "ADBE Vector Group") {
+        lineup_applyShapeVec2Delta(item.property("ADBE Vector Transform Group").property("ADBE Vector Position"), dx, dy, offsetKeys, t);
+    } else if (mn === "ADBE Vector Shape - Rect") {
+        lineup_applyShapeVec2Delta(item.property("ADBE Vector Rect Position"), dx, dy, offsetKeys, t);
+    } else if (mn === "ADBE Vector Shape - Ellipse") {
+        lineup_applyShapeVec2Delta(item.property("ADBE Vector Ellipse Position"), dx, dy, offsetKeys, t);
+    } else if (mn === "ADBE Vector Shape - Star") {
+        lineup_applyShapeVec2Delta(item.property("ADBE Vector Star Position"), dx, dy, offsetKeys, t);
+    } else if (mn === "ADBE Vector Shape - Group") {
+        lineup_applyShapePathDelta(item.property("ADBE Vector Shape"), dx, dy, offsetKeys, t);
+    }
+}
+
+// alignIdx: 0=left 1=centerX 2=right 3=top 4=centerY 5=bottom — mirrors
+// lineup_align's own switch below exactly, just against shape bounds instead
+// of layer bounds.
+function lineup_alignShapes(alignIdx, alignToSelection, margin, usePercent, offsetKeys, comp, shapeItems) {
+    try {
+        var modes = ["left","centerX","right","top","centerY","bottom"];
+        var labels = ["Align Left","Center Horizontal","Align Right","Align Top","Center Vertical","Align Bottom"];
+        var mode = modes[alignIdx];
+
+        var selRect = null;
+        if (alignToSelection) {
+            var lf=Infinity, tp=Infinity, rt=-Infinity, bt=-Infinity;
+            for (var i = 0; i < shapeItems.length; i++) {
+                var r = lineup_shapeItemCompBounds(shapeItems[i].layer, shapeItems[i].item);
+                if (!r) continue;
+                if (r.left<lf) lf=r.left; if (r.top<tp) tp=r.top;
+                if (r.right>rt) rt=r.right; if (r.bottom>bt) bt=r.bottom;
+            }
+            selRect = { left:lf, top:tp, right:rt, bottom:bt, width:rt-lf, height:bt-tp };
+        }
+
+        app.beginUndoGroup("Align Shapes: " + labels[alignIdx]);
+        var t = comp.time;
+        for (var i = 0; i < shapeItems.length; i++) {
+            var layer = shapeItems[i].layer, item = shapeItems[i].item;
+            var rect = lineup_shapeItemCompBounds(layer, item);
+            if (!rect) continue;
+            var exr = selRect;
+            if (exr) {
+                rect = { left:rect.left-exr.left, right:rect.right-exr.left,
+                         top:rect.top-exr.top, bottom:rect.bottom-exr.top,
+                         width:rect.width, height:rect.height };
+            }
+            var mH = margin, mW = margin;
+            if (usePercent) { mH = (margin/100)*comp.height; mW = (margin/100)*comp.width; }
+            var cw = exr ? exr.width  : comp.width;
+            var ch = exr ? exr.height : comp.height;
+
+            var dCompX = 0, dCompY = 0;
+            switch (mode) {
+                case "left":    dCompX = mW - rect.left;                       break;
+                case "right":   dCompX = (cw-mW) - rect.right;                 break;
+                case "top":     dCompY = mH - rect.top;                        break;
+                case "bottom":  dCompY = (ch-mH) - rect.bottom;               break;
+                case "centerX": dCompX = (cw/2) - (rect.left + rect.width/2);  break;
+                case "centerY": dCompY = (ch/2) - (rect.top  + rect.height/2); break;
+            }
+            var d = lineup_compDeltaToShapeItemDelta(layer, item, dCompX, dCompY);
+            lineup_shiftShapeItem(item, d[0], d[1], offsetKeys, t);
+        }
+        app.endUndoGroup();
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// ── SHAPE TOOLS ───────────────────────────────────────────────────────────────
+
+// Command 2536, "RevealinTimeline" — a numeric executeCommand id (stable
+// across UI languages, unlike a findMenuCommandId string lookup) that
+// expands/scrolls the Timeline to whatever's currently selected. There is
+// no scriptable "expanded" property on a layer or property group at all
+// (confirmed against the AE scripting community — selecting a property
+// via .selected=true does NOT by itself twirl its ancestor groups open in
+// the Timeline panel), so this is the only way to actually satisfy
+// "expand the layer so you can see what's selected" rather than just
+// leaving the selection correct-but-invisible. Wrapped in its own
+// try/catch since executeCommand can throw if the Timeline isn't the
+// relevant frontmost context for some reason — that's not worth failing
+// the whole selection over.
+function lineup_revealInTimeline() {
+    try { app.executeCommand(2536); } catch (e) {}
+}
+
+// Clears whatever's currently selected on each of these layers' own
+// property tree before selecting something new. .selected=true is purely
+// additive — none of the three selection modes below cleared anything
+// previously selected on their own, so e.g. selecting Fills right after
+// selecting Path just added the Fill color to that still-selected Path
+// instead of replacing it. Each mode is meant to be exclusive (only ITS
+// OWN target properties end up selected), hence clearing first here.
+// Snapshotted into a plain array before deselecting since
+// selectedProperties may be a live view that a mid-loop selected=false
+// could otherwise shift under our own iteration.
+function lineup_deselectAllProps(layers) {
+    for (var i = 0; i < layers.length; i++) {
+        var sel = layers[i].selectedProperties;
+        if (!sel) continue;
+        var copy = [];
+        for (var j = 0; j < sel.length; j++) copy.push(sel[j]);
+        for (var j = 0; j < copy.length; j++) {
+            try { copy[j].selected = false; } catch (e) {}
+        }
+    }
+}
+
+// Selects the Path property ("ADBE Vector Shape", inside a free-form
+// "ADBE Vector Shape - Group" item) of every path-based shape in each
+// selected shape layer. Silently does nothing (no error toast) for a
+// selected layer that isn't a shape layer, or a shape layer with no
+// path-based shapes inside it — Rect/Ellipse/Star items have no single
+// equivalent "Path" property to select, so they're left alone too.
+function lineup_selectAllPaths() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var layers = comp.selectedLayers;
+        if (!layers || layers.length === 0) return "";
+        lineup_deselectAllProps(layers);
+        var found = false;
+        app.beginUndoGroup("Select All Paths");
+        for (var i = 0; i < layers.length; i++) {
+            var layer = layers[i];
+            if (!(layer instanceof ShapeLayer)) continue;
+            var root = layer.property("ADBE Root Vectors Group");
+            if (!root) continue;
+            if (lineup_selectPathsInVectorsGroup(root)) found = true;
+        }
+        if (found) lineup_revealInTimeline();
+        app.endUndoGroup();
+        return found ? "ok" : "";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// Recursively walks a vector Contents list (the root "ADBE Root Vectors
+// Group" itself, or a nested Group's own "ADBE Vectors Group") selecting
+// the Path property of every free-form path item found. Returns true if
+// anything was selected.
+function lineup_selectPathsInVectorsGroup(contents) {
+    var any = false;
+    for (var i = 1; i <= contents.numProperties; i++) {
+        var item = contents.property(i);
+        var mn;
+        try { mn = item.matchName; } catch (e) { continue; }
+        if (mn === "ADBE Vector Group") {
+            if (lineup_selectPathsInVectorsGroup(item.property("ADBE Vectors Group"))) any = true;
+        } else if (mn === "ADBE Vector Shape - Group") {
+            var pathProp = item.property("ADBE Vector Shape");
+            if (pathProp) { pathProp.selected = true; any = true; }
+        }
+    }
+    return any;
+}
+
+// Selects the Color property of every Fill ("ADBE Vector Graphic - Fill" ->
+// "ADBE Vector Fill Color") or Stroke ("ADBE Vector Graphic - Stroke" ->
+// "ADBE Vector Stroke Color") group across every selected shape layer,
+// depending on which matchNames are passed — the two exported entry
+// points below just fix those. Same silent-no-op behavior as
+// lineup_selectAllPaths for anything that doesn't apply.
+function lineup_selectAllColorProps(groupMatchName, colorMatchName, undoLabel) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var layers = comp.selectedLayers;
+        if (!layers || layers.length === 0) return "";
+        lineup_deselectAllProps(layers);
+        var found = false;
+        app.beginUndoGroup(undoLabel);
+        for (var i = 0; i < layers.length; i++) {
+            var layer = layers[i];
+            if (!(layer instanceof ShapeLayer)) continue;
+            var root = layer.property("ADBE Root Vectors Group");
+            if (!root) continue;
+            if (lineup_selectColorPropsInVectorsGroup(root, groupMatchName, colorMatchName)) found = true;
+        }
+        if (found) lineup_revealInTimeline();
+        app.endUndoGroup();
+        return found ? "ok" : "";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+function lineup_selectAllFillColors() {
+    return lineup_selectAllColorProps("ADBE Vector Graphic - Fill", "ADBE Vector Fill Color", "Select All Fills");
+}
+
+function lineup_selectAllStrokeColors() {
+    return lineup_selectAllColorProps("ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Color", "Select All Strokes");
+}
+
+// Recursively walks a vector Contents list selecting `colorMatchName` off
+// every `groupMatchName` item found (Fill/Stroke groups are direct
+// Contents children, siblings of shape items and nested Groups, same
+// level lineup_selectPathsInVectorsGroup/lineup_collectStrokesInVectorsGroup
+// already walk). Returns true if anything was selected.
+function lineup_selectColorPropsInVectorsGroup(contents, groupMatchName, colorMatchName) {
+    var any = false;
+    for (var i = 1; i <= contents.numProperties; i++) {
+        var item = contents.property(i);
+        var mn;
+        try { mn = item.matchName; } catch (e) { continue; }
+        if (mn === "ADBE Vector Group") {
+            if (lineup_selectColorPropsInVectorsGroup(item.property("ADBE Vectors Group"), groupMatchName, colorMatchName)) any = true;
+        } else if (mn === groupMatchName) {
+            var colorProp = item.property(colorMatchName);
+            if (colorProp) { colorProp.selected = true; any = true; }
+        }
+    }
+    return any;
+}
+
+// Cycles every Stroke's Line Cap (Butt -> Round -> Projecting -> Butt)
+// across all selected shape layers, using the FIRST stroke found (in
+// traversal order — layer selection order, then depth-first through each
+// layer's own Contents) as the reference for which value comes next, then
+// applies that same new value to every stroke found — normalizing any
+// layers/shapes that currently differ into one consistent state rather
+// than cycling each independently. Line Join comes along for the ride
+// (Butt->Miter, Round->Round, Projecting->Bevel all share the same
+// underlying index, 1/2/3, so the join just gets set to the same new
+// value as the cap) unless capOnly is truthy, in which case only the cap
+// changes and each stroke's own existing join is left untouched. Silently
+// does nothing if no selected layer has a stroke.
+function lineup_changeStrokeType(capOnly) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var layers = comp.selectedLayers;
+        if (!layers || layers.length === 0) return "";
+        var strokes = [];
+        for (var i = 0; i < layers.length; i++) {
+            if (!(layers[i] instanceof ShapeLayer)) continue;
+            var root = layers[i].property("ADBE Root Vectors Group");
+            if (root) lineup_collectStrokesInVectorsGroup(root, strokes);
+        }
+        if (!strokes.length) return "";
+
+        var curCap = strokes[0].property("ADBE Vector Stroke Line Cap").value; // 1=Butt 2=Round 3=Projecting
+        var nextCap = (curCap % 3) + 1;
+
+        app.beginUndoGroup("Change Stroke Type");
+        for (var i = 0; i < strokes.length; i++) {
+            strokes[i].property("ADBE Vector Stroke Line Cap").setValue(nextCap);
+            if (!capOnly) strokes[i].property("ADBE Vector Stroke Line Join").setValue(nextCap);
+        }
+        app.endUndoGroup();
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// Recursively walks a vector Contents list, pushing every Stroke group
+// ("ADBE Vector Graphic - Stroke") found into out, depth-first in the
+// same child order AE lists them.
+function lineup_collectStrokesInVectorsGroup(contents, out) {
+    for (var i = 1; i <= contents.numProperties; i++) {
+        var item = contents.property(i);
+        var mn;
+        try { mn = item.matchName; } catch (e) { continue; }
+        if (mn === "ADBE Vector Group") {
+            lineup_collectStrokesInVectorsGroup(item.property("ADBE Vectors Group"), out);
+        } else if (mn === "ADBE Vector Graphic - Stroke") {
+            out.push(item);
+        }
+    }
+}
+
+// ── SHAPE MERGE / EXPLODE ─────────────────────────────────────────────────────
+// PropertyGroup has no scriptable "move to a different layer" method —
+// duplicate()/addProperty() only ever operate within their own existing
+// parent. The first version of this moved content across layers via AE's
+// own Copy/Paste (app.executeCommand) — the commonly-cited technique for
+// this exact problem, but it turned out to silently no-op when invoked
+// from a CEP panel script: Copy/Paste's behavior depends on the Timeline
+// actually having focus the way it does during real interactive use,
+// which a script triggered from an external panel never gives it —
+// producing the right NUMBER of new layers but every one empty. Rebuilt
+// below to clone shape content by VALUE instead (addProperty + copying
+// each leaf property's current value across, recursively), which has no
+// dependency on clipboard/panel-focus state at all. 2D layers only
+// (matches Shape Align's own scope) — no 3D tilt/camera correction.
+// Keyframes on any per-shape or per-layer property are NOT reproduced,
+// only each layer's/item's current static values, per the "ignore
+// keyframes for now" scope.
+
+function lineup_selectOnlyLayer(comp, layer) {
+    for (var i = 1; i <= comp.numLayers; i++) comp.layer(i).selected = false;
+    layer.selected = true;
+}
+
+function lineup_selectOnlyLayers(comp, layersToSelect) {
+    for (var i = 1; i <= comp.numLayers; i++) comp.layer(i).selected = false;
+    for (var j = 0; j < layersToSelect.length; j++) layersToSelect[j].selected = true;
+}
+
+// A handful of stroke properties (taper start/end width, taper wave
+// cycles, dashes, the materials group) have been observed to throw when
+// set on a property that isn't independently addable/settable outside
+// its normal authoring context — carried over from the reference
+// implementation below, which hit this skipping them defensively rather
+// than failing the whole clone over an edge-case stroke feature.
+var LINEUP_SHAPE_CLONE_BLACKLIST = {
+    "ADBE Vector Taper StartWidthPx": 1,
+    "ADBE Vector Taper EndWidthPx": 1,
+    "ADBE Vector Taper Wave Cycles": 1,
+    "ADBE Vector Stroke Dashes": 1,
+    "ADBE Vector Materials Group": 1
+};
+
+// Adds a new property of the same matchName as `sourceItem` into
+// `targetGroup` (addProperty creates it with AE's own default structure
+// for that type) and copies every one of its values across from source,
+// recursively. Returns the new clone, or null if this matchName couldn't
+// be added (some properties genuinely aren't independently addable —
+// skipped rather than failing the whole clone).
+function lineup_cloneShapeItemInto(sourceItem, targetGroup) {
+    var mn;
+    try { mn = sourceItem.matchName; } catch (e) { return null; }
+    if (!targetGroup.canAddProperty(mn)) return null;
+    var clone;
+    try { clone = targetGroup.addProperty(mn); } catch (e) { return null; }
+    try { clone.name = sourceItem.name; } catch (e) {}
+    lineup_copyPropertyTree(sourceItem, clone);
+    return clone;
+}
+
+// Mirrors the copyProperties() approach from a published, field-tested
+// "Explode Shape Layer" script rather than an earlier from-scratch
+// attempt here (index-aligned + a PropertyType branch) that had a real
+// risk of drifting out of sync for some nested-group shapes.
+// target.property(matchName) — BY NAME, not index — either finds an
+// already-existing child (a shape item's own fixed sub-properties, e.g.
+// Size/Position/Roundness, or a Group's Transform group, all already
+// present the moment the parent itself was added) or comes back empty
+// (an arbitrary Contents-list child, which a freshly-added parent starts
+// without), in which case it's added fresh — the same lookup handles
+// both cases uniformly with no need to branch on PropertyType at all.
+// typeof .setValue === 'function' is how a leaf (settable) property is
+// told apart from a group still needing its own recursion.
+function lineup_copyPropertyTree(source, target) {
+    for (var i = 1; i <= source.numProperties; i++) {
+        var srcChild = source.property(i);
+        var mn;
+        try { mn = srcChild.matchName; } catch (e) { continue; }
+
+        try { if (!srcChild.enabled) continue; } catch (e) {}
+        if (LINEUP_SHAPE_CLONE_BLACKLIST[mn]) continue;
+
+        var tgtChild = target.property(mn);
+        if (!tgtChild) {
+            try { tgtChild = target.addProperty(mn); } catch (e) { continue; }
+        }
+        if (!tgtChild) continue;
+
+        if (typeof srcChild.setValue === "function") {
+            try { tgtChild.setValue(srcChild.value); } catch (e) {}
+            continue;
+        }
+        if (srcChild.numProperties > 0) {
+            lineup_copyPropertyTree(srcChild, tgtChild);
+        }
+    }
+}
+
+// Where `source`'s own layer transform (position/rotation/scale, current
+// values only) would need to sit if expressed as a Vector Group's own
+// transform living inside `target`'s Contents, so pasting source's
+// content there and applying this renders at the same comp-space spot.
+// Derived by round-tripping source's local origin and two unit axes
+// through comp space (via this file's own toComp/fromComp pair, above —
+// AE's ExtendScript Layer object has no such methods of its own; those
+// only exist inside expressions, evaluated by the expression engine, not
+// the host-script object model) and back into target's local space —
+// same idea as lineup_vecTransformPoint elsewhere in this file, just one
+// level up (layers instead of shape groups), and layers have no skew to
+// account for. The signed area (cross product) of the two mapped axes
+// flips under a mirrored/negative scale, which plain vector lengths would
+// otherwise lose, so that sign gets folded into scaleY.
+function lineup_layerRelativeTransform(source, target) {
+    var originComp = toComp(source, [0, 0, 0]);
+    var xComp = toComp(source, [100, 0, 0]);
+    var yComp = toComp(source, [0, 100, 0]);
+
+    var originLocal = fromComp(target, originComp);
+    var xLocal = fromComp(target, xComp);
+    var yLocal = fromComp(target, yComp);
+
+    var vecX = [xLocal[0] - originLocal[0], xLocal[1] - originLocal[1]];
+    var vecY = [yLocal[0] - originLocal[0], yLocal[1] - originLocal[1]];
+
+    var rotation = Math.atan2(vecX[1], vecX[0]) * 180 / Math.PI;
+    var scaleX = Math.sqrt(vecX[0] * vecX[0] + vecX[1] * vecX[1]);
+    var scaleY = Math.sqrt(vecY[0] * vecY[0] + vecY[1] * vecY[1]);
+    var cross = vecX[0] * vecY[1] - vecX[1] * vecY[0];
+    if (cross < 0) scaleY = -scaleY;
+
+    return { position: [originLocal[0], originLocal[1]], rotation: rotation, scale: [scaleX, scaleY] };
+}
+
+// Merges every selected shape layer into the FIRST one selected (which
+// survives) — every other selected shape layer's whole Contents becomes
+// one new Vector Group inside the survivor, transformed to land in
+// exactly the same comp-space spot/rotation/scale it had as its own
+// layer, then the emptied source layer is deleted (or, with
+// keepOriginals, just switched off — see lineup_explodeShapes below for
+// the same choice). No-op (silently, no error) with fewer than 2 shape
+// layers selected.
+function lineup_mergeShapes(keepOriginals) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var layers = comp.selectedLayers;
+        var shapeLayers = [];
+        for (var i = 0; i < layers.length; i++) {
+            if (layers[i] instanceof ShapeLayer) shapeLayers.push(layers[i]);
+        }
+        if (shapeLayers.length < 2) return "";
+
+        var target = shapeLayers[0];
+        app.beginUndoGroup("Merge Shapes");
+        // Every source is fully merged in BEFORE any of them are removed —
+        // removing a layer can invalidate other Layer/PropertyGroup object
+        // references already held on other layers in the same comp, which
+        // is exactly what broke merging a 3rd+ selected layer: source #2's
+        // own reference (captured into shapeLayers up front, same as
+        // source #1's) had already gone stale by the time its turn came,
+        // right after source #1's mid-loop .remove() call.
+        var toRemove = [];
+        for (var i = 1; i < shapeLayers.length; i++) {
+            var source = shapeLayers[i];
+            var xform = lineup_layerRelativeTransform(source, target);
+
+            // Re-fetched fresh every iteration rather than cached once
+            // above the loop — target.addProperty() on the previous
+            // iteration can invalidate a PropertyGroup reference obtained
+            // before that mutation, which is what threw "null is not an
+            // object" merging a 3rd layer even after deferring removal.
+            var targetRoot = target.property("ADBE Root Vectors Group");
+
+            // One new wrapper group per source layer, holding a clone of
+            // every one of its top-level items — a single unified
+            // transform (xform) then goes on the wrapper regardless of
+            // how many items source actually had.
+            var wrapGroup = targetRoot.addProperty("ADBE Vector Group");
+            wrapGroup.name = source.name;
+            var wrapContents = wrapGroup.property("ADBE Vectors Group");
+            var srcRoot = source.property("ADBE Root Vectors Group");
+            for (var p = 1; p <= srcRoot.numProperties; p++) {
+                lineup_cloneShapeItemInto(srcRoot.property(p), wrapContents);
+            }
+
+            // Position/Rotation/Scale live under the group's own Transform
+            // Group, not as direct children of the group itself (same
+            // pattern as lineup_transformBBoxThroughGroup/
+            // lineup_applyShapeVec2Delta elsewhere in this file) —
+            // wrapGroup.property("ADBE Vector Position") is null, and
+            // .setValue on that is exactly what threw "null is not an
+            // object" here.
+            var wrapTransform = wrapGroup.property("ADBE Vector Transform Group");
+            wrapTransform.property("ADBE Vector Position").setValue(xform.position);
+            wrapTransform.property("ADBE Vector Rotation").setValue(xform.rotation);
+            wrapTransform.property("ADBE Vector Scale").setValue(xform.scale);
+
+            toRemove.push(source);
+        }
+        for (var r = 0; r < toRemove.length; r++) {
+            if (keepOriginals) toRemove[r].enabled = false;
+            else toRemove[r].remove();
+        }
+        lineup_selectOnlyLayer(comp, target);
+        app.endUndoGroup();
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// Splits every selected shape layer that has 2+ top-level Contents items
+// into that many separate new shape layers, one per item — each new
+// layer's own transform is just a direct copy of the ORIGINAL layer's
+// (position/rotation/scale/anchor/opacity/parent/timing), since the item
+// itself is moved over unchanged; the original layer's transform composed
+// with the item's own (unchanged) internal transform is what rendered it
+// before, and that's exactly reproduced by giving the new layer that same
+// outer transform. The original layer is then deleted — or, with
+// keepOriginals, kept but switched off (its Video/eye toggle turned off)
+// instead, so nothing is lost. Every new layer created ends up selected
+// (and nothing else), regardless of how many original layers were
+// exploded. No-op (silently) if no selected shape layer has more than one
+// top-level item to split.
+function lineup_explodeShapes(keepOriginals) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var layers = comp.selectedLayers;
+        var candidates = [];
+        for (var i = 0; i < layers.length; i++) {
+            if (!(layers[i] instanceof ShapeLayer)) continue;
+            var root = layers[i].property("ADBE Root Vectors Group");
+            if (root && root.numProperties > 1) candidates.push(layers[i]);
+        }
+        if (!candidates.length) return "";
+
+        app.beginUndoGroup("Explode Shapes");
+        // Every candidate is fully exploded into its new layers BEFORE any
+        // original is removed — same reasoning as Merge Shapes above:
+        // removing a layer can invalidate other, already-captured Layer
+        // object references (here, the rest of `candidates`), so all the
+        // removals are deferred to their own pass at the end instead of
+        // being interleaved mid-loop.
+        var toRemove = [];
+        var newLayers = [];
+        for (var c = 0; c < candidates.length; c++) {
+            var original = candidates[c];
+            var root = original.property("ADBE Root Vectors Group");
+            var items = [];
+            for (var i = 1; i <= root.numProperties; i++) items.push(root.property(i));
+
+            for (var i = 0; i < items.length; i++) {
+                var item = items[i];
+                var newLayer = comp.layers.addShape();
+                newLayer.name = item.name || (original.name + " " + (i + 1));
+                newLayer.threeDLayer = false;
+                newLayer.anchorPoint.setValue(original.anchorPoint.value);
+                newLayer.position.setValue(original.position.value);
+                newLayer.scale.setValue(original.scale.value);
+                newLayer.rotation.setValue(original.rotation.value);
+                newLayer.opacity.setValue(original.opacity.value);
+                newLayer.startTime = original.startTime;
+                newLayer.inPoint = original.inPoint;
+                newLayer.outPoint = original.outPoint;
+                try { newLayer.parent = original.parent; } catch (e) {}
+
+                lineup_cloneShapeItemInto(item, newLayer.property("ADBE Root Vectors Group"));
+                newLayers.push(newLayer);
+            }
+            toRemove.push(original);
+        }
+        for (var r = 0; r < toRemove.length; r++) {
+            if (keepOriginals) toRemove[r].enabled = false;
+            else toRemove[r].remove();
+        }
+        lineup_selectOnlyLayers(comp, newLayers);
+        app.endUndoGroup();
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// ── COLOR MANAGEMENT ─────────────────────────────────────────────────────────
+// Scans the selected layers (every layer in the comp if nothing's
+// selected) for every solid (non-gradient) color it can find — shape
+// layer Fill/Stroke colors, any effect parameter of type COLOR (Color
+// Control, Fill, Tint, Change to Color, Drop Shadow, CC Light Sweep,
+// Glow's "A & B Colors" mode, third-party plugins, anything — this is
+// what makes the effect scan generic instead of a hardcoded list),
+// and the same for any layer style (Stroke, Color Overlay, Drop Shadow,
+// etc., again skipping Gradient Overlay). Gradients are always skipped —
+// shape Gradient Fill/Stroke groups are simply never matched, and
+// gradient-producing effects/styles are name-matched out (see
+// lineup_isGradientColorSource). Every occurrence of the same color
+// (compared with a small tolerance) is grouped together, then a single
+// "Color Controller" null is created at the top of the layer stack with
+// one Color Control effect per unique color found — named by an
+// approximate description of the color itself (see lineup_baseColorName)
+// — and every one of that color's original occurrences gets an
+// expression linking it back to that effect's Color value, so the whole
+// comp's palette can be retimed/recolored from one place afterward.
+
+// Shape Gradient Fill/Stroke are simply never matched by name here (their
+// matchNames differ from the plain Fill/Stroke ones below), and these two
+// effect matchNames/name substrings cover the built-in gradient-producing
+// effects and layer styles (Ramp, 4-Color Gradient, Gradient Overlay) —
+// checked by matchName first (locale-independent) and by name as a
+// fallback for anything else with "gradient" in its name (covers
+// third-party gradient plugins too).
+var LINEUP_GRADIENT_EFFECT_MATCHNAMES = { "ADBE Ramp": 1, "ADBE 4ColorGradient": 1 };
+
+function lineup_isGradientColorSource(matchName, name) {
+    if (LINEUP_GRADIENT_EFFECT_MATCHNAMES[matchName]) return true;
+    var n = (name || "").toLowerCase();
+    return n.indexOf("gradient") !== -1;
+}
+
+// Recursively walks a vector Contents list (same traversal shape as
+// lineup_selectColorPropsInVectorsGroup above) collecting every Fill/
+// Stroke color it finds into `slots` as { prop, value }. Disabled Fill/
+// Stroke groups are skipped — an off color isn't worth managing.
+function lineup_collectShapeColorSlots(contents, slots) {
+    for (var i = 1; i <= contents.numProperties; i++) {
+        var item = contents.property(i);
+        var mn;
+        try { mn = item.matchName; } catch (e) { continue; }
+        if (mn === "ADBE Vector Group") {
+            lineup_collectShapeColorSlots(item.property("ADBE Vectors Group"), slots);
+        } else if (mn === "ADBE Vector Graphic - Fill" || mn === "ADBE Vector Graphic - Stroke") {
+            try { if (!item.enabled) continue; } catch (e) {}
+            var colorMatchName = (mn === "ADBE Vector Graphic - Fill") ? "ADBE Vector Fill Color" : "ADBE Vector Stroke Color";
+            var colorProp = item.property(colorMatchName);
+            if (colorProp) slots.push({ prop: colorProp, value: colorProp.value });
+        }
+        // Gradient Fill/Stroke ("ADBE Vector Graphic - G-Fill"/"-G-Stroke")
+        // and every other item type (shapes, Transform, Merge/Trim Paths,
+        // Repeater, ...) have no solid color of interest — skipped by
+        // simply not matching any branch above.
+    }
+}
+
+// One level deep into every effect on `effectsGroup` (built-in and
+// third-party effects are all flat parameter lists — no deeper recursion
+// needed) — any parameter whose propertyValueType is COLOR is a color
+// control regardless of which effect it belongs to, which is what lets
+// this catch "any other examples of color selection" without needing to
+// name every effect by hand.
+function lineup_collectEffectColorSlots(effectsGroup, slots) {
+    if (!effectsGroup) return;
+    for (var i = 1; i <= effectsGroup.numProperties; i++) {
+        var fx = effectsGroup.property(i);
+        var mn, nm;
+        try { mn = fx.matchName; } catch (e) { continue; }
+        try { nm = fx.name; } catch (e) { nm = ""; }
+        if (lineup_isGradientColorSource(mn, nm)) continue;
+        try { if (!fx.enabled) continue; } catch (e) {}
+        for (var p = 1; p <= fx.numProperties; p++) {
+            var prop;
+            try { prop = fx.property(p); } catch (e) { continue; }
             try {
-                var expr = readExpr(comp.layer(li));
-                if (expr && expr.indexOf('"' + rn + '"') !== -1) { stillUsed = true; break; }
+                if (prop.propertyValueType === PropertyValueType.COLOR) {
+                    slots.push({ prop: prop, value: prop.value });
+                }
             } catch (e) {}
         }
-        if (!stillUsed) {
-            for (var li = comp.numLayers; li >= 1; li--) {
-                try { if (comp.layer(li).name === rn) { comp.layer(li).remove(); break; } } catch (e) {}
+    }
+}
+
+// Same idea as lineup_collectEffectColorSlots, one level into "ADBE Layer
+// Styles" instead of "ADBE Effect Parade" — Gradient Overlay is skipped
+// the same way (name match), everything else (Stroke, Color Overlay,
+// Drop Shadow, Inner/Outer Glow's flat-color mode, ...) is fair game.
+function lineup_collectLayerStyleColorSlots(layer, slots) {
+    var styles;
+    try { styles = layer.property("ADBE Layer Styles"); } catch (e) { return; }
+    if (!styles) return;
+    for (var i = 1; i <= styles.numProperties; i++) {
+        var style;
+        try { style = styles.property(i); } catch (e) { continue; }
+        var mn, nm;
+        try { mn = style.matchName; } catch (e) { continue; }
+        try { nm = style.name; } catch (e) { nm = ""; }
+        if (lineup_isGradientColorSource(mn, nm)) continue;
+        try { if (!style.enabled) continue; } catch (e) {}
+        var count;
+        try { count = style.numProperties; } catch (e) { continue; }
+        for (var p = 1; p <= count; p++) {
+            var prop;
+            try { prop = style.property(p); } catch (e) { continue; }
+            try {
+                if (prop.propertyValueType === PropertyValueType.COLOR) {
+                    slots.push({ prop: prop, value: prop.value });
+                }
+            } catch (e) {}
+        }
+    }
+}
+
+// Every color-bearing property this tool manages on one layer: shape
+// Fill/Stroke (shape layers only), plus effects and layer styles (every
+// layer type — a text or solid layer with a Fill or Color Control effect
+// on it is just as manageable as a shape layer's own Fill).
+function lineup_collectLayerColorSlots(layer, slots) {
+    if (layer instanceof ShapeLayer) {
+        var root;
+        try { root = layer.property("ADBE Root Vectors Group"); } catch (e) { root = null; }
+        if (root) lineup_collectShapeColorSlots(root, slots);
+    }
+    var fx;
+    try { fx = layer.property("ADBE Effect Parade"); } catch (e) { fx = null; }
+    if (fx) lineup_collectEffectColorSlots(fx, slots);
+    lineup_collectLayerStyleColorSlots(layer, slots);
+}
+
+// Within ~1/255 per channel — enough to treat 8-bit-identical colors
+// (however they got that way) as one, without falsely merging colors a
+// human would actually tell apart.
+function lineup_colorsApproxEqual(a, b) {
+    var eps = 0.004;
+    for (var i = 0; i < 4; i++) {
+        var av = (i < a.length) ? a[i] : 1;
+        var bv = (i < b.length) ? b[i] : 1;
+        if (Math.abs(av - bv) > eps) return false;
+    }
+    return true;
+}
+
+// Standard RGB->HSL (0-1 in, h in degrees/0-1 s/l out) — used only to name
+// each color, not to store or round-trip it.
+function lineup_rgbToHsl(r, g, b) {
+    var max = Math.max(r, g, b), min = Math.min(r, g, b);
+    var l = (max + min) / 2, d = max - min, h = 0, s = 0;
+    if (d !== 0) {
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        if (max === r) h = ((g - b) / d) + (g < b ? 6 : 0);
+        else if (max === g) h = (b - r) / d + 2;
+        else h = (r - g) / d + 4;
+        h *= 60;
+    }
+    return [h, s, l];
+}
+
+// The classic 12-step color-wheel names — matches how a person would
+// describe these hues (Red Orange, Blue Green, ...), not a numeric value.
+var LINEUP_HUE_NAMES = [
+    "Red", "Red Orange", "Orange", "Yellow Orange", "Yellow", "Yellow Green",
+    "Green", "Blue Green", "Blue", "Blue Violet", "Violet", "Red Violet"
+];
+
+// Low-chroma colors get a lightness-based grayscale name instead of a hue
+// name (a barely-tinted near-white shouldn't read as "Blue") — White/
+// Black only for the very ends, Light/Dark Gray for the rest, so distinct
+// grays still get distinct names without needing a number. Deliberately
+// checked against raw max-min channel spread rather than HSL's own
+// saturation (lineup_rgbToHsl's `s`) — s's denominator shrinks toward 0 as
+// lightness approaches either extreme, so a practically-white color with
+// a one-part-in-a-hundred blue tint (e.g. [0.97,0.97,0.98]) computes an
+// artificially high s and got named "Blue" instead of "White" before this
+// used chroma directly.
+// LINEUP_HUE_NAMES (Red, Red Orange, Orange, ... ) is the familiar
+// artist's 12-step wheel, built around RYB primaries (Red/Yellow/Blue
+// 120° apart) — NOT the same wheel plain RGB hue math measures (Red/
+// Green/Blue 120° apart). Mapped straight through with no correction, a
+// saturated pure green (RGB hue 120°) lands on "Yellow" instead of
+// "Green", since 120° is where the RGB wheel puts green but the RYB-named
+// wheel puts yellow. This piecewise-linear remap (anchored at the 6
+// primary/secondary hues both wheels agree are red/orange-ish/yellow/
+// green/cyan-ish/blue/magenta-ish, even if at different degrees) corrects
+// the six broad chunks so each of LINEUP_HUE_NAMES's 12 slices lines up
+// with the color a person would actually call by that name.
+var LINEUP_RGB_TO_RYB_HUE_ANCHORS = [
+    [0, 0], [60, 120], [120, 180], [180, 210], [240, 240], [300, 300], [360, 360]
+];
+function lineup_rgbHueToRybHue(h) {
+    for (var i = 0; i < LINEUP_RGB_TO_RYB_HUE_ANCHORS.length - 1; i++) {
+        var a = LINEUP_RGB_TO_RYB_HUE_ANCHORS[i], b = LINEUP_RGB_TO_RYB_HUE_ANCHORS[i + 1];
+        if (h >= a[0] && h <= b[0]) {
+            var f = (b[0] === a[0]) ? 0 : (h - a[0]) / (b[0] - a[0]);
+            return a[1] + f * (b[1] - a[1]);
+        }
+    }
+    return h;
+}
+
+function lineup_baseColorName(rgba) {
+    var r = rgba[0], g = rgba[1], b = rgba[2];
+    var max = Math.max(r, g, b), min = Math.min(r, g, b);
+    var d = max - min, l = (max + min) / 2;
+    if (d < 0.06) {
+        if (l > 0.90) return "White";
+        if (l < 0.10) return "Black";
+        if (l > 0.65) return "Light Gray";
+        if (l < 0.35) return "Dark Gray";
+        return "Gray";
+    }
+    var h;
+    if (max === r) h = ((g - b) / d) + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    h = lineup_rgbHueToRybHue(h);
+    var idx = Math.round(h / 30) % 12;
+    if (idx < 0) idx += 12;
+    return LINEUP_HUE_NAMES[idx];
+}
+
+// Groups -> [{ name, value, slots }], numbering every hue-based name that
+// has more than one distinct color sharing it ("Red Orange 01"/"Red
+// Orange 02", lightest first) while leaving a one-off grayscale name bare
+// ("White", not "White 01") — matching how someone would actually label
+// these in the Effects panel.
+// existingNames (optional — an already-live Color Controller's current
+// effect names) lets numbering continue where a PRIOR run left off
+// instead of restarting at 01 and colliding with names that are already
+// taken — e.g. re-running this on a different batch of layers that
+// happens to turn up a second, distinct "Red Orange" should get "Red
+// Orange 02", not another "Red Orange 01".
+function lineup_nameColorGroups(groups, existingNames) {
+    existingNames = existingNames || [];
+    var achromatic = { "White": 1, "Black": 1, "Gray": 1, "Light Gray": 1, "Dark Gray": 1 };
+    var buckets = {};
+    var baseNames = [];
+    for (var i = 0; i < groups.length; i++) {
+        var n = lineup_baseColorName(groups[i].value);
+        baseNames.push(n);
+        if (!buckets[n]) buckets[n] = [];
+        buckets[n].push(i);
+    }
+    var finalNames = new Array(groups.length);
+    for (var name in buckets) {
+        if (!buckets.hasOwnProperty(name)) continue;
+        var idxs = buckets[name];
+
+        var existingMax = 0, bareNameTaken = false;
+        for (var e = 0; e < existingNames.length; e++) {
+            if (existingNames[e] === name) { bareNameTaken = true; continue; }
+            if (existingNames[e].indexOf(name + " ") === 0) {
+                var existingNum = parseInt(existingNames[e].substring(name.length + 1), 10);
+                if (!isNaN(existingNum) && existingNum > existingMax) existingMax = existingNum;
             }
         }
+
+        if (achromatic[name] && idxs.length === 1 && existingMax === 0 && !bareNameTaken) {
+            finalNames[idxs[0]] = name;
+            continue;
+        }
+        idxs.sort(function(a, b) {
+            return lineup_rgbToHsl(groups[a].value[0], groups[a].value[1], groups[a].value[2])[2]
+                 - lineup_rgbToHsl(groups[b].value[0], groups[b].value[1], groups[b].value[2])[2];
+        });
+        for (var k = 0; k < idxs.length; k++) {
+            var num = existingMax + k + 1;
+            var numStr = (num < 10) ? ("0" + num) : String(num);
+            finalNames[idxs[k]] = name + " " + numStr;
+        }
+    }
+    var out = [];
+    for (var i = 0; i < groups.length; i++) {
+        out.push({ name: finalNames[i], value: groups[i].value, slots: groups[i].slots });
+    }
+    return out;
+}
+
+function lineup_manageColors() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var selected = comp.selectedLayers;
+        var targetLayers = [];
+        if (selected && selected.length) {
+            for (var i = 0; i < selected.length; i++) targetLayers.push(selected[i]);
+        } else {
+            for (var i = 1; i <= comp.numLayers; i++) targetLayers.push(comp.layer(i));
+        }
+        if (!targetLayers.length) return "";
+
+        var slots = [];
+        for (var i = 0; i < targetLayers.length; i++) {
+            // Skip a prior run's own control null so re-running this on
+            // "every layer in the comp" doesn't try to manage its colors.
+            if (targetLayers[i].name === "Color Controller") continue;
+            lineup_collectLayerColorSlots(targetLayers[i], slots);
+        }
+        if (!slots.length) return "No colors found to manage.";
+
+        var groups = [];
+        for (var i = 0; i < slots.length; i++) {
+            var v = slots[i].value;
+            var found = null;
+            for (var g = 0; g < groups.length; g++) {
+                if (lineup_colorsApproxEqual(groups[g].value, v)) { found = groups[g]; break; }
+            }
+            if (found) found.slots.push(slots[i].prop);
+            else groups.push({ value: v, slots: [slots[i].prop] });
+        }
+        app.beginUndoGroup("Color Management");
+
+        // Reuse an existing "Color Controller" null rather than always
+        // creating a new one — running this again (on the same layers, a
+        // different selection, or the whole comp) shouldn't pile up
+        // redundant nulls. Its EXISTING Color Control effects are read
+        // first so every newly-found color can be matched against them by
+        // value: a match reuses that effect (and whatever name the user
+        // may have already given it) instead of adding a duplicate: only
+        // genuinely new colors get a new effect appended to the same null.
+        var nullLayer = null;
+        for (var li = 1; li <= comp.numLayers; li++) {
+            if (comp.layer(li).name === "Color Controller") { nullLayer = comp.layer(li); break; }
+        }
+        var effectsGroup, existingColors = [], existingNames = [];
+        if (nullLayer) {
+            effectsGroup = nullLayer.property("ADBE Effect Parade");
+            for (var fi = 1; fi <= effectsGroup.numProperties; fi++) {
+                var existingFx = effectsGroup.property(fi);
+                var efxmn;
+                try { efxmn = existingFx.matchName; } catch (e) { continue; }
+                if (efxmn !== "ADBE Color Control") continue;
+                existingColors.push({ effect: existingFx, value: existingFx.property(1).value });
+                existingNames.push(existingFx.name);
+            }
+        } else {
+            nullLayer = comp.layers.addNull();
+            nullLayer.name = "Color Controller";
+            nullLayer.moveToBeginning();
+            effectsGroup = nullLayer.property("ADBE Effect Parade");
+        }
+
+        var newGroups = [];
+        var reusedCount = 0;
+        for (var g = 0; g < groups.length; g++) {
+            var grp = groups[g];
+            var matched = null;
+            for (var e = 0; e < existingColors.length; e++) {
+                if (lineup_colorsApproxEqual(existingColors[e].value, grp.value)) { matched = existingColors[e]; break; }
+            }
+            if (!matched) { newGroups.push(grp); continue; }
+            reusedCount++;
+            var matchedExpr = 'thisComp.layer("Color Controller").effect("' + matched.effect.name.replace(/"/g, '\\"') + '")("Color")';
+            for (var ms = 0; ms < grp.slots.length; ms++) {
+                try { grp.slots[ms].expression = matchedExpr; } catch (e) {}
+            }
+        }
+
+        var namedNewGroups = lineup_nameColorGroups(newGroups, existingNames);
+        for (var ng = 0; ng < namedNewGroups.length; ng++) {
+            var newGrp = namedNewGroups[ng];
+            var fx = effectsGroup.addProperty("ADBE Color Control");
+            fx.name = newGrp.name;
+            fx.property(1).setValue(newGrp.value);
+            var newExpr = 'thisComp.layer("Color Controller").effect("' + newGrp.name.replace(/"/g, '\\"') + '")("Color")';
+            for (var ns = 0; ns < newGrp.slots.length; ns++) {
+                try { newGrp.slots[ns].expression = newExpr; } catch (e) {}
+            }
+        }
+
+        app.endUndoGroup();
+        var msg = "Added " + namedNewGroups.length + " color control" + (namedNewGroups.length === 1 ? "" : "s") + ".";
+        if (reusedCount > 0) msg += " Linked " + reusedCount + " to existing color" + (reusedCount === 1 ? "" : "s") + ".";
+        return msg;
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// ── SHAPE COLOR HUD ───────────────────────────────────────────────────────────
+// Powers the Shape Tools widget's Fill/Stroke swatches + color gallery (see
+// _pollShapeColorHud/_renderShapeColorHud in main.js) — a live, AE-Tools-panel-
+// style summary of every shape layer's Fill/Stroke, scoped to the selected
+// shape layers (or every shape layer in the comp if none are selected).
+// Gradients are out of scope entirely — Gradient Fill/Stroke groups simply
+// have different matchNames ("ADBE Vector Graphic - G-Fill"/"-G-Stroke") that
+// are never matched below, same as Color Management's own scan. Effects and
+// layer styles are also out of scope here (unlike Color Management) — this
+// only looks at shape layers' own Fill/Stroke Contents groups, matching the
+// AE Tools-panel widget it's modeled on.
+
+function lineup_shapeColorHudTargetLayers(comp) {
+    var selected = comp.selectedLayers;
+    var layers = [];
+    if (selected && selected.length) {
+        for (var i = 0; i < selected.length; i++) {
+            if (selected[i] instanceof ShapeLayer) layers.push(selected[i]);
+        }
+    } else {
+        for (var i = 1; i <= comp.numLayers; i++) {
+            if (comp.layer(i) instanceof ShapeLayer) layers.push(comp.layer(i));
+        }
+    }
+    return layers;
+}
+
+// Recursively walks a vector Contents list collecting every solid Fill into
+// `fillSlots` and every solid Stroke (color AND width together, since both
+// live on the same "ADBE Vector Graphic - Stroke" item) into `strokeSlots` —
+// same traversal shape as lineup_collectShapeColorSlots (Color Management,
+// above), just keeping fill/stroke separate and capturing width, which that
+// function has no need for. Disabled Fill/Stroke items are INCLUDED (not
+// skipped) — the popup needs to see and toggle them (Solid/No Fill), so
+// each slot carries its own `enabled` flag plus the item itself.
+function lineup_collectFillStrokeSlots(contents, layerName, fillSlots, strokeSlots) {
+    for (var i = 1; i <= contents.numProperties; i++) {
+        var item = contents.property(i);
+        var mn;
+        try { mn = item.matchName; } catch (e) { continue; }
+        if (mn === "ADBE Vector Group") {
+            lineup_collectFillStrokeSlots(item.property("ADBE Vectors Group"), layerName, fillSlots, strokeSlots);
+        } else if (mn === "ADBE Vector Graphic - Fill") {
+            var fillEnabled = true;
+            try { fillEnabled = !!item.enabled; } catch (e) {}
+            var fillColor = item.property("ADBE Vector Fill Color");
+            if (fillColor) fillSlots.push({ layerName: layerName, item: item, prop: fillColor, value: fillColor.value, enabled: fillEnabled });
+        } else if (mn === "ADBE Vector Graphic - Stroke") {
+            var strokeEnabled = true;
+            try { strokeEnabled = !!item.enabled; } catch (e) {}
+            var strokeColor = item.property("ADBE Vector Stroke Color");
+            var strokeWidth = item.property("ADBE Vector Stroke Width");
+            if (strokeColor && strokeWidth) {
+                strokeSlots.push({
+                    layerName: layerName, item: item,
+                    colorProp: strokeColor, colorValue: strokeColor.value,
+                    widthProp: strokeWidth, widthValue: strokeWidth.value,
+                    enabled: strokeEnabled
+                });
+            }
+        }
+        // Gradient Fill/Stroke ("ADBE Vector Graphic - G-Fill"/"-G-Stroke") and
+        // every other item type (shapes, Transform, Merge/Trim Paths, Repeater,
+        // ...) simply aren't matched above — no color/width of interest there.
+    }
+}
+
+function lineup_collectAllFillStrokeSlots(comp) {
+    var layers = lineup_shapeColorHudTargetLayers(comp);
+    var fillSlots = [], strokeSlots = [];
+    for (var i = 0; i < layers.length; i++) {
+        var root;
+        try { root = layers[i].property("ADBE Root Vectors Group"); } catch (e) { root = null; }
+        if (root) lineup_collectFillStrokeSlots(root, layers[i].name, fillSlots, strokeSlots);
+    }
+    return { fillSlots: fillSlots, strokeSlots: strokeSlots };
+}
+
+// { type: 'none' } | { type: 'color', value: [...] } | { type: 'mix' } — folds
+// each slot's own enabled state in: "none" means nothing in scope is actually
+// on, "mix" covers both differing colors AND a mix of on/off, "color" only
+// when every slot is enabled and shares the same value.
+function lineup_summarizeColorSlots(slots, valueKey) {
+    var anyEnabled = false, allEnabled = true, first = null, mixColor = false;
+    for (var i = 0; i < slots.length; i++) {
+        if (slots[i].enabled) {
+            anyEnabled = true;
+            if (first === null) first = slots[i][valueKey];
+            else if (!lineup_colorsApproxEqual(first, slots[i][valueKey])) mixColor = true;
+        } else {
+            allEnabled = false;
+        }
+    }
+    if (!anyEnabled) return { type: "none" };
+    if (!allEnabled || mixColor) return { type: "mix" };
+    return { type: "color", value: first };
+}
+
+// { type: 'none' } | { type: 'value', value: N } | { type: 'mix' } — same
+// enabled-aware treatment as lineup_summarizeColorSlots, above.
+function lineup_summarizeWidthSlots(slots) {
+    var anyEnabled = false, allEnabled = true, first = null, mixWidth = false;
+    for (var i = 0; i < slots.length; i++) {
+        if (slots[i].enabled) {
+            anyEnabled = true;
+            if (first === null) first = slots[i].widthValue;
+            else if (Math.abs(first - slots[i].widthValue) > 0.004) mixWidth = true;
+        } else {
+            allEnabled = false;
+        }
+    }
+    if (!anyEnabled) return { type: "none" };
+    if (!allEnabled || mixWidth) return { type: "mix" };
+    return { type: "value", value: first };
+}
+
+// { type: 'all' } | { type: 'none' } | { type: 'mix' } — purely the on/off
+// state across scope, independent of color/width, for the Solid/No Fill
+// (or No Stroke) toggle's own active-state display.
+function lineup_summarizeEnabled(slots) {
+    if (!slots.length) return { type: "none" };
+    var anyOn = false, anyOff = false;
+    for (var i = 0; i < slots.length; i++) {
+        if (slots[i].enabled) anyOn = true; else anyOff = true;
+    }
+    if (anyOn && anyOff) return { type: "mix" };
+    return { type: anyOn ? "all" : "none" };
+}
+
+function lineup_getShapeColorHud() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return JSON.stringify({ empty: true });
+
+        var collected = lineup_collectAllFillStrokeSlots(comp);
+        var fillSlots = collected.fillSlots, strokeSlots = collected.strokeSlots;
+
+        var fills = [];
+        for (var i = 0; i < fillSlots.length; i++) {
+            fills.push({ layerName: fillSlots[i].layerName, value: fillSlots[i].value, enabled: fillSlots[i].enabled });
+        }
+        var strokes = [];
+        for (var i = 0; i < strokeSlots.length; i++) {
+            strokes.push({ layerName: strokeSlots[i].layerName, colorValue: strokeSlots[i].colorValue, widthValue: strokeSlots[i].widthValue, enabled: strokeSlots[i].enabled });
+        }
+
+        return JSON.stringify({
+            fills: fills,
+            strokes: strokes,
+            fillSummary: lineup_summarizeColorSlots(fillSlots, "value"),
+            fillEnabledSummary: lineup_summarizeEnabled(fillSlots),
+            strokeColorSummary: lineup_summarizeColorSlots(strokeSlots, "colorValue"),
+            strokeWidthSummary: lineup_summarizeWidthSlots(strokeSlots),
+            strokeEnabledSummary: lineup_summarizeEnabled(strokeSlots)
+        });
+    } catch (e) {
+        return "ERROR: " + e.toString();
+    }
+}
+
+// Preserves the property's own existing dimensionality/alpha instead of
+// assuming one — AE shape Fill/Stroke colors are commonly [r,g,b] (opacity
+// is its own separate property), but setValue on a color property generally
+// needs an array matching whatever length it already has, not a guessed one.
+function lineup_shapeColorValueForProp(prop, r, g, b) {
+    var cur = prop.value;
+    return (cur && cur.length > 3) ? [r, g, b, cur[3]] : [r, g, b];
+}
+
+// Every setter below re-runs the exact same collection as the getter above
+// and indexes into the same flat array — deterministic as long as the shape
+// tree hasn't changed since the HUD/popup last polled (a short-lived window
+// in practice: the popup is a static snapshot until closed and reopened —
+// see main.js). All keyframe-aware: a keyframed property gets a new keyframe
+// at the current time instead of having its whole animation overwritten.
+
+function lineup_setShapeFillColorAll(r, g, b) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var fillSlots = lineup_collectAllFillStrokeSlots(comp).fillSlots;
+        if (!fillSlots.length) return "";
+        var t = comp.time;
+        app.beginUndoGroup("Set Fill Color");
+        for (var i = 0; i < fillSlots.length; i++) {
+            var prop = fillSlots[i].prop;
+            var v = lineup_shapeColorValueForProp(prop, r, g, b);
+            if (prop.numKeys > 0) prop.setValueAtTime(t, v); else prop.setValue(v);
+        }
+        app.endUndoGroup();
+        return "ok";
+    } catch (e) {
+        try { app.endUndoGroup(); } catch (e2) {}
+        return "ERROR: " + e.toString();
+    }
+}
+
+function lineup_setShapeFillColorAt(index, r, g, b) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var slot = lineup_collectAllFillStrokeSlots(comp).fillSlots[index];
+        if (!slot) return "ERROR: That fill no longer exists — try reopening the popup.";
+        var t = comp.time;
+        app.beginUndoGroup("Set Fill Color");
+        var v = lineup_shapeColorValueForProp(slot.prop, r, g, b);
+        if (slot.prop.numKeys > 0) slot.prop.setValueAtTime(t, v); else slot.prop.setValue(v);
+        app.endUndoGroup();
+        return "ok";
+    } catch (e) {
+        try { app.endUndoGroup(); } catch (e2) {}
+        return "ERROR: " + e.toString();
+    }
+}
+
+function lineup_setShapeStrokeColorAll(r, g, b) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var strokeSlots = lineup_collectAllFillStrokeSlots(comp).strokeSlots;
+        if (!strokeSlots.length) return "";
+        var t = comp.time;
+        app.beginUndoGroup("Set Stroke Color");
+        for (var i = 0; i < strokeSlots.length; i++) {
+            var prop = strokeSlots[i].colorProp;
+            var v = lineup_shapeColorValueForProp(prop, r, g, b);
+            if (prop.numKeys > 0) prop.setValueAtTime(t, v); else prop.setValue(v);
+        }
+        app.endUndoGroup();
+        return "ok";
+    } catch (e) {
+        try { app.endUndoGroup(); } catch (e2) {}
+        return "ERROR: " + e.toString();
+    }
+}
+
+function lineup_setShapeStrokeColorAt(index, r, g, b) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var slot = lineup_collectAllFillStrokeSlots(comp).strokeSlots[index];
+        if (!slot) return "ERROR: That stroke no longer exists — try reopening the popup.";
+        var t = comp.time;
+        app.beginUndoGroup("Set Stroke Color");
+        var v = lineup_shapeColorValueForProp(slot.colorProp, r, g, b);
+        if (slot.colorProp.numKeys > 0) slot.colorProp.setValueAtTime(t, v); else slot.colorProp.setValue(v);
+        app.endUndoGroup();
+        return "ok";
+    } catch (e) {
+        try { app.endUndoGroup(); } catch (e2) {}
+        return "ERROR: " + e.toString();
+    }
+}
+
+function lineup_setShapeStrokeWidthAll(width) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var strokeSlots = lineup_collectAllFillStrokeSlots(comp).strokeSlots;
+        if (!strokeSlots.length) return "";
+        var t = comp.time;
+        app.beginUndoGroup("Set Stroke Width");
+        for (var i = 0; i < strokeSlots.length; i++) {
+            var prop = strokeSlots[i].widthProp;
+            if (prop.numKeys > 0) prop.setValueAtTime(t, width); else prop.setValue(width);
+        }
+        app.endUndoGroup();
+        return "ok";
+    } catch (e) {
+        try { app.endUndoGroup(); } catch (e2) {}
+        return "ERROR: " + e.toString();
+    }
+}
+
+function lineup_setShapeStrokeWidthAt(index, width) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var slot = lineup_collectAllFillStrokeSlots(comp).strokeSlots[index];
+        if (!slot) return "ERROR: That stroke no longer exists — try reopening the popup.";
+        var t = comp.time;
+        app.beginUndoGroup("Set Stroke Width");
+        if (slot.widthProp.numKeys > 0) slot.widthProp.setValueAtTime(t, width); else slot.widthProp.setValue(width);
+        app.endUndoGroup();
+        return "ok";
+    } catch (e) {
+        try { app.endUndoGroup(); } catch (e2) {}
+        return "ERROR: " + e.toString();
+    }
+}
+
+// Solid Fill/Stroke <-> No Fill/No Stroke — toggles the Fill/Stroke item's
+// own .enabled (the same on/off checkbox AE's own Contents panel shows),
+// not a color change, so the property's existing color/width is left alone
+// and just reappears if the item is switched back on later.
+function lineup_setShapeFillEnabledAll(enabled) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var fillSlots = lineup_collectAllFillStrokeSlots(comp).fillSlots;
+        if (!fillSlots.length) return "";
+        app.beginUndoGroup("Set Fill Enabled");
+        for (var i = 0; i < fillSlots.length; i++) {
+            try { fillSlots[i].item.enabled = !!enabled; } catch (e) {}
+        }
+        app.endUndoGroup();
+        return "ok";
+    } catch (e) {
+        try { app.endUndoGroup(); } catch (e2) {}
+        return "ERROR: " + e.toString();
+    }
+}
+
+function lineup_setShapeStrokeEnabledAll(enabled) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var strokeSlots = lineup_collectAllFillStrokeSlots(comp).strokeSlots;
+        if (!strokeSlots.length) return "";
+        app.beginUndoGroup("Set Stroke Enabled");
+        for (var i = 0; i < strokeSlots.length; i++) {
+            try { strokeSlots[i].item.enabled = !!enabled; } catch (e) {}
+        }
+        app.endUndoGroup();
+        return "ok";
+    } catch (e) {
+        try { app.endUndoGroup(); } catch (e2) {}
+        return "ERROR: " + e.toString();
     }
 }
 
@@ -298,13 +2015,27 @@ function derigLayers(comp, targetLayers) {
 // alignIdx: 0=left 1=centerX 2=right 3=top 4=centerY 5=bottom
 // alignToSelection: 1=selection bounds 0=comp
 // margin: number, usePercent: 0/1, offsetKeys: 0/1
+// useKeyframeAlign: 0/1 — the panel's own keyframe-align override toggle
+// (see #keyAlignCheck/_keyAlignEffective in main.js), checked by default
+// whenever keyframes are selected; unchecking it (while keyframes are still
+// selected) forces normal position alignment instead. Omitted entirely ->
+// treated as 1, matching the old always-on behavior.
 
-function lineup_align(alignIdx, alignToSelection, margin, usePercent, offsetKeys) {
+function lineup_align(alignIdx, alignToSelection, margin, usePercent, offsetKeys, useKeyframeAlign) {
     try {
+        if (useKeyframeAlign === undefined) useKeyframeAlign = 1;
         var comp = app.project.activeItem;
         if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
         var layers = comp.selectedLayers;
         if (!layers || layers.length === 0) return "ERROR: No layers selected";
+
+        if (alignIdx <= 2 && useKeyframeAlign) {
+            var keyGroups = lineup_collectSelectedKeyGroups(comp);
+            if (keyGroups.length > 0) return lineup_alignKeyframes(alignIdx, alignToSelection, comp, keyGroups);
+        }
+
+        var shapeItems = lineup_collectSelectedShapeItems(comp);
+        if (shapeItems.length > 0) return lineup_alignShapes(alignIdx, alignToSelection, margin, usePercent, offsetKeys, comp, shapeItems);
 
         var modes  = ["left","centerX","right","top","centerY","bottom"];
         var labels = ["Align Left","Center Horizontal","Align Right","Align Top","Center Vertical","Align Bottom"];
@@ -1365,178 +3096,6 @@ function lineup_easeGetClipboard() {
         return JSON.stringify(out);
     } catch (err) {
         return "null";
-    }
-}
-
-// ── SHAPE RIGS ────────────────────────────────────────────────────────────────
-
-function lineup_rig() {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
-        var layers = comp.selectedLayers;
-        if (!layers || layers.length < 1) return "ERROR: Select at least 1 layer to rig.";
-
-        var n=layers.length, cw=comp.width, ch=comp.height;
-        var ld=[];
-        for (var i=0; i<n; i++) ld.push({layer:layers[i], cx:layers[i].position.value[0]});
-        ld.sort(function(a,b){ return a.cx-b.cx; });
-
-        var rigName="Path Rig", sfx=2, taken=true;
-        while (taken) {
-            taken=false;
-            for (var li=1; li<=comp.numLayers; li++) {
-                if (comp.layer(li).name===rigName) { rigName="Path Rig "+sfx++; taken=true; break; }
-            }
-        }
-
-        app.beginUndoGroup("Path Rig");
-
-        var rawLayers=[]; for (var i=0; i<n; i++) rawLayers.push(ld[i].layer);
-        derigLayers(comp, rawLayers);
-
-        var sl=comp.layers.addShape(); sl.name=rigName; sl.label=5;
-        sl.position.setValue([cw/2, ch/2]);
-
-        var topC=sl.property("ADBE Root Vectors Group");
-        var grp=topC.addProperty("ADBE Vector Group"); grp.name="Shape 1";
-        var grpC=grp.property("ADBE Vectors Group");
-        if (!grpC) { app.endUndoGroup(); return "ERROR: Could not access shape group contents."; }
-
-        var pathItem=grpC.addProperty("ADBE Vector Shape - Group"); pathItem.name="Path 1";
-        var s=new Shape();
-        s.vertices=[[-cw*0.4,0],[cw*0.4,0]]; s.inTangents=[[0,0],[0,0]]; s.outTangents=[[0,0],[0,0]]; s.closed=false;
-        pathItem.property("ADBE Vector Shape").setValue(s);
-
-        var stk=grpC.addProperty("ADBE Vector Graphic - Stroke");
-        stk.property("ADBE Vector Stroke Color").setValue([0.9,0.75,0.1,1]);
-        stk.property("ADBE Vector Stroke Width").setValue(2);
-        try { var dg=stk.property("ADBE Vector Stroke Dashes"); dg.addProperty("ADBE Vector Stroke Dash 1").setValue(8); dg.addProperty("ADBE Vector Stroke Gap 1").setValue(8); } catch(e) {}
-
-        sl.guideLayer=true;
-        var cyFx=sl.property("ADBE Effect Parade").addProperty("ADBE Angle Control");
-        if (cyFx) cyFx.name="Cycle Angle";
-
-        for (var i=0; i<n; i++) {
-            var layer=ld[i].layer, progress=(i/n)*100;
-            var fxGrp=layer.property("ADBE Effect Parade");
-            if (!fxGrp) { app.endUndoGroup(); return "ERROR: No Effects group on layer."; }
-            var fx=fxGrp.addProperty("ADBE Slider Control");
-            if (!fx) { app.endUndoGroup(); return "ERROR: Could not add Slider Control."; }
-            fx.name="Progress"; fx.property(1).setValue(progress);
-
-            var exprBase='var rl=thisComp.layer("'+rigName+'");'+
-                'var cyc=rl.effect("Cycle Angle")("Angle")/360;'+
-                'var t=((effect("Progress")("Slider")/100+cyc)%1+1)%1;'+
-                'var pth=rl("ADBE Root Vectors Group")(1)("ADBE Vectors Group")(1)("ADBE Vector Shape");'+
-                'rl.toComp(pth.pointOnPath(t))';
-
-            var pos=layer.position;
-            if (!pos) { app.endUndoGroup(); return "ERROR: Position property is null."; }
-            if (pos.dimensionsSeparated) collapsePosition(layer);
-            pos.expression=exprBase+';'; pos.expressionEnabled=true;
-        }
-        sl.moveToBeginning();
-        app.endUndoGroup();
-        return "ok";
-    } catch (err) {
-        try { app.endUndoGroup(); } catch(e) {}
-        return "ERROR: " + err.toString();
-    }
-}
-
-function lineup_derig() {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
-        var layers = comp.selectedLayers;
-        if (!layers || layers.length === 0) return "ERROR: Select a Path Rig layer or rigged layers.";
-
-        app.beginUndoGroup("Remove Path Rig");
-        var toDerig=[];
-        for (var i=0; i<layers.length; i++) {
-            var layer=layers[i];
-            if (layer.name.indexOf("Path Rig")===0) {
-                var rn=layer.name;
-                for (var li=1; li<=comp.numLayers; li++) {
-                    var l=comp.layer(li);
-                    try {
-                        var pos=l.position;
-                        var expr=pos.dimensionsSeparated ? pos.getSeparationFollower(0).expression : pos.expression;
-                        if (expr && expr.indexOf('"'+rn+'"')!==-1) toDerig.push(l);
-                    } catch(e) {}
-                }
-            } else { toDerig.push(layer); }
-        }
-        derigLayers(comp, toDerig);
-        app.endUndoGroup();
-        return "ok";
-    } catch (err) {
-        try { app.endUndoGroup(); } catch(e) {}
-        return "ERROR: " + err.toString();
-    }
-}
-
-function lineup_recalcRig() {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
-        var sel = comp.selectedLayers;
-        if (!sel || sel.length === 0) return "ERROR: Select a Path Rig layer and optionally new layers.";
-
-        var pathLayer=null;
-        for (var i=0; i<sel.length; i++) if (sel[i].name.indexOf("Path Rig")===0) { pathLayer=sel[i]; break; }
-        if (!pathLayer) for (var i=0; i<sel.length; i++) if (sel[i] instanceof ShapeLayer && sel[i].guideLayer) { pathLayer=sel[i]; break; }
-        if (!pathLayer) return "ERROR: No Path Rig layer found.";
-        var rigName=pathLayer.name;
-
-        var existing=[];
-        for (var li=1; li<=comp.numLayers; li++) {
-            var l=comp.layer(li); if (l===pathLayer) continue;
-            try {
-                var expr="", pos=l.position;
-                if (pos.expressionEnabled) { expr=pos.expression; }
-                else if (pos.dimensionsSeparated) { var xf=pos.getSeparationFollower(0); if (xf.expressionEnabled) expr=xf.expression; }
-                if (expr.indexOf('"'+rigName+'"')!==-1) existing.push(l);
-            } catch(e) {}
-        }
-
-        var newLayers=[];
-        for (var i=0; i<sel.length; i++) {
-            if (sel[i]===pathLayer) continue;
-            var already=false;
-            for (var j=0; j<existing.length; j++) { if (existing[j]===sel[i]) { already=true; break; } }
-            if (!already) newLayers.push(sel[i]);
-        }
-
-        var allLayers=existing.concat(newLayers), n=allLayers.length;
-        if (n===0) return "ERROR: No rigged layers found for \""+rigName+"\".";
-
-        app.beginUndoGroup("Recalculate Rig");
-
-        var exprBase='var rl=thisComp.layer("'+rigName+'");'+
-            'var cyc=rl.effect("Cycle Angle")("Angle")/360;'+
-            'var t=((effect("Progress")("Slider")/100+cyc)%1+1)%1;'+
-            'var pth=rl("ADBE Root Vectors Group")(1)("ADBE Vectors Group")(1)("ADBE Vector Shape");'+
-            'rl.toComp(pth.pointOnPath(t))';
-
-        for (var i=0; i<newLayers.length; i++) {
-            var layer=newLayers[i];
-            var fx=layer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-            fx.name="Progress";
-            var pos=layer.position;
-            if (pos.dimensionsSeparated) collapsePosition(layer);
-            pos=layer.position; pos.expression=exprBase+';'; pos.expressionEnabled=true;
-        }
-        for (var i=0; i<n; i++) {
-            try { allLayers[i].property("ADBE Effect Parade").property("Progress").property(1).setValue((i/n)*100); } catch(e) {}
-        }
-
-        app.endUndoGroup();
-        return "ok";
-    } catch (err) {
-        try { app.endUndoGroup(); } catch(e) {}
-        return "ERROR: " + err.toString();
     }
 }
 
@@ -2968,19 +4527,10 @@ function lineup_batchApplyCompSettings(
 }
 
 // ── BATCH RENAME ─────────────────────────────────────────────────────────────
-
-// Always succeeds — even with nothing selected — so the panel can open and show
-// "No comp selected" instead of being blocked.
-function lineup_getBatchRenameSeed() {
-    try {
-        var proj  = app.project;
-        var names = [];
-        for (var i = 0; i < proj.selection.length; i++) {
-            if (proj.selection[i] instanceof CompItem) names.push(proj.selection[i].name.replace(/\|/g, "/"));
-        }
-        return names.join("|");
-    } catch (e) { return "ERROR: " + e.toString(); }
-}
+// Seeded from Batch Comp Settings' own seed call (lineup_getBatchCompSettingsSeed
+// above) rather than a separate one — both already filter proj.selection down
+// to the exact same set of selected CompItems, so the panel-side JS just
+// reuses those names for this tab too (see openBatchCompSettings in main.js).
 
 // Spreadsheet-style column letters: 1 -> A, 2 -> B, … 26 -> Z, 27 -> AA, …
 function numberToLetters(num) {
