@@ -115,7 +115,8 @@ body.high-contrast .btn { background: #000000; border-color: #909090; }
 body.high-contrast .btn:hover { background: #3a3a3a; border-color: #ffffff; }
 
 /* ── Right-click popups/menus — none of these had ANY high-contrast
-   coverage before. All of .fav-ctx/.shape-sel-ctx (right-click menus) and
+   coverage before. .shape-sel-ctx (the Select Paths/Fill/Stroke and Split
+   Text mode flyouts, both built on the shared .fav-ctx dropdown shell) and
    .grid-picker/.radial-picker/.path-picker/.z-picker/.props-picker (the
    distribute pickers, also opened via right-click off their own star/
    button) share the exact same hardcoded palette (container #1e1e1e/
@@ -131,18 +132,14 @@ body.high-contrast .props-picker {
     background: #000000;
     border-color: #909090;
 }
-body.high-contrast .fav-ctx-item,
 body.high-contrast .shape-sel-ctx-icon-btn {
     color: #e0e0e0;
 }
-body.high-contrast .fav-ctx-item:hover,
 body.high-contrast .shape-sel-ctx-icon-btn:hover {
     background: #3a3a3a;
     color: #ffffff;
 }
 body.high-contrast .shape-sel-ctx-icon-btn.active { border-color: #ffffff; }
-body.high-contrast .fav-ctx-item.fav-active { color: #ffd75e; }
-body.high-contrast .fav-ctx-item.fav-active:hover { color: #ffe08a; background: #3a3a3a; }
 /* The pickers' own text inputs (grid W/H, radial/path/z start/end,
    gap, step) all share this identical !important-heavy rule shape —
    re-declared with !important to match specificity/win the same way
@@ -314,7 +311,11 @@ body.layout-classic .tab-bar {
 .tab-btn svg { width: 14px; height: 14px; flex-shrink: 0; pointer-events: none; }
 .tab-btn-icon svg { width: 16px; height: 16px; }
 
-.tab-panel { display: none; }
+/* position:relative so the Select Paths/Fill/Stroke and Split Text mode
+   flyouts (.fav-ctx, position:absolute — see its own comment) can anchor
+   to whichever tab-panel their button actually lives in, instead of some
+   further/unrelated positioned ancestor. */
+.tab-panel { display: none; position: relative; }
 .tab-panel.active { display: block; }
 
 /* Same cap/centering as .tab-bar and .tool-grid (Home's own tab-panel) —
@@ -664,6 +665,16 @@ body.layout-classic .tab-bar {
     border: 1px solid #2c2c2c;
     border-radius: 8px;
 }
+
+/* A settings row whose label carries its own icon (Smart Stack) instead of
+   plain text — .settings-tab-row's own space-between still pushes the
+   toggle to the right of this whole group. */
+.settings-row-lbl {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+.settings-row-icon { width: 14px; height: 14px; flex-shrink: 0; }
 
 /* Compact/Classic — a 2-button segmented control, same neutral (not blue)
    "selected" treatment as the top tab bar. */
@@ -1089,7 +1100,7 @@ body.layout-classic .tool-grid {
 .fav-pages-track {
     display: flex;
     height: 100%;
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform 0.175s cubic-bezier(0.4, 0, 0.2, 1); /* 30% faster than the original 0.25s */
 }
 .fav-page {
     position: relative;
@@ -2607,34 +2618,6 @@ body.bl-drag-active {
     background-color: #2a2a2a;
     cursor: pointer;
 }
-/* Default (paired half-width, data-span="3" — not enough room for both
-   toolbars on one line): stack the two .btn-row-wide groups vertically,
-   each full width, same as any other stacked control. */
-.vectortools-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    width: 100%;
-}
-/* Full width and alone in its own row (data-span="6"): both toolbars fit
-   on one line, so they sit side by side instead, each flexed to exactly
-   half the row (flex:1 1 0 on both, same even-split trick as pairing two
-   half-width widgets elsewhere) — Merge/Explode's taskbar comes first in
-   the markup, so it naturally ends up on the left, no extra margin
-   needed. Buttons keep their usual flex:1 (see .icon-btn-wide) and just
-   stretch across whichever half they now belong to. Excluded under
-   narrow-stack, where data-span is forced to 6 for every widget
-   regardless of real pairing — the panel itself is too narrow there for
-   this to actually fit. */
-#homeToolGrid:not(.narrow-stack) .tool-box[data-block-id="vectortools"][data-span="6"] .vectortools-rows {
-    flex-direction: row;
-    align-items: center;
-}
-#homeToolGrid:not(.narrow-stack) .tool-box[data-block-id="vectortools"][data-span="6"] .vectortools-rows > .btn-row-wide {
-    width: auto;
-    flex: 1 1 0;
-    min-width: 0;
-}
 /* Align Left/Center/Right: whenever selected keyframes make these buttons
    retime keyframes instead of moving layer position, each crossfades its
    whole icon into a keyframe-flavored one (hourglass bezier glyph on
@@ -2678,12 +2661,14 @@ body.bl-drag-active {
 .tool-box[data-block-id="autocrop"] .btn-row-wide,
 .tool-box[data-block-id="spellcheck"] .btn-row-wide,
 .tool-box[data-block-id="sort"] .btn-row-wide,
+.tool-box[data-block-id="vectortools"] .btn-row-wide,
 #sec-favorite .tool-body[data-block-id="alignlayers"] .btn-row-wide,
 #sec-favorite .tool-body[data-block-id="distribute"] .btn-row-wide,
 #sec-favorite .tool-body[data-block-id="sizing"] .btn-row-wide,
 #sec-favorite .tool-body[data-block-id="autocrop"] .btn-row-wide,
 #sec-favorite .tool-body[data-block-id="spellcheck"] .btn-row-wide,
-#sec-favorite .tool-body[data-block-id="sort"] .btn-row-wide {
+#sec-favorite .tool-body[data-block-id="sort"] .btn-row-wide,
+#sec-favorite .tool-body[data-block-id="vectortools"] .btn-row-wide {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -2786,15 +2771,41 @@ body.bl-drag-active {
     max-height: none;
 }
 
-/* Shape Tools' two toolbars (Select Paths/Change Stroke Type/Color
-   Management, and Merge/Explode) are the same "single row, no 3x2 reflow"
-   shape as Sizing/AutoCrop/Sort above, but never got this same half-width/
-   Favorite-slot treatment — its buttons stayed pinned to the full-width
-   row's fixed 32px there, leaving dead space below rather than filling the
-   taller box the half-width tile/Favorite slot actually gives them. */
+/* Shape Tools' two logical groups (Merge/Explode, and Select Paths/Change
+   Stroke Type/Color Management) sit side by side in one row at full
+   width — each .vectortools-grp's flex-grow matches its own button count
+   (2 and 3), so per-button width still comes out even across the whole
+   row despite the group sizes differing, same as if all 5 were flat
+   siblings of .btn-group-wide. */
+.vectortools-grp {
+    display: flex;
+    gap: 4px;
+    min-width: 0;
+}
+.vectortools-grp-2 { flex: 2 1 0; }
+.vectortools-grp-3 { flex: 3 1 0; }
+
+/* At half width, instead of squashing both groups into one row (or a grid
+   that would mix them together), each group becomes its own full-width
+   row — Merge/Explode evenly split across the top, Select Paths/Change
+   Stroke Type/Color Management evenly split across the bottom — stacked
+   to fill the tile's whole height between them. The vsep is a horizontal
+   divider meant for two groups side by side, so it's hidden once they're
+   stacked instead, same as Align/Distribute's grid reflow above. */
 .tool-box[data-block-id="vectortools"][data-span="3"] .btn-group-wide,
 #sec-favorite .tool-body[data-block-id="vectortools"] .btn-group-wide {
+    flex-direction: column;
+    gap: 5px;
     height: 100%;
+}
+.tool-box[data-block-id="vectortools"][data-span="3"] .btn-group-wide .vsep,
+#sec-favorite .tool-body[data-block-id="vectortools"] .btn-group-wide .vsep {
+    display: none;
+}
+.tool-box[data-block-id="vectortools"][data-span="3"] .vectortools-grp,
+#sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-grp {
+    flex: 1 1 0;
+    width: 100%;
 }
 .tool-box[data-block-id="vectortools"][data-span="3"] .icon-btn-wide,
 #sec-favorite .tool-body[data-block-id="vectortools"] .icon-btn-wide {
@@ -6149,62 +6160,22 @@ input[type="range"].scale-slider::-webkit-slider-thumb:hover {
     margin-top: 1px;
 }
 
-/* ── Favorites bar ──────────────────────────────────────────────────────────── */
-
-#fav-bar {
-    padding: 4px 8px 5px;
-    background: var(--bg);
-    border-bottom: 2px solid var(--divider);
-    display: flex;
-}
-#fav-bar.fav-bar-hidden { display: none; }
-
-.fav-bar-group {
-    display: inline-flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 3px;
-    background: var(--bg);
-    border: 1px solid #2c2c2c;
-    border-radius: 9px;
-    padding: 3px;
-}
-
-.fav-bar-star-lbl {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    color: #e8c140;
-    flex-shrink: 0;
-    border-radius: 6px;
-}
-.fav-bar-star-lbl svg { width: 12px; height: 12px; pointer-events: none; }
-
-#fav-bar-btns {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 2px;
-}
-
-#fav-bar-btns .icon-btn {
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: #787878;
-    width: 30px;
-    height: 30px;
-}
-#fav-bar-btns .icon-btn svg { width: 18px; height: 18px; }
-#fav-bar-btns .icon-btn:hover  { background: #323232; border: none; color: #d0d0d0; }
-#fav-bar-btns .icon-btn:active { background: var(--bg-btn-act); border: none; color: #fff; }
-
-/* ── Favorites context menu ─────────────────────────────────────────────────── */
+/* ── Generic popover dropdown shell ───────────────────────────────────────────
+   Originally built for a right-click "favorite this button" popup that no
+   longer exists (its target — a pinned favorites bar — was removed in an
+   earlier restructure, leaving the popup with nothing to do), but the shell
+   itself is generic enough that .shape-sel-ctx (Select Paths/Fill/Stroke and
+   Split Text's mode flyouts) is built on it too — kept for that.
+   position:absolute, not fixed — it's (re-)appended into the anchor
+   button's own .tab-panel each time it opens (see _openShapeSelCtx/
+   _openSplitTextCtx in main.js) and positioned relative to THAT container,
+   not the viewport, since a plain viewport-fixed popup didn't line up with
+   its button once the button sat inside #panel-content, which the panel-
+   scale slider (applyScale()) zooms via CSS zoom — see .tab-panel below
+   for the positioning context this requires. */
 
 .fav-ctx {
-    position: fixed;
+    position: absolute;
     background: #1e1e1e;
     border: 1px solid #333;
     border-radius: 7px;
@@ -6224,46 +6195,43 @@ input[type="range"].scale-slider::-webkit-slider-thumb:hover {
     transform: scale(1);
     pointer-events: auto;
 }
-.fav-ctx-item {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 6px 10px;
-    border-radius: 5px;
-    cursor: pointer;
-    color: #a0a0a0;
-    font-size: 11px;
-    background: none;
-    border: none;
-    width: 100%;
-    text-align: left;
-    white-space: nowrap;
-    transition: background 0.05s, color 0.05s;
-}
-.fav-ctx-item:hover { background: #2c2c2c; color: #e0e0e0; }
-.fav-ctx-item svg { width: 14px; height: 14px; flex-shrink: 0; pointer-events: none; }
-.fav-ctx-item.fav-active { color: #e8c140; }
-.fav-ctx-item.fav-active:hover { color: #f0d060; background: #2c2c2c; }
 
-/* ── Shape selection mode (Path/Fill/Stroke) — AE-native-toolbar style ───────── */
+/* ── Shape selection mode (Path/Fill/Stroke) and Split Text — AE-native-
+   toolbar style ─────────────────────────────────────────────────────────── */
 /* Small corner triangle — the same "this button has more options via a
    flyout" affordance AE's own grouped tools (Rectangle/Ellipse/Polygon,
    etc.) use, so this reads as the same kind of control rather than a
-   plain one-shot button. Painted with a border trick (not a rotated
-   square) so it stays a crisp triangle at any size. */
-.shape-sel-btn { position: relative; }
-.shape-sel-btn::after {
+   plain one-shot button. Painted as a rounded square clipped down to its
+   bottom-right half, rather than a border trick, so the outer tip can
+   actually be rounded (a border-triangle's tip has no box corner for
+   border-radius to round). Shared by both flyout buttons in the Shape
+   Tools widget, and by their clones in the Tools tab and Quick Actions
+   (same classes carried over, so this one rule covers every instance). */
+.shape-sel-btn, .split-text-btn { position: relative; }
+.shape-sel-btn::after, .split-text-btn::after {
     content: '';
     position: absolute;
-    right: 2px;
-    bottom: 2px;
-    width: 0;
-    height: 0;
-    border-style: solid;
-    border-width: 0 0 5px 5px;
-    border-color: transparent transparent currentColor transparent;
+    right: 4px;
+    bottom: 4px;
+    width: 9px;
+    height: 9px;
+    background: currentColor;
+    border-radius: 2.5px;
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
     opacity: 0.55;
     pointer-events: none;
+}
+/* Scaled down for the Shape Tools widget's own buttons specifically —
+   .icon-btn-wide is a fixed, compact 32px-tall bar, noticeably smaller
+   than the roomier tile-style buttons the base size above fits (Tools
+   tab's .tools-grid-btn, Quick Actions' .quick-actions-btn), so the same
+   triangle read as oversized there. */
+.icon-btn-wide.shape-sel-btn::after, .icon-btn-wide.split-text-btn::after {
+    right: 3px;
+    bottom: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 1.6px;
 }
 /* The flyout itself — .shape-sel-ctx-row holds one icon+label button per
    mode, stacked vertically below the anchor button (or above it, if there

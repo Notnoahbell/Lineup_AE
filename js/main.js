@@ -559,6 +559,23 @@ var WHATS_NEW = {
             title: 'Redesigned Help',
             body: "A searchable, paginated rewrite covering every tool — including all of the new Shape Tools."
         }
+    ],
+    '1.9.1': [
+        {
+            icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round"><path d="M1,10 L3,10 C7,10 9,7 11,5 L14,5"/><path d="M3,10 C7,10 9,13 11,15 L14,15" stroke-dasharray="2.2,2"/><path d="M14,1.4 L19.6,5 L14,8.6 Z" fill="currentColor" stroke="none"/><path d="M14,11.4 L19.6,15 L14,18.6 Z" fill="currentColor" stroke="none"/></svg>',
+            title: 'Shape Tools, cleaned up',
+            body: "Merge/Explode got clearer icons, and the toolbar was rebuilt to actually fill its space — including at half width and in the Favorites bar, where it used to leave dead space below the buttons."
+        },
+        {
+            icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round"><rect x="3" y="3" width="14" height="3.4" rx="0" fill="currentColor" stroke="none"/><rect x="8.3" y="3" width="3.4" height="6.5" rx="0" fill="currentColor" stroke="none"/><rect x="8.3" y="14.5" width="3.4" height="2.8" rx="0" fill="currentColor" stroke="none"/><line x1="4" y1="15.5" x2="18" y2="7.6" stroke-width="2.16"/></svg>',
+            title: 'Split Text, rebuilt',
+            body: "Now positions each piece using After Effects' own text engine instead of manual measurement — Character and Paragraph modes are back, and every mode lands exactly right, correctly kerned, wrapped, and justified."
+        },
+        {
+            icon: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="11" width="11" height="6" rx="1.4" opacity="0.45"/><rect x="4" y="7" width="11" height="6" rx="1.4" opacity="0.7"/><rect x="6" y="3" width="11" height="6" rx="1.4"/></svg>',
+            title: 'Smart Stack',
+            body: "The Favorites bar now jumps to the page you likely need — Shape Tools the moment you select a shape, Ease Copy the moment you select a keyframe — without fighting a manual swipe. Toggle it off anytime in Settings."
+        }
     ]
 };
 
@@ -747,6 +764,29 @@ function restoreHighContrast() {
     }
 }
 
+// ── Smart Stack (Favorites bar auto-page-switch) ─────────────────────────────
+// Whether the Favorites bar is allowed to jump pages on its own at all — see
+// _pollFavSmartStack below for the actual predictive logic. Defaults on;
+// this is purely an escape hatch for anyone who finds the auto-jump
+// distracting. Turning it off (or the bar going out of view) resets
+// _favSmartWasVisible so a later re-enable recalibrates instead of firing a
+// stale edge from whatever changed while it was off.
+var _smartStackEnabled = true;
+
+function toggleSmartStack(on) {
+    _smartStackEnabled = !!on;
+    if (!_smartStackEnabled) _favSmartWasVisible = false;
+    try { localStorage.setItem('lineup-smart-stack', _smartStackEnabled ? '1' : '0'); } catch(e) {}
+}
+
+function restoreSmartStack() {
+    var raw;
+    try { raw = localStorage.getItem('lineup-smart-stack'); } catch(e) {}
+    _smartStackEnabled = raw !== '0'; // unset (first run) -> on, matching the default above
+    var chk = document.getElementById('smartStackCheck');
+    if (chk) chk.checked = _smartStackEnabled;
+}
+
 // ── Tools search + filter groups ─────────────────────────────────────────────────
 
 var _toolsFilter = 'all';
@@ -886,10 +926,14 @@ function hideToast() {
 }
 
 // ── Favorites ─────────────────────────────────────────────────────────────────
+// Backs only the distribute pickers' own star buttons now (favorite a Z/
+// Path/Radial/Grid distribute mode — see _makePickerStarBtn). A separate
+// right-click "favorite this button" popup used to share this same data,
+// pinning favorited buttons into a bar at the top of the panel — that bar
+// was removed in an earlier restructure, leaving the popup with nothing to
+// do, so it (and the per-button wiring that opened it) was removed too.
 
 var _favorites  = {};
-var _favCtx     = null;
-var _favCtxBtn  = null;
 
 var _FAV_STAR_SVG      = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6,0.8 7.4,4.4 11.2,4.7 8.4,7.2 9.3,11 6,9.1 2.7,11 3.6,7.2 0.8,4.7 4.6,4.4"/></svg>';
 var _FAV_STAR_SVG_FILL = '<svg viewBox="0 0 12 12" fill="currentColor" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6,0.8 7.4,4.4 11.2,4.7 8.4,7.2 9.3,11 6,9.1 2.7,11 3.6,7.2 0.8,4.7 4.6,4.4"/></svg>';
@@ -910,9 +954,7 @@ function toggleFavorite(id) {
     var adding = !_favorites[id];
     if (adding) { _favorites[id] = 1; } else { delete _favorites[id]; }
     _saveFavorites();
-    _renderFavBar();
     _syncAllPickerStars();
-    _closeFavCtx();
     if (adding) _showFavToast(id);
 }
 
@@ -926,45 +968,6 @@ function _showFavToast(id) {
     toast.className = 'toast toast-fav';
     clearTimeout(_toastTimer);
     _toastTimer = setTimeout(hideToast, 2500);
-}
-
-function _renderFavBar() {
-    var bar  = document.getElementById('fav-bar');
-    var cont = document.getElementById('fav-bar-btns');
-    if (!bar || !cont) return;
-
-    var ids = Object.keys(_favorites);
-    if (ids.length === 0) {
-        bar.classList.add('fav-bar-hidden');
-        cont.innerHTML = '';
-        return;
-    }
-    bar.classList.remove('fav-bar-hidden');
-    cont.innerHTML = '';
-
-    ids.forEach(function(id) {
-        var src = document.querySelector('[data-fav-id="' + id + '"]:not([data-fav-clone])');
-        if (!src) return;
-        var clone = src.cloneNode(true);
-        clone.removeAttribute('id');
-        clone.removeAttribute('onclick');
-        clone.setAttribute('data-fav-clone', id);
-        clone.style.cssText = '';
-        clone.addEventListener('click', function(e) {
-            e.stopPropagation();
-            var original = document.querySelector('[data-fav-id="' + id + '"]:not([data-fav-clone])');
-            if (original) original.click();
-        });
-        clone.addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-            if      (id === 'dist-grid')   _openGridPicker(e.clientX, e.clientY);
-            else if (id === 'dist-radial') _openRadialPicker(e.clientX, e.clientY);
-            else if (id === 'dist-z')      _openZPicker(e.clientX, e.clientY);
-            else if (id === 'dist-path')   _openPathPicker(e.clientX, e.clientY);
-            else                           _openFavCtx(clone, e.clientX, e.clientY);
-        });
-        cont.appendChild(clone);
-    });
 }
 
 function _syncAllPickerStars() {
@@ -991,57 +994,6 @@ function _makePickerStarBtn(favId) {
         toggleFavorite(favId);
     });
     return btn;
-}
-
-function _buildFavCtx() {
-    var el   = document.createElement('div');
-    el.className = 'fav-ctx';
-    var item = document.createElement('button');
-    item.className = 'fav-ctx-item';
-    item.type = 'button';
-    item.innerHTML = _FAV_STAR_SVG + '<span class="fav-ctx-lbl">Favorite</span>';
-    el.appendChild(item);
-    item.addEventListener('click', function() {
-        if (_favCtxBtn) toggleFavorite(_favCtxBtn.getAttribute('data-fav-id'));
-    });
-    document.body.appendChild(el);
-    return el;
-}
-
-function _openFavCtx(btn, x, y) {
-    if (!_favCtx) _favCtx = _buildFavCtx();
-    _favCtxBtn = btn;
-    var id     = btn.getAttribute('data-fav-id');
-    var active = isFavorited(id);
-    var item   = _favCtx.querySelector('.fav-ctx-item');
-    if (item) {
-        item.classList.toggle('fav-active', active);
-        item.querySelector('svg').setAttribute('fill', active ? 'currentColor' : 'none');
-        item.querySelector('.fav-ctx-lbl').textContent = active ? 'Unfavorite' : 'Favorite';
-    }
-    var vw = window.innerWidth, vh = window.innerHeight;
-    _favCtx.style.left = Math.min(x, vw - 152) + 'px';
-    _favCtx.style.top  = Math.min(y, vh - 42)  + 'px';
-    _favCtx.classList.add('visible');
-    setTimeout(function() {
-        document.addEventListener('mousedown', _favCtxOutside);
-        document.addEventListener('keydown',   _favCtxKey);
-    }, 0);
-}
-
-function _closeFavCtx() {
-    if (_favCtx) _favCtx.classList.remove('visible');
-    _favCtxBtn = null;
-    document.removeEventListener('mousedown', _favCtxOutside);
-    document.removeEventListener('keydown',   _favCtxKey);
-}
-
-function _favCtxOutside(e) {
-    if (_favCtx && !_favCtx.contains(e.target)) _closeFavCtx();
-}
-
-function _favCtxKey(e) {
-    if (e.key === 'Escape') _closeFavCtx();
 }
 
 // ── Generic evalScript wrapper ────────────────────────────────────────────────
@@ -2983,29 +2935,50 @@ function _buildShapeSelCtx() {
 // spot first — same trick used here to test-fit the labeled layout: try
 // it, measure, and only fall back to icon-only/.compact if it wouldn't
 // actually fit, all before anything is shown.
+//
+// Positioned relative to the button's own .tab-panel (#panel-content or
+// #tab-tools), not the true viewport — a favorited widget's buttons live
+// inside #panel-content, which the panel-scale slider zooms via CSS zoom
+// (see applyScale); this popup is a plain DOM sibling appended outside
+// that zoomed subtree, and turning btn.getBoundingClientRect() (measured
+// INSIDE the zoomed context) directly into viewport-relative fixed
+// coordinates for something OUTSIDE it doesn't line up once the zoom
+// isn't 1 (the default scale is already 1.05, not 100%) — this is exactly
+// what put the flyout visibly off from its button once Shape Tools sat in
+// the Favorites carousel. Re-parenting into the SAME .tab-panel and
+// measuring both rects with the same getBoundingClientRect() call, then
+// working only in the difference between them, cancels that mismatch out
+// regardless of the zoom factor, since both measurements carry the exact
+// same distortion.
 function _openShapeSelCtx(btn) {
     if (!_shapeSelCtx) _shapeSelCtx = _buildShapeSelCtx();
+    var container = btn.closest('.tab-panel') || document.body;
+    container.appendChild(_shapeSelCtx);
     var items = _shapeSelCtx.querySelectorAll('.shape-sel-ctx-icon-btn');
     for (var i = 0; i < items.length; i++) {
         items[i].classList.toggle('active', items[i].getAttribute('data-mode') === _shapeSelMode);
     }
-    var vw = window.innerWidth, vh = window.innerHeight;
     // A CEP panel's own width IS the viewport width (no outer window
-    // chrome to account for), so the labeled layout's natural width is
-    // tested straight against it — "horizontally compressed" means the
-    // panel itself isn't wide enough for icon+text, not anything to do
-    // with where the button happens to sit.
+    // chrome to account for), so the container fills it edge to edge —
+    // "horizontally compressed" means the panel itself isn't wide enough
+    // for icon+text, not anything to do with where the button happens to
+    // sit.
+    var cw = container.clientWidth, ch = container.clientHeight;
     _shapeSelCtx.classList.remove('compact');
-    var wideFits = (_shapeSelCtx.offsetWidth + 8) <= vw;
+    var wideFits = (_shapeSelCtx.offsetWidth + 8) <= cw;
     _shapeSelCtx.classList.toggle('compact', !wideFits);
 
+    var containerRect = container.getBoundingClientRect();
     var rect = btn.getBoundingClientRect();
+    var relLeft   = rect.left   - containerRect.left;
+    var relTop    = rect.top    - containerRect.top;
+    var relBottom = rect.bottom - containerRect.top;
     var ctxW = _shapeSelCtx.offsetWidth;
     var ctxH = _shapeSelCtx.offsetHeight;
-    var left = Math.min(Math.max(4, rect.left), vw - ctxW - 4);
-    var top = (rect.bottom + 4 + ctxH <= vh)
-        ? rect.bottom + 4  // below, the default
-        : Math.max(4, rect.top - ctxH - 4); // not enough room below — flip above instead
+    var left = Math.min(Math.max(4, relLeft), cw - ctxW - 4);
+    var top = (relBottom + 4 + ctxH <= ch)
+        ? relBottom + 4  // below, the default
+        : Math.max(4, relTop - ctxH - 4); // not enough room below — flip above instead
     _shapeSelCtx.style.left = left + 'px';
     _shapeSelCtx.style.top  = top + 'px';
     _shapeSelCtx.classList.add('visible');
@@ -3027,6 +3000,166 @@ function _shapeSelCtxOutside(e) {
 
 function _shapeSelCtxKey(e) {
     if (e.key === 'Escape') _closeShapeSelCtx();
+}
+
+// Split Text — same AE-native-toolbar convention as Select Paths/Fill/
+// Stroke above (left-click always runs whichever granularity was picked
+// last, right-click opens a flyout of the alternatives that switches AND
+// runs immediately), except the button's own icon never changes — there's
+// only one "Split Text" glyph, just its title reflecting the current mode.
+// Reuses the exact same .shape-sel-ctx/.shape-sel-ctx-row/
+// .shape-sel-ctx-icon-btn/.shape-sel-ctx-lbl flyout styling wholesale
+// (generic icon+label popover, nothing shape-specific about the CSS
+// despite the class name) rather than duplicating an identical stylesheet.
+var SPLIT_TEXT_MODES = [
+    {
+        id: 'line', title: 'Split Text by Line', flyoutLabel: 'Line',
+        svg: '<svg viewBox="0 0 20 20" fill="currentColor">' +
+            '<rect x="2" y="3" width="16" height="2.4" rx="0.6"/>' +
+            '<rect x="2" y="8.8" width="11" height="2.4" rx="0.6" opacity="0.7"/>' +
+            '<rect x="2" y="14.6" width="14" height="2.4" rx="0.6" opacity="0.45"/></svg>'
+    },
+    {
+        id: 'word', title: 'Split Text by Word', flyoutLabel: 'Word',
+        svg: '<svg viewBox="0 0 20 20" fill="currentColor">' +
+            '<rect x="2" y="8.8" width="6.5" height="2.4" rx="0.6"/>' +
+            '<rect x="11.5" y="8.8" width="6.5" height="2.4" rx="0.6"/></svg>'
+    },
+    {
+        id: 'paragraph', title: 'Split Text by Paragraph', flyoutLabel: 'Paragraph',
+        svg: '<svg viewBox="0 0 20 20" fill="currentColor">' +
+            '<rect x="2" y="2.2" width="16" height="2.2" rx="0.55"/>' +
+            '<rect x="2" y="5.8" width="11" height="2.2" rx="0.55" opacity="0.7"/>' +
+            '<rect x="2" y="12" width="14" height="2.2" rx="0.55"/>' +
+            '<rect x="2" y="15.6" width="9" height="2.2" rx="0.55" opacity="0.7"/></svg>'
+    },
+    {
+        id: 'character', title: 'Split Text by Character', flyoutLabel: 'Character',
+        svg: '<svg viewBox="0 0 20 20" fill="currentColor">' +
+            '<rect x="1.5" y="8.5" width="3" height="3" rx="0.6"/>' +
+            '<rect x="6" y="8.5" width="3" height="3" rx="0.6" opacity="0.85"/>' +
+            '<rect x="10.5" y="8.5" width="3" height="3" rx="0.6" opacity="0.7"/>' +
+            '<rect x="15" y="8.5" width="3" height="3" rx="0.6" opacity="0.55"/></svg>'
+    }
+];
+var SPLIT_TEXT_MODE_KEY = 'lineup-split-text-mode';
+var _splitTextMode = 'word';
+
+function _splitTextFindMode(id) {
+    for (var i = 0; i < SPLIT_TEXT_MODES.length; i++) {
+        if (SPLIT_TEXT_MODES[i].id === id) return SPLIT_TEXT_MODES[i];
+    }
+    for (var j = 0; j < SPLIT_TEXT_MODES.length; j++) {
+        if (SPLIT_TEXT_MODES[j].id === 'word') return SPLIT_TEXT_MODES[j];
+    }
+    return SPLIT_TEXT_MODES[0];
+}
+
+function _splitTextInit() {
+    var saved;
+    try { saved = localStorage.getItem(SPLIT_TEXT_MODE_KEY); } catch (e) {}
+    _splitTextMode = _splitTextFindMode(saved).id;
+    _splitTextRefreshButtons();
+}
+
+function _splitTextSetMode(id) {
+    _splitTextMode = _splitTextFindMode(id).id;
+    try { localStorage.setItem(SPLIT_TEXT_MODE_KEY, _splitTextMode); } catch (e) {}
+    _splitTextRefreshButtons();
+}
+
+function _splitTextRefreshButtons() {
+    var mode = _splitTextFindMode(_splitTextMode);
+    document.querySelectorAll('.split-text-btn').forEach(function(btn) {
+        btn.title = mode.title;
+    });
+}
+
+function doSplitText(e) {
+    var keepOriginals = (e && e.altKey) ? 1 : 0;
+    run("lineup_splitText('" + _splitTextMode + "'," + keepOriginals + ")");
+}
+
+function _splitTextRunActive(e) {
+    doSplitText(e);
+}
+
+var _splitTextCtx = null;
+
+function _buildSplitTextCtx() {
+    var el = document.createElement('div');
+    el.className = 'fav-ctx shape-sel-ctx';
+    var row = document.createElement('div');
+    row.className = 'shape-sel-ctx-row';
+    SPLIT_TEXT_MODES.forEach(function(mode) {
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'shape-sel-ctx-icon-btn';
+        item.title = mode.title;
+        item.innerHTML = mode.svg + '<span class="shape-sel-ctx-lbl">' + mode.flyoutLabel + '</span>';
+        item.setAttribute('data-mode', mode.id);
+        item.addEventListener('click', function(ev) {
+            _splitTextSetMode(mode.id);
+            doSplitText(ev);
+            _closeSplitTextCtx();
+        });
+        row.appendChild(item);
+    });
+    el.appendChild(row);
+    document.body.appendChild(el);
+    return el;
+}
+
+// Positioned relative to the button's own .tab-panel, not the viewport —
+// see the identical reasoning on _openShapeSelCtx above (shared bug, same
+// fix: re-parent into that tab-panel and work in the difference between
+// its rect and the button's, which cancels out whatever the panel-scale
+// zoom does to either measurement).
+function _openSplitTextCtx(btn) {
+    if (!_splitTextCtx) _splitTextCtx = _buildSplitTextCtx();
+    var container = btn.closest('.tab-panel') || document.body;
+    container.appendChild(_splitTextCtx);
+    var items = _splitTextCtx.querySelectorAll('.shape-sel-ctx-icon-btn');
+    for (var i = 0; i < items.length; i++) {
+        items[i].classList.toggle('active', items[i].getAttribute('data-mode') === _splitTextMode);
+    }
+    var cw = container.clientWidth, ch = container.clientHeight;
+    _splitTextCtx.classList.remove('compact');
+    var wideFits = (_splitTextCtx.offsetWidth + 8) <= cw;
+    _splitTextCtx.classList.toggle('compact', !wideFits);
+
+    var containerRect = container.getBoundingClientRect();
+    var rect = btn.getBoundingClientRect();
+    var relLeft   = rect.left   - containerRect.left;
+    var relTop    = rect.top    - containerRect.top;
+    var relBottom = rect.bottom - containerRect.top;
+    var ctxW = _splitTextCtx.offsetWidth;
+    var ctxH = _splitTextCtx.offsetHeight;
+    var left = Math.min(Math.max(4, relLeft), cw - ctxW - 4);
+    var top = (relBottom + 4 + ctxH <= ch)
+        ? relBottom + 4
+        : Math.max(4, relTop - ctxH - 4);
+    _splitTextCtx.style.left = left + 'px';
+    _splitTextCtx.style.top  = top + 'px';
+    _splitTextCtx.classList.add('visible');
+    setTimeout(function() {
+        document.addEventListener('mousedown', _splitTextCtxOutside);
+        document.addEventListener('keydown', _splitTextCtxKey);
+    }, 0);
+}
+
+function _closeSplitTextCtx() {
+    if (_splitTextCtx) _splitTextCtx.classList.remove('visible');
+    document.removeEventListener('mousedown', _splitTextCtxOutside);
+    document.removeEventListener('keydown', _splitTextCtxKey);
+}
+
+function _splitTextCtxOutside(e) {
+    if (_splitTextCtx && !_splitTextCtx.contains(e.target)) _closeSplitTextCtx();
+}
+
+function _splitTextCtxKey(e) {
+    if (e.key === 'Escape') _closeSplitTextCtx();
 }
 
 // event is only ever passed from the actual onclick (both the widget's
@@ -5043,7 +5176,10 @@ function _favRenderDots(count) {
         dot.className = 'fav-dot' + (i === _favActiveIndex ? ' active' : '');
         dot.title = 'Page ' + (i + 1);
         (function(idx) {
-            dot.addEventListener('click', function() { _favGoToPage(idx); });
+            dot.addEventListener('click', function() {
+                _favLastManualNavAt = Date.now();
+                _favGoToPage(idx);
+            });
         })(i);
         dots.appendChild(dot);
     }
@@ -5063,6 +5199,86 @@ function _favGoToPage(index) {
     if (dots) {
         Array.prototype.forEach.call(dots.children, function(dot, i) {
             dot.classList.toggle('active', i === _favActiveIndex);
+        });
+    }
+}
+
+// ── Smart Stack polling ──────────────────────────────────────────────────────
+// Predictive, not automatic: jumps the Favorites bar to a page at the MOMENT
+// its trigger condition newly becomes true (an edge — selection going from
+// none to some), not continuously while it stays true. Selecting a shape,
+// then leaving it selected while manually swiping to another page, doesn't
+// keep dragging you back — only a fresh selection change does that. Two
+// current triggers, deliberately not generalized into a table since there
+// are only two and each has its own host.jsx call:
+//   - Ease Copy ('ease'): a keyframe gets selected (lineup_hasSelectedKeyframes).
+//   - Shape Tools ('vectortools'): a shape layer gets selected (lineup_hasSelectedShapeLayer).
+// If both edges land on the very same tick (e.g. a selection that includes
+// both a shape layer and pre-existing selected keyframes), Ease Copy wins —
+// it's checked first below regardless of whether the shape edge also fired.
+var _favSmartPrevKeyframes = false;
+var _favSmartPrevShapeSel  = false;
+var _favSmartWasVisible    = false;
+var _favLastManualNavAt    = 0;
+var FAV_SMART_STACK_SUPPRESS_MS = 4000; // a manual dot-click/swipe wins for this long before auto-switch can act again
+
+function _pollFavSmartStack() {
+    if (!_smartStackEnabled) { _favSmartWasVisible = false; return; }
+    var favBox = _favSlotEl();
+    var visible = !!(favBox && favBox.offsetParent) && !favBox.classList.contains('fav-empty');
+    if (!visible) { _favSmartWasVisible = false; return; }
+
+    var ids = _favGet();
+    var easeIdx = ids.indexOf('ease');
+    var shapesIdx = ids.indexOf('vectortools');
+    var wantEase = easeIdx !== -1;
+    var wantShapes = shapesIdx !== -1;
+    if (!wantEase && !wantShapes) { _favSmartWasVisible = false; return; }
+
+    // First tick since the bar (re)appeared — calibrate prev-state from
+    // whatever's true right now instead of treating it as a fresh edge, so
+    // returning to the bar (or re-enabling the setting) never misfires off
+    // a selection that was already sitting there before this started
+    // watching again.
+    var justBecameVisible = !_favSmartWasVisible;
+    _favSmartWasVisible = true;
+
+    var pending = 0, keyframesNow = false, shapeSelNow = false;
+    var settle = function() {
+        pending--;
+        if (pending > 0) return;
+
+        if (justBecameVisible) {
+            _favSmartPrevKeyframes = keyframesNow;
+            _favSmartPrevShapeSel = shapeSelNow;
+            return;
+        }
+
+        var keyEdge = wantEase && keyframesNow && !_favSmartPrevKeyframes;
+        var shapeEdge = wantShapes && shapeSelNow && !_favSmartPrevShapeSel;
+        _favSmartPrevKeyframes = keyframesNow;
+        _favSmartPrevShapeSel = shapeSelNow;
+
+        if (Date.now() - _favLastManualNavAt < FAV_SMART_STACK_SUPPRESS_MS) return;
+
+        // Ease Copy wins a simultaneous tie (both edges landing on the same
+        // tick) — keyEdge is checked first below regardless of shapeEdge.
+        if (keyEdge && easeIdx !== _favActiveIndex) _favGoToPage(easeIdx);
+        else if (shapeEdge && shapesIdx !== _favActiveIndex) _favGoToPage(shapesIdx);
+    };
+
+    if (wantEase) {
+        pending++;
+        cs.evalScript('lineup_hasSelectedKeyframes()', function(result) {
+            keyframesNow = result === '1';
+            settle();
+        });
+    }
+    if (wantShapes) {
+        pending++;
+        cs.evalScript('lineup_hasSelectedShapeLayer()', function(result) {
+            shapeSelNow = result === '1';
+            settle();
         });
     }
 }
@@ -5377,9 +5593,9 @@ function _blOpenAddPopover(anchorEl) {
     if (!_blPopover) _blPopover = _blBuildPopover();
 
     _blPopoverGrid.innerHTML = '';
-    var pinned = _blPinnedIds();
+    var available = _blAvailableIds();
     BL_CATALOG.forEach(function(entry) {
-        if (pinned.indexOf(entry.id) !== -1) return;
+        if (available.indexOf(entry.id) === -1) return;
         _blPopoverGrid.appendChild(_blBuildCatalogTile(entry));
     });
     if (_blPopoverInput) _blPopoverInput.value = '';
@@ -7120,6 +7336,7 @@ function applyCompExport() {
 document.addEventListener('DOMContentLoaded', function() {
     restoreActiveTab();
     _shapeSelInit();
+    _splitTextInit();
     _initAnchorTiers();
     restoreClassicOrder();
     restoreClassicCollapsed();
@@ -7128,6 +7345,7 @@ document.addEventListener('DOMContentLoaded', function() {
     _blInitControls();
     _blApplyLayout();
     restoreHighContrast();
+    restoreSmartStack();
     initToolsSearch();
     _initToolsFilterCompact();
     restoreCollapsed();
@@ -7140,22 +7358,12 @@ document.addEventListener('DOMContentLoaded', function() {
     _initHeaderWidthScrub();
     setInterval(_pollKeyAlignMode, 300);
     setInterval(_pollShapeColorHud, 1000);
+    setInterval(_pollFavSmartStack, 300);
 
-    // Favorites: load persisted state, render bar, wire up right-click context menus
+    // Distribute pickers' own star buttons (favorite a Z/Path/Radial/Grid
+    // distribute mode) persist independently of any UI chrome — just load
+    // the saved state so their stars render correctly.
     _loadFavorites();
-    _renderFavBar();
-    var _pickerFavIds = { 'dist-z': 1, 'dist-path': 1, 'dist-radial': 1, 'dist-grid': 1 };
-    var _favBtns = document.querySelectorAll('[data-fav-id]:not([data-fav-clone])');
-    for (var _fi = 0; _fi < _favBtns.length; _fi++) {
-        (function(btn) {
-            var fid = btn.getAttribute('data-fav-id');
-            if (_pickerFavIds[fid]) return; // picker buttons get star inside their popup
-            btn.addEventListener('contextmenu', function(e) {
-                e.preventDefault();
-                _openFavCtx(btn, e.clientX, e.clientY);
-            });
-        })(_favBtns[_fi]);
-    }
 
     var scaleEl = document.getElementById('scaleSlider');
     if (scaleEl) {

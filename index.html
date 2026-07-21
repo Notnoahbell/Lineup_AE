@@ -869,81 +869,81 @@
               </button>
             </div>
           </div>
-          <!-- Two grouped toolbars — stacked into two rows when this
-               widget is paired half-width (data-span="3", not enough room
-               for both on one line), placed side by side (Merge/Explode
-               first, on the left) when it's alone in a full-width row
-               (data-span="6") instead — see .vectortools-rows in
-               style.css. -->
-          <div class="vectortools-rows">
-          <div class="btn-row-wide">
-            <!-- Merge/Explode's own little taskbar, distinct from the
-                 per-shape-property tools below. -->
-            <div class="btn-group btn-group-wide vectortools-taskbar">
-              <!-- Merges every selected shape layer into the first one
-                   selected, preserving each one's comp-space position/
-                   rotation/scale (current values only — see
-                   lineup_mergeShapes in host.jsx). -->
-              <button class="icon-btn-wide" title="Merge Shapes" onclick="doMergeShapes(event)">
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="butt" stroke-linejoin="round">
-                  <path d="M3,5 C7,5 9.5,7 11,10 L13,10"/>
-                  <path d="M3,15 C7,15 9.5,13 11,10 L13,10"/>
-                  <path d="M13,5.5 L20,10 L13,14.5 Z" fill="currentColor" stroke="none"/>
-                </svg>
-              </button>
-              <!-- Splits each selected shape layer's top-level Contents
-                   items out into their own new layers, each preserving
-                   the original's comp-space appearance (see
-                   lineup_explodeShapes in host.jsx). -->
-              <button class="icon-btn-wide" title="Explode Shapes" onclick="doExplodeShapes(event)">
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="butt" stroke-linejoin="round">
-                  <path d="M1,10 L3,10 C7,10 9,7 11,5 L14,5"/>
-                  <path d="M3,10 C7,10 9,13 11,15 L14,15"/>
-                  <path d="M14,1.4 L19.6,5 L14,8.6 Z" fill="currentColor" stroke="none"/>
-                  <path d="M14,11.4 L19.6,15 L14,18.6 Z" fill="currentColor" stroke="none"/>
-                </svg>
-              </button>
-            </div>
-          </div>
+          <!-- One unified toolbar (same pattern as Align/Distribute's
+               single .btn-group-wide with a vsep between logical groups) at
+               full width — Merge/Explode on the left, a divider, then the
+               per-shape-property tools. Each logical group is its own
+               .vectortools-grp wrapper (flex-grow matching its own button
+               count, so per-button width still comes out even across the
+               whole row) rather than 5 flat siblings, so half width can
+               reflow into two independently-even rows instead of a grid
+               that would mix the two groups together (see style.css). -->
           <div class="btn-row-wide">
             <div class="btn-group btn-group-wide">
-              <!-- AE-native-toolbar style: left-click always runs whichever
-                   of Path/Fill/Stroke selection was picked last (icon
-                   reflects it — see _shapeSelRefreshButtons in main.js);
-                   right-click opens an icon flyout to switch modes, which
-                   also runs the newly-picked one immediately. -->
-              <button class="icon-btn-wide shape-sel-btn" title="Select All Paths" onclick="_shapeSelRunActive()" oncontextmenu="event.preventDefault(); _openShapeSelCtx(this);">
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">
-                  <rect x="1.5" y="1.5" width="17" height="17" rx="4" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/>
-                  <path d="M3,15 C3,15 6,5 10,10 C14,15 17,5 17,5" stroke-width="1.5"/>
-                  <rect x="1.8" y="13.2" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
-                  <rect x="8.8" y="8.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
-                  <rect x="15.8" y="3.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
-                </svg>
-              </button>
-              <!-- Cycles cap+join together; hold Alt to cycle just the cap
-                   (see doChangeStrokeType/lineup_changeStrokeType). -->
-              <button class="icon-btn-wide" title="Change Stroke Type (hold Alt: cap only)" onclick="doChangeStrokeType(event)">
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2.4,2.2">
-                  <path d="M10,3 L17,16.5 L3,16.5 Z"/>
-                </svg>
-              </button>
-              <!-- Consolidates every solid (non-gradient) color found on
-                   the selected layers (or every layer, if none are
-                   selected) into one "Color Controller" null at the top
-                   of the stack, one Color Control effect per unique
-                   color — see lineup_manageColors in host.jsx. -->
-              <button class="icon-btn-wide" title="Color Management" onclick="doManageColors()">
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                  <defs>
-                    <clipPath id="colorMgmtClipWidget"><rect x="0" y="10.25" width="20" height="10"/></clipPath>
-                  </defs>
-                  <path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z" fill="currentColor" stroke="none" clip-path="url(#colorMgmtClipWidget)"/>
-                  <path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z"/>
-                </svg>
-              </button>
+              <div class="vectortools-grp vectortools-grp-2">
+                <!-- Merges every selected shape layer into the first one
+                     selected, preserving each one's comp-space position/
+                     rotation/scale (current values only — see
+                     lineup_mergeShapes in host.jsx). -->
+                <button class="icon-btn-wide" title="Merge Shapes" onclick="doMergeShapes(event)">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
+                    <path d="M3,5 L4,5 C6,7.5 8,10 11.5,10 L13,10"/>
+                    <path d="M3,15 L4,15 C6,12.5 8,10 11.5,10 L13,10" stroke-dasharray="2.2,2"/>
+                    <path d="M13,5.5 L20,10 L13,14.5 Z" fill="currentColor" stroke="none"/>
+                  </svg>
+                </button>
+                <!-- Splits each selected shape layer's top-level Contents
+                     items out into their own new layers, each preserving
+                     the original's comp-space appearance (see
+                     lineup_explodeShapes in host.jsx). -->
+                <button class="icon-btn-wide" title="Explode Shapes" onclick="doExplodeShapes(event)">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
+                    <path d="M1,10 L3,10 C7,10 9,7 11,5 L14,5"/>
+                    <path d="M3,10 C7,10 9,13 11,15 L14,15" stroke-dasharray="2.2,2"/>
+                    <path d="M14,1.4 L19.6,5 L14,8.6 Z" fill="currentColor" stroke="none"/>
+                    <path d="M14,11.4 L19.6,15 L14,18.6 Z" fill="currentColor" stroke="none"/>
+                  </svg>
+                </button>
+              </div>
+              <span class="vsep"></span>
+              <div class="vectortools-grp vectortools-grp-3">
+                <!-- AE-native-toolbar style: left-click always runs whichever
+                     of Path/Fill/Stroke selection was picked last (icon
+                     reflects it — see _shapeSelRefreshButtons in main.js);
+                     right-click opens an icon flyout to switch modes, which
+                     also runs the newly-picked one immediately. -->
+                <button class="icon-btn-wide shape-sel-btn" title="Select All Paths" onclick="_shapeSelRunActive()" oncontextmenu="event.preventDefault(); _openShapeSelCtx(this);">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">
+                    <rect x="1.5" y="1.5" width="17" height="17" rx="4" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/>
+                    <path d="M3,15 C3,15 6,5 10,10 C14,15 17,5 17,5" stroke-width="1.5"/>
+                    <rect x="1.8" y="13.2" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
+                    <rect x="8.8" y="8.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
+                    <rect x="15.8" y="3.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
+                  </svg>
+                </button>
+                <!-- Cycles cap+join together; hold Alt to cycle just the cap
+                     (see doChangeStrokeType/lineup_changeStrokeType). -->
+                <button class="icon-btn-wide" title="Change Stroke Type (hold Alt: cap only)" onclick="doChangeStrokeType(event)">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2.4,2.2">
+                    <path d="M11.07,5.06 L16.09,14.75 A1.2,1.2 0 0 1 15.03,16.5 L4.97,16.5 A1.2,1.2 0 0 1 3.91,14.75 L8.93,5.06 A1.2,1.2 0 0 1 11.07,5.06 Z"/>
+                  </svg>
+                </button>
+                <!-- Consolidates every solid (non-gradient) color found on
+                     the selected layers (or every layer, if none are
+                     selected) into one "Color Controller" null at the top
+                     of the stack, one Color Control effect per unique
+                     color — see lineup_manageColors in host.jsx. -->
+                <button class="icon-btn-wide" title="Color Management" onclick="doManageColors()">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <defs>
+                      <clipPath id="colorMgmtClipWidget"><rect x="0" y="10.25" width="20" height="10"/></clipPath>
+                    </defs>
+                    <path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z" fill="currentColor" stroke="none" clip-path="url(#colorMgmtClipWidget)"/>
+                    <path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z"/>
+                  </svg>
+                </button>
+              </div>
             </div>
-          </div>
           </div>
         </div>
       </div>
@@ -1418,26 +1418,35 @@
       </button>
       <button class="tools-grid-btn" data-group="shape" data-tool-id="changeStrokeType" title="Change Stroke Type (hold Alt: cap only)" onclick="doChangeStrokeType(event)">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2.4,2.2">
-          <path d="M10,3 L17,16.5 L3,16.5 Z"/>
+          <path d="M11.07,5.06 L16.09,14.75 A1.2,1.2 0 0 1 15.03,16.5 L4.97,16.5 A1.2,1.2 0 0 1 3.91,14.75 L8.93,5.06 A1.2,1.2 0 0 1 11.07,5.06 Z"/>
         </svg>
         <span>Stroke Type</span>
       </button>
       <button class="tools-grid-btn" data-group="shape" data-tool-id="mergeShapes" title="Merge Shapes" onclick="doMergeShapes(event)">
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="butt" stroke-linejoin="round">
-          <path d="M3,5 C7,5 9.5,7 11,10 L13,10"/>
-          <path d="M3,15 C7,15 9.5,13 11,10 L13,10"/>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
+          <path d="M3,5 L4,5 C6,7.5 8,10 11.5,10 L13,10"/>
+          <path d="M3,15 L4,15 C6,12.5 8,10 11.5,10 L13,10" stroke-dasharray="2.2,2"/>
           <path d="M13,5.5 L20,10 L13,14.5 Z" fill="currentColor" stroke="none"/>
         </svg>
         <span>Merge</span>
       </button>
       <button class="tools-grid-btn" data-group="shape" data-tool-id="explodeShapes" title="Explode Shapes" onclick="doExplodeShapes(event)">
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="butt" stroke-linejoin="round">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
           <path d="M1,10 L3,10 C7,10 9,7 11,5 L14,5"/>
-          <path d="M3,10 C7,10 9,13 11,15 L14,15"/>
+          <path d="M3,10 C7,10 9,13 11,15 L14,15" stroke-dasharray="2.2,2"/>
           <path d="M14,1.4 L19.6,5 L14,8.6 Z" fill="currentColor" stroke="none"/>
           <path d="M14,11.4 L19.6,15 L14,18.6 Z" fill="currentColor" stroke="none"/>
         </svg>
         <span>Explode</span>
+      </button>
+      <button class="tools-grid-btn split-text-btn" data-group="shape" data-tool-id="splitText" title="Split Text by Word" onclick="_splitTextRunActive(event)" oncontextmenu="event.preventDefault(); _openSplitTextCtx(this);">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">
+          <rect x="3" y="3" width="14" height="3.4" rx="0" fill="currentColor" stroke="none"/>
+          <rect x="8.3" y="3" width="3.4" height="6.5" rx="0" fill="currentColor" stroke="none"/>
+          <rect x="8.3" y="14.5" width="3.4" height="2.8" rx="0" fill="currentColor" stroke="none"/>
+          <line x1="4" y1="15.5" x2="18" y2="7.6" stroke-width="2.16"/>
+        </svg>
+        <span>Split Text</span>
       </button>
       <button class="tools-grid-btn" data-group="shape" data-tool-id="manageColors" title="Color Management" onclick="doManageColors()">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -1509,8 +1518,27 @@
       <span class="toggle-track"></span>
     </label>
   </div>
+  <!-- Compact-only: auto-jumps the Favorites bar to Ease Copy the moment
+       keyframes get selected, or to Shape Tools the moment a shape layer
+       gets selected — predictive (fires on the selection CHANGE, not
+       continuously while it's true), so it never fights a manual swipe
+       away. See _pollFavSmartStack in main.js. -->
+  <div class="settings-tab-row">
+    <span class="lbl settings-row-lbl">
+      <svg class="settings-row-icon" viewBox="0 0 16 16" fill="currentColor">
+        <rect x="1.5" y="9" width="9" height="5" rx="1.2" opacity="0.45"/>
+        <rect x="3" y="6" width="9" height="5" rx="1.2" opacity="0.7"/>
+        <rect x="4.5" y="3" width="9" height="5" rx="1.2"/>
+      </svg>
+      Smart Stack
+    </span>
+    <label class="settings-toggle">
+      <input type="checkbox" id="smartStackCheck" checked onchange="toggleSmartStack(this.checked)">
+      <span class="toggle-track"></span>
+    </label>
+  </div>
   <div class="settings-popup-ftr">
-    <span class="lbl" id="settingsVersionLbl">Version 1.8.6</span>
+    <span class="lbl" id="settingsVersionLbl">Version 1.9.1</span>
     <button class="btn" onclick="checkForUpdates(true)">Check for Updates</button>
   </div>
  </div>
@@ -1547,7 +1575,7 @@
     <div class="footer-brand">
       <img src="heist_icon_32.png" class="footer-logo" alt="">
       <span class="footer-name">Heist Lineup</span>
-      <span class="footer-version" id="footerVersion">v1.8.6</span>
+      <span class="footer-version" id="footerVersion">v1.9.1</span>
     </div>
     <div class="footer-actions">
     <button class="settings-btn" id="quickActionsEditBtn" onclick="_toggleEditMode()" title="Customize Quick Actions &amp; Rearrange Align / Distribute / Sizing / Auto Crop / Sort">
@@ -2021,7 +2049,7 @@
           <div class="help-sec-group">
             <div class="help-item sec">
               <div class="help-key-row">
-                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2.4,2.2"><path d="M10,3 L17,16.5 L3,16.5 Z"/></svg>
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2.4,2.2"><path d="M11.07,5.06 L16.09,14.75 A1.2,1.2 0 0 1 15.03,16.5 L4.97,16.5 A1.2,1.2 0 0 1 3.91,14.75 L8.93,5.06 A1.2,1.2 0 0 1 11.07,5.06 Z"/></svg>
                 <span class="help-key">Change Stroke Type</span>
               </div>
               <span class="help-desc">Cycles cap and join together; hold Alt to cycle just the cap.</span>
@@ -2031,21 +2059,28 @@
                 <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z" fill="currentColor" stroke="none" opacity="0.55"/><path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z"/></svg>
                 <span class="help-key">Color Management</span>
               </div>
-              <span class="help-desc">Consolidates every solid color on the selected layers (or the whole comp) into one Color Controller null, one Color Control effect per unique color — reuses an existing controller instead of making a new one.</span>
+              <span class="help-desc">Consolidates every solid color on the selected layers (or the whole comp) into one Color Controller null, one Color Control effect per unique color — reuses an existing controller instead of making a new one. Covers shape Fill/Stroke, text layers' own character Fill/Stroke, and any effect or layer style color; gradients are always left alone.</span>
             </div>
             <div class="help-item sec">
               <div class="help-key-row">
-                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="butt" stroke-linejoin="round"><path d="M3,5 C7,5 9.5,7 11,10 L13,10"/><path d="M3,15 C7,15 9.5,13 11,10 L13,10"/><path d="M13,5.5 L20,10 L13,14.5 Z" fill="currentColor" stroke="none"/></svg>
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round"><path d="M3,5 L4,5 C6,7.5 8,10 11.5,10 L13,10"/><path d="M3,15 L4,15 C6,12.5 8,10 11.5,10 L13,10" stroke-dasharray="2.2,2"/><path d="M13,5.5 L20,10 L13,14.5 Z" fill="currentColor" stroke="none"/></svg>
                 <span class="help-key">Merge Shapes</span>
               </div>
               <span class="help-desc">Merges every selected shape layer into the first one selected, preserving each layer's current position, rotation, and scale.</span>
             </div>
             <div class="help-item sec">
               <div class="help-key-row">
-                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="butt" stroke-linejoin="round"><path d="M1,10 L3,10 C7,10 9,7 11,5 L14,5"/><path d="M3,10 C7,10 9,13 11,15 L14,15"/><path d="M14,1.4 L19.6,5 L14,8.6 Z" fill="currentColor" stroke="none"/><path d="M14,11.4 L19.6,15 L14,18.6 Z" fill="currentColor" stroke="none"/></svg>
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round"><path d="M1,10 L3,10 C7,10 9,7 11,5 L14,5"/><path d="M3,10 C7,10 9,13 11,15 L14,15" stroke-dasharray="2.2,2"/><path d="M14,1.4 L19.6,5 L14,8.6 Z" fill="currentColor" stroke="none"/><path d="M14,11.4 L19.6,15 L14,18.6 Z" fill="currentColor" stroke="none"/></svg>
                 <span class="help-key">Explode Shapes</span>
               </div>
-              <span class="help-desc">Splits each selected shape layer's top-level Contents items into their own new layers, preserving comp-space appearance.</span>
+              <span class="help-desc">Splits each selected shape layer's top-level Contents groups into their own new layers, preserving comp-space appearance. Only splits when every top-level item is a Group — ungrouped content (e.g. two paths joined by a Merge Paths modifier) is left untouched rather than risk breaking it apart.</span>
+            </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round"><rect x="3" y="3" width="14" height="3.4" rx="0" fill="currentColor" stroke="none"/><rect x="8.3" y="3" width="3.4" height="6.5" rx="0" fill="currentColor" stroke="none"/><rect x="8.3" y="14.5" width="3.4" height="2.8" rx="0" fill="currentColor" stroke="none"/><line x1="4" y1="15.5" x2="18" y2="7.6" stroke-width="2.16"/></svg>
+                <span class="help-key">Split Text</span>
+              </div>
+              <span class="help-desc">Splits each selected text layer into one new layer per character, word, line, or paragraph (right-click to choose — left-click reruns whichever was picked last) — a real split, each new layer's own text is just that piece, positioned to land exactly where it rendered in the original, measured directly off After Effects' own text engine so kerning, wrapping, and justified/center/right-aligned paragraphs are all handled correctly. The original is removed; hold Alt to keep it (disabled) instead and parent every split layer to a new null carrying its transform.</span>
             </div>
             <div class="help-item sec">
               <div class="help-key-row">

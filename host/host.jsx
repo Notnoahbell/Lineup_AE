@@ -296,6 +296,26 @@ function lineup_hasSelectedKeyframes() {
     }
 }
 
+// Cheap poll target for the Favorites bar's smart-stack switch: "1" as soon
+// as the selection includes a shape layer. Unlike lineup_shapeColorHudTargetLayers
+// (which falls back to every shape layer in the comp when nothing's
+// selected, for the HUD's own display purposes), this only ever looks at
+// the actual selection — an empty selection is "0", not "there happen to
+// be shape layers in this comp."
+function lineup_hasSelectedShapeLayer() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "0";
+        var layers = comp.selectedLayers;
+        for (var i = 0; i < layers.length; i++) {
+            if (layers[i] instanceof ShapeLayer) return "1";
+        }
+        return "0";
+    } catch (err) {
+        return "0";
+    }
+}
+
 // Moves one keyframe to newTime, preserving value/interpolation/ease/spatial
 // tangents as best it can. AE has no "move this keyframe's time" call, so this
 // removes and re-adds it — best-effort restoration is wrapped per-field so a
@@ -1072,19 +1092,27 @@ function lineup_cloneShapeItemInto(sourceItem, targetGroup) {
 }
 
 // Mirrors the copyProperties() approach from a published, field-tested
-// "Explode Shape Layer" script rather than an earlier from-scratch
-// attempt here (index-aligned + a PropertyType branch) that had a real
-// risk of drifting out of sync for some nested-group shapes.
-// target.property(matchName) — BY NAME, not index — either finds an
-// already-existing child (a shape item's own fixed sub-properties, e.g.
-// Size/Position/Roundness, or a Group's Transform group, all already
-// present the moment the parent itself was added) or comes back empty
-// (an arbitrary Contents-list child, which a freshly-added parent starts
-// without), in which case it's added fresh — the same lookup handles
-// both cases uniformly with no need to branch on PropertyType at all.
+// "Explode Shape Layer" script, with one correction: that reference
+// (and an earlier version of this function) matched every child by name —
+// target.property(matchName) — on the theory that a freshly-added parent's
+// fixed sub-properties (a Path item's own Shape/Direction, a Transform
+// Group's Position/Rotation/..., a single Fill's Color/Opacity) already
+// exist and just need finding, while an empty Contents-list child comes
+// back null and gets added fresh, with no need to tell the two cases
+// apart. That holds for NAMED_GROUP parents (each named child appears
+// exactly once), but a repeatable/orderable INDEXED_GROUP parent — a
+// shape's own Contents ("ADBE Vectors Group"/"ADBE Root Vectors Group") or
+// a Group's own Contents — can hold several SIBLINGS with the identical
+// matchName (e.g. two "ADBE Vector Shape - Group" paths under one Merge
+// Paths). Matching those by name found the first path's already-cloned
+// property again on the second path's turn, overwriting it in place
+// instead of adding a second one — silently collapsing N paths/fills/
+// groups down to whichever was copied last. INDEXED_GROUP parents now
+// always addProperty a fresh sibling per source child instead.
 // typeof .setValue === 'function' is how a leaf (settable) property is
 // told apart from a group still needing its own recursion.
 function lineup_copyPropertyTree(source, target) {
+    var indexed = (source.propertyType === PropertyType.INDEXED_GROUP);
     for (var i = 1; i <= source.numProperties; i++) {
         var srcChild = source.property(i);
         var mn;
@@ -1093,9 +1121,14 @@ function lineup_copyPropertyTree(source, target) {
         try { if (!srcChild.enabled) continue; } catch (e) {}
         if (LINEUP_SHAPE_CLONE_BLACKLIST[mn]) continue;
 
-        var tgtChild = target.property(mn);
-        if (!tgtChild) {
+        var tgtChild;
+        if (indexed) {
             try { tgtChild = target.addProperty(mn); } catch (e) { continue; }
+        } else {
+            tgtChild = target.property(mn);
+            if (!tgtChild) {
+                try { tgtChild = target.addProperty(mn); } catch (e) { continue; }
+            }
         }
         if (!tgtChild) continue;
 
@@ -1223,19 +1256,31 @@ function lineup_mergeShapes(keepOriginals) {
     }
 }
 
-// Splits every selected shape layer that has 2+ top-level Contents items
-// into that many separate new shape layers, one per item — each new
-// layer's own transform is just a direct copy of the ORIGINAL layer's
-// (position/rotation/scale/anchor/opacity/parent/timing), since the item
-// itself is moved over unchanged; the original layer's transform composed
-// with the item's own (unchanged) internal transform is what rendered it
-// before, and that's exactly reproduced by giving the new layer that same
-// outer transform. The original layer is then deleted — or, with
+// Splits every selected shape layer that has 2+ top-level Contents GROUPS
+// ("ADBE Vector Group") into that many separate new shape layers, one per
+// group — each group is moved over whole, with everything nested inside it
+// (paths, Fill/Stroke, Merge Paths, Trim Paths, Repeaters, sub-groups...)
+// intact, since lineup_cloneShapeItemInto deep-clones the whole property
+// tree of whatever single item it's given. A layer only qualifies if EVERY
+// one of its top-level Contents items is itself a Group — if any top-level
+// item is a bare Path/Fill/Stroke/Merge Paths/etc. sitting ungrouped
+// alongside others (e.g. two paths combined by a Merge Paths "Difference"
+// set directly at the root, like a hand-drawn letter "O"), that layer is
+// left alone entirely rather than explode it: those raw siblings only
+// render correctly together (Merge Paths only merges paths that are its
+// own siblings within the same Contents list), so splitting them one item
+// per layer would silently break the merge and drop pieces — group them
+// yourself first (Cmd/Ctrl+G) if you want to explode that content later.
+// Each new layer's own transform is just a direct copy of the ORIGINAL
+// layer's (position/rotation/scale/anchor/opacity/parent/timing), since the
+// group itself is moved over unchanged; the original layer's transform
+// composed with the group's own (unchanged) internal transform is what
+// rendered it before, and that's exactly reproduced by giving the new layer
+// that same outer transform. The original layer is then deleted — or, with
 // keepOriginals, kept but switched off (its Video/eye toggle turned off)
 // instead, so nothing is lost. Every new layer created ends up selected
 // (and nothing else), regardless of how many original layers were
-// exploded. No-op (silently) if no selected shape layer has more than one
-// top-level item to split.
+// exploded. No-op (silently) if no selected shape layer qualifies.
 function lineup_explodeShapes(keepOriginals) {
     try {
         var comp = app.project.activeItem;
@@ -1245,7 +1290,15 @@ function lineup_explodeShapes(keepOriginals) {
         for (var i = 0; i < layers.length; i++) {
             if (!(layers[i] instanceof ShapeLayer)) continue;
             var root = layers[i].property("ADBE Root Vectors Group");
-            if (root && root.numProperties > 1) candidates.push(layers[i]);
+            if (!root || root.numProperties < 2) continue;
+
+            var allGroups = true;
+            for (var g = 1; g <= root.numProperties; g++) {
+                var gmn;
+                try { gmn = root.property(g).matchName; } catch (e) { gmn = null; }
+                if (gmn !== "ADBE Vector Group") { allGroups = false; break; }
+            }
+            if (allGroups) candidates.push(layers[i]);
         }
         if (!candidates.length) return "";
 
@@ -1297,10 +1350,243 @@ function lineup_explodeShapes(keepOriginals) {
     }
 }
 
+// ── SPLIT TEXT ────────────────────────────────────────────────────────────────
+// Splits each selected text layer into one new layer per character, word,
+// line, or paragraph — a real split (each new layer's own source text is
+// just that unit), positioned to land exactly where that unit rendered in
+// the original.
+//
+// Position comes from a scratch duplicate carrying a temporary Text
+// Animator: one Range Selector, set to select by index with its Mode set
+// to Subtract — which inverts it, so a sliding one-unit-wide index window
+// is what's left alone while everything else gets selected — driving a
+// Scale property down to [0,0,100]. Everything outside the current unit
+// collapses to nothing, so sourceRectAtTime() on the whole (still fully
+// intact) layer reduces to just that one unit's real, correctly
+// kerned/wrapped/justified bounds, straight from After Effects' own text
+// engine rather than reconstructed from measuring substrings (which loses
+// kerning context at whatever boundary got cut).
+//
+// Alt-click (keepOriginals) parents every split layer to one new null
+// carrying the original's own Anchor Point/Position/Scale/Rotation/
+// Opacity, resets each split layer's own anchor to [0,0], and sets its
+// Position directly to (that unit's measured center) minus (the new
+// layer's own natural center, measured fresh once its text is set) —
+// since a layer anchored at [0,0] renders its local origin exactly at
+// Position, this lands its content's own center on the target regardless
+// of where the content's natural local origin happens to sit, with no
+// assumption that two different layers share a coordinate frame. Only
+// the null needs to account for the original's transform this way — the
+// split layers themselves just do plain 2D placement in the null's space.
+//
+// Without Alt, there's no null: each split layer keeps the original's own
+// anchor/position/scale/rotation/parent untouched, and gets nudged by a
+// comp-space delta instead — toComp() gives the true comp-space point the
+// unit measured at and the point the layer's own (now-shrunk) content
+// currently renders at, and compDeltaToPositionDelta()/shiftPosition()
+// turn the difference into a Position adjustment that already accounts
+// for the layer's own rotation/scale and its parent chain.
+function lineup_addIsolatorAnimator(layer, rangeType2) {
+    var animators = layer.property("ADBE Text Properties").property("ADBE Text Animators");
+    var animator = animators.addProperty("ADBE Text Animator");
+    animator.name = "Lineup Isolator";
+    animator.property("ADBE Text Animator Properties").addProperty("ADBE Text Scale 3D").setValue([0, 0, 100]);
+
+    var rangeSelector = animator.property("ADBE Text Selectors").addProperty("ADBE Text Selector");
+    var advanced = rangeSelector.property("ADBE Text Range Advanced");
+    advanced.property("ADBE Text Range Units").setValue(2);        // Index
+    advanced.property("ADBE Text Range Type2").setValue(rangeType2);
+    advanced.property("ADBE Text Selector Mode").setValue(2);      // Subtract — inverts so the index window is spared
+    advanced.property("ADBE Text Selector Max Amount").setValue(100);
+
+    rangeSelector.property("ADBE Text Index Start").setValue(0);
+    rangeSelector.property("ADBE Text Index End").setValue(1);
+    return rangeSelector.property("ADBE Text Index Offset");
+}
+
+function lineup_combineParagraphUnit(lines, rects) {
+    var minLeft = rects[0].left, minTop = rects[0].top;
+    var maxRight = rects[0].left + rects[0].width, maxBottom = rects[0].top + rects[0].height;
+    for (var i = 1; i < rects.length; i++) {
+        var r = rects[i];
+        if (r.left < minLeft) minLeft = r.left;
+        if (r.top < minTop) minTop = r.top;
+        if (r.left + r.width > maxRight) maxRight = r.left + r.width;
+        if (r.top + r.height > maxBottom) maxBottom = r.top + r.height;
+    }
+    return { text: lines.join("\r"), centerX: (minLeft + maxRight) / 2, centerY: (minTop + maxBottom) / 2 };
+}
+
+function lineup_splitTextUnits(scratch, str, mode, t) {
+    var units = [];
+
+    if (mode === "character") {
+        var charOffset = lineup_addIsolatorAnimator(scratch, 2); // Characters Excluding Spaces
+        var charIndex = 0;
+        for (var c = 0; c < str.length; c++) {
+            var ch = str.charAt(c);
+            if (/\s/.test(ch)) continue;
+            charOffset.setValue(charIndex);
+            var cb = scratch.sourceRectAtTime(t, false);
+            units.push({ text: ch, centerX: cb.left + cb.width / 2, centerY: cb.top + cb.height / 2 });
+            charIndex++;
+        }
+    } else if (mode === "word") {
+        var wordOffset = lineup_addIsolatorAnimator(scratch, 3); // Words
+        var wordRe = /\S+/g, wm, wi = 0;
+        while ((wm = wordRe.exec(str)) !== null) {
+            wordOffset.setValue(wi);
+            var wb = scratch.sourceRectAtTime(t, false);
+            units.push({ text: wm[0], centerX: wb.left + wb.width / 2, centerY: wb.top + wb.height / 2 });
+            wi++;
+        }
+    } else { // "line" or "paragraph" — paragraph groups line measurements between blank-line breaks
+        var lineOffset = lineup_addIsolatorAnimator(scratch, 4); // Lines
+        var allLines = str.split(/\r\n|\r|\n/);
+        var lineRects = [];
+        for (var li = 0; li < allLines.length; li++) {
+            if (allLines[li].length > 0) {
+                lineOffset.setValue(li);
+                var lb = scratch.sourceRectAtTime(t, false);
+                lineRects[li] = { left: lb.left, top: lb.top, width: lb.width, height: lb.height };
+            } else {
+                lineRects[li] = null;
+            }
+        }
+
+        if (mode === "line") {
+            for (var li2 = 0; li2 < allLines.length; li2++) {
+                if (!lineRects[li2]) continue;
+                var r = lineRects[li2];
+                units.push({ text: allLines[li2], centerX: r.left + r.width / 2, centerY: r.top + r.height / 2 });
+            }
+        } else { // "paragraph"
+            var paraLines = [], paraRects = [];
+            for (var li3 = 0; li3 < allLines.length; li3++) {
+                if (lineRects[li3]) {
+                    paraLines.push(allLines[li3]);
+                    paraRects.push(lineRects[li3]);
+                } else if (paraLines.length) {
+                    units.push(lineup_combineParagraphUnit(paraLines, paraRects));
+                    paraLines = []; paraRects = [];
+                }
+            }
+            if (paraLines.length) units.push(lineup_combineParagraphUnit(paraLines, paraRects));
+        }
+    }
+
+    return units;
+}
+
+function lineup_createSplitControllerNull(comp, original) {
+    var ctrl = comp.layers.addNull();
+    ctrl.name = original.name + " Split Controller";
+    ctrl.parent = original.parent;
+    ctrl.anchorPoint.setValue(original.anchorPoint.value);
+    ctrl.position.setValue(original.position.value);
+    ctrl.scale.setValue(original.scale.value);
+    ctrl.rotation.setValue(original.rotation.value);
+    ctrl.opacity.setValue(original.opacity.value);
+    ctrl.startTime = original.startTime;
+    ctrl.inPoint = original.inPoint;
+    ctrl.outPoint = original.outPoint;
+    ctrl.moveBefore(original);
+    return ctrl;
+}
+
+function lineup_splitText(mode, keepOriginals) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var t = comp.time;
+        var layers = comp.selectedLayers;
+        var candidates = [];
+        for (var i = 0; i < layers.length; i++) {
+            if (layers[i] instanceof TextLayer) candidates.push(layers[i]);
+        }
+        if (!candidates.length) return "";
+
+        app.beginUndoGroup("Split Text");
+        var toRemove = [];
+        var newLayers = [];
+        for (var c = 0; c < candidates.length; c++) {
+            var original = candidates[c];
+            var str = original.sourceText.value.text;
+            if (!str.length) continue;
+
+            var scratch = original.duplicate();
+            scratch.name = "Split Text scratch";
+
+            var units;
+            try {
+                units = lineup_splitTextUnits(scratch, str, mode, t);
+            } finally {
+                scratch.remove();
+            }
+            if (!units.length) continue;
+
+            var ctrl = keepOriginals ? lineup_createSplitControllerNull(comp, original) : null;
+            var created = [];
+
+            for (var u = 0; u < units.length; u++) {
+                var unit = units[u];
+                var newLayer = original.duplicate();
+                newLayer.name = unit.text.replace(/^\s+|\s+$/g, "") || unit.text;
+
+                var newDoc = newLayer.sourceText.value;
+                newDoc.text = unit.text;
+                newLayer.sourceText.setValue(newDoc);
+
+                if (ctrl) {
+                    var oldAnchor = newLayer.anchorPoint.value;
+                    var zeroAnchor = oldAnchor.length > 2 ? [0, 0, oldAnchor[2]] : [0, 0];
+                    if (newLayer.anchorPoint.numKeys > 0) newLayer.anchorPoint.setValueAtTime(t, zeroAnchor);
+                    else newLayer.anchorPoint.setValue(zeroAnchor);
+                    newLayer.parent = ctrl;
+
+                    var ownRect = newLayer.sourceRectAtTime(t, false);
+                    var ownCenterX = ownRect.left + ownRect.width / 2;
+                    var ownCenterY = ownRect.top + ownRect.height / 2;
+
+                    var curPos = newLayer.position.dimensionsSeparated ? null : newLayer.position.value;
+                    var newPos = [unit.centerX - ownCenterX, unit.centerY - ownCenterY];
+                    if (curPos && curPos.length > 2) newPos.push(curPos[2]);
+                    setPositionAt(newLayer.position, newPos, t, newLayer.threeDLayer);
+                } else {
+                    var targetComp = toComp(original, [unit.centerX, unit.centerY]);
+                    var ownRect2 = newLayer.sourceRectAtTime(t, false);
+                    var ownCenterLocal = [ownRect2.left + ownRect2.width / 2, ownRect2.top + ownRect2.height / 2];
+                    var currentComp = toComp(newLayer, ownCenterLocal);
+                    var dComp = [targetComp[0] - currentComp[0], targetComp[1] - currentComp[1]];
+                    var dPos = compDeltaToPositionDelta(newLayer, dComp[0], dComp[1]);
+                    shiftPosition(newLayer.position, dPos[0], dPos[1], newLayer.threeDLayer);
+                }
+
+                created.push(newLayer);
+            }
+
+            for (var r = created.length - 1; r >= 0; r--) created[r].moveBefore(original);
+            newLayers = newLayers.concat(created);
+            toRemove.push(original);
+        }
+        for (var rr = 0; rr < toRemove.length; rr++) {
+            if (keepOriginals) toRemove[rr].enabled = false;
+            else toRemove[rr].remove();
+        }
+        lineup_selectOnlyLayers(comp, newLayers);
+        app.endUndoGroup();
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
 // ── COLOR MANAGEMENT ─────────────────────────────────────────────────────────
 // Scans the selected layers (every layer in the comp if nothing's
 // selected) for every solid (non-gradient) color it can find — shape
-// layer Fill/Stroke colors, any effect parameter of type COLOR (Color
+// layer Fill/Stroke colors, a text layer's own character Fill/Stroke
+// (Character panel), any effect parameter of type COLOR (Color
 // Control, Fill, Tint, Change to Color, Drop Shadow, CC Light Sweep,
 // Glow's "A & B Colors" mode, third-party plugins, anything — this is
 // what makes the effect scan generic instead of a hardcoded list),
@@ -1427,6 +1713,27 @@ function lineup_collectLayerColorSlots(layer, slots) {
     try { fx = layer.property("ADBE Effect Parade"); } catch (e) { fx = null; }
     if (fx) lineup_collectEffectColorSlots(fx, slots);
     lineup_collectLayerStyleColorSlots(layer, slots);
+}
+
+// A text layer's own character Fill/Stroke color (Character panel, not an
+// effect/layer style) — read off the whole TextDocument rather than a
+// scriptable Property, since AE's scripting API has no per-character-range
+// color access; this manages the document's single overall fill/stroke
+// color, same "whole thing, not mixed ranges" scope Split Text's own
+// caveats elsewhere in this file already accept. Pushed as its own kind
+// (not a {prop,value} slot) because a real Property can just get its
+// .expression set directly, but fillColor/strokeColor are plain fields on
+// the TextDocument value — linking one means re-expressing the whole
+// sourceText, which lineup_manageColors below builds once per affected
+// layer after grouping (a layer with both a managed fill AND stroke needs
+// exactly one combined expression, not two competing ones).
+function lineup_collectTextColorSlots(layer, textSlots) {
+    if (!(layer instanceof TextLayer)) return;
+    var doc;
+    try { doc = layer.sourceText.value; } catch (e) { return; }
+    if (!doc) return;
+    try { if (doc.applyFill) textSlots.push({ kind: "fill", layer: layer, value: doc.fillColor.concat([1]) }); } catch (e) {}
+    try { if (doc.applyStroke) textSlots.push({ kind: "stroke", layer: layer, value: doc.strokeColor.concat([1]) }); } catch (e) {}
 }
 
 // Within ~1/255 per channel — enough to treat 8-bit-identical colors
@@ -1597,6 +1904,7 @@ function lineup_manageColors() {
             // "every layer in the comp" doesn't try to manage its colors.
             if (targetLayers[i].name === "Color Controller") continue;
             lineup_collectLayerColorSlots(targetLayers[i], slots);
+            lineup_collectTextColorSlots(targetLayers[i], slots);
         }
         if (!slots.length) return "No colors found to manage.";
 
@@ -1607,8 +1915,8 @@ function lineup_manageColors() {
             for (var g = 0; g < groups.length; g++) {
                 if (lineup_colorsApproxEqual(groups[g].value, v)) { found = groups[g]; break; }
             }
-            if (found) found.slots.push(slots[i].prop);
-            else groups.push({ value: v, slots: [slots[i].prop] });
+            if (found) found.slots.push(slots[i]);
+            else groups.push({ value: v, slots: [slots[i]] });
         }
         app.beginUndoGroup("Color Management");
 
@@ -1642,6 +1950,14 @@ function lineup_manageColors() {
             effectsGroup = nullLayer.property("ADBE Effect Parade");
         }
 
+        // Text fill/stroke slots can't take an .expression directly (see
+        // lineup_collectTextColorSlots) — each one just records which
+        // controller effect it resolved to here, and every affected text
+        // layer gets exactly one combined sourceText expression built from
+        // this list afterward, once every group (matched AND new) has been
+        // resolved.
+        var textLinkInfo = [];
+
         var newGroups = [];
         var reusedCount = 0;
         for (var g = 0; g < groups.length; g++) {
@@ -1654,7 +1970,9 @@ function lineup_manageColors() {
             reusedCount++;
             var matchedExpr = 'thisComp.layer("Color Controller").effect("' + matched.effect.name.replace(/"/g, '\\"') + '")("Color")';
             for (var ms = 0; ms < grp.slots.length; ms++) {
-                try { grp.slots[ms].expression = matchedExpr; } catch (e) {}
+                var mslot = grp.slots[ms];
+                if (mslot.prop) { try { mslot.prop.expression = matchedExpr; } catch (e) {} }
+                else textLinkInfo.push({ layer: mslot.layer, kind: mslot.kind, effectName: matched.effect.name });
             }
         }
 
@@ -1666,8 +1984,47 @@ function lineup_manageColors() {
             fx.property(1).setValue(newGrp.value);
             var newExpr = 'thisComp.layer("Color Controller").effect("' + newGrp.name.replace(/"/g, '\\"') + '")("Color")';
             for (var ns = 0; ns < newGrp.slots.length; ns++) {
-                try { newGrp.slots[ns].expression = newExpr; } catch (e) {}
+                var nslot = newGrp.slots[ns];
+                if (nslot.prop) { try { nslot.prop.expression = newExpr; } catch (e) {} }
+                else textLinkInfo.push({ layer: nslot.layer, kind: nslot.kind, effectName: newGrp.name });
             }
+        }
+
+        // One combined sourceText expression per affected text layer, built
+        // on the Text Style expression API (sourceText.style / setFillColor
+        // / setStrokeColor / setText) rather than editing a TextDocument's
+        // fillColor/strokeColor fields directly — After Effects expressions
+        // don't support Array.prototype.slice, and setFillColor/
+        // setStrokeColor is the documented way to change a style's color
+        // while setText(value) reapplies it to the property's own actual
+        // text content. Overrides only whichever of fill/stroke this run
+        // actually linked (leaving the other, if unmanaged, exactly as it
+        // already is, since style starts from the CURRENT style).
+        var textLayersDone = [];
+        for (var ti = 0; ti < textLinkInfo.length; ti++) {
+            var info = textLinkInfo[ti];
+            var entry = null;
+            for (var td = 0; td < textLayersDone.length; td++) {
+                if (textLayersDone[td].layer === info.layer) { entry = textLayersDone[td]; break; }
+            }
+            if (!entry) { entry = { layer: info.layer, fillFx: null, strokeFx: null }; textLayersDone.push(entry); }
+            if (info.kind === "fill") entry.fillFx = info.effectName;
+            else entry.strokeFx = info.effectName;
+        }
+        for (var tl = 0; tl < textLayersDone.length; tl++) {
+            var te = textLayersDone[tl];
+            var lines = [];
+            var chain = "text.sourceText.style";
+            if (te.fillFx) {
+                lines.push('var c = thisComp.layer("Color Controller").effect("' + te.fillFx.replace(/"/g, '\\"') + '")("Color");');
+                chain += ".setFillColor([c[0], c[1], c[2]])";
+            }
+            if (te.strokeFx) {
+                lines.push('var s = thisComp.layer("Color Controller").effect("' + te.strokeFx.replace(/"/g, '\\"') + '")("Color");');
+                chain += ".setStrokeColor([s[0], s[1], s[2]])";
+            }
+            lines.push(chain + ".setText(value);");
+            try { te.layer.sourceText.expression = lines.join("\n"); } catch (e) {}
         }
 
         app.endUndoGroup();
