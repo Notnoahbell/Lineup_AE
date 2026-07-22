@@ -43,10 +43,15 @@ body.high-contrast .tool-box {
     background: #000000;
     border-color: #909090;
 }
-body.high-contrast .tool-box-divider { background: #909090; }
 body.high-contrast .anchor-grid { background: #000000; }
 body.high-contrast .anchor-btn { color: #d0d0d0; }
 body.high-contrast .anchor-btn:hover { color: #ffffff; }
+body.high-contrast .anchor-mode-btn,
+body.high-contrast .anchor-ignore-masks-btn,
+body.high-contrast .anchor-null-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
+body.high-contrast .anchor-mode-btn:hover,
+body.high-contrast .anchor-ignore-masks-btn:hover,
+body.high-contrast .anchor-null-btn:hover { background: #3a3a3a; border-color: #ffffff; color: #ffffff; }
 body.high-contrast .icon-btn-wide,
 body.high-contrast .organize-btn { color: #e0e0e0; }
 body.high-contrast .organize-btn { border-color: #909090; }
@@ -54,6 +59,7 @@ body.high-contrast .icon-btn-wide:hover { background: #3a3a3a; color: #ffffff; }
 body.high-contrast .btn-group,
 body.high-contrast .ease-subpanel-body,
 body.high-contrast .display-box,
+body.high-contrast .ease-sel-indicator,
 body.high-contrast select,
 body.high-contrast input[type="text"],
 body.high-contrast input[type="number"] {
@@ -776,11 +782,11 @@ body.layout-classic .tool-grid {
        min-width is auto, i.e. its own content's min-content size. Anchor's
        column and Quick Actions/Favorite's column are both 3 of these 6
        tracks; if Anchor's own natural content (the Null button/dropdown
-       column, especially once anchor-medium stacks them) ever needs more
-       than a clean 50/50 split would give it, auto-min lets its track grow
-       past that and steal width from the other column instead of Anchor
-       just compressing/wrapping in place — starving Favorite of room it
-       was supposed to have and pushing its own content past its edge. */
+       column) ever needs more than a clean 50/50 split would give it,
+       auto-min lets its track grow past that and steal width from the
+       other column instead of Anchor just compressing/wrapping in place —
+       starving Favorite of room it was supposed to have and pushing its
+       own content past its edge. */
     grid-template-columns: repeat(6, minmax(0, 1fr));
     grid-auto-rows: auto;
     grid-auto-flow: row;
@@ -845,121 +851,53 @@ body.layout-classic .tool-grid {
     width: 50%;
     flex: 0 0 auto;
 }
-#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] > .tool-box-divider {
-    width: 1px;
-    height: auto;
-    align-self: stretch;
-    margin: 0 4px;
-}
 #homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-line {
     flex: 1;
     min-width: 0;
     flex-direction: column;
     flex-wrap: nowrap;
     align-items: stretch;
+    /* Side by side with the grid here (unlike the stacked column above/
+       below it everywhere else) — replaces the old dedicated
+       .tool-box-divider element (removed along with the full-width
+       divider line above the box in every other tier) with a plain border,
+       since this is the one tier that still genuinely needs a seam between
+       the two halves. */
+    border-left: 1px solid #2c2c2c;
+    padding-left: 8px;
 }
-/* .anchor-mode-stack's own flex:1 (see its base rule) now grows along the
-   column's main axis instead of the row's, filling whatever height the
-   square gave this side instead of leaving dead space above/below a
-   vertically-centered cluster — the actual "fill the square" part. Splits
-   the whole column into thirds along with .btn-anchor-null below (2 shares
-   here since it holds 2 of those 3 — select and Ignore Masks — 1 there):
-   each share is a plain flex-grow ratio, not a computed pixel/percentage
-   height, so the three controls can only ever divide up whatever height
-   the grid already established, never demand more of it and inflate
-   Anchor's own box to fit (the self-feeding growth loop medium mode's own
-   flex:1 attempt hit earlier — safe here specifically because
-   _anchorNaturalHeight takes narrow-stack's MAX of this row vs. the grid,
-   not a sum, so nothing here ever measures back into its own input). */
-#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-stack {
-    flex: 2 1 0;
-    min-height: 0;
-}
-#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-stack select,
-#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-stack .check-label {
-    flex: 1 1 0;
-    min-height: 0;
-    height: auto;
-}
-#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-line .vsep {
-    width: auto;
-    height: 1px;
-    align-self: stretch;
-    margin: 4px 0;
-}
-/* The 3rd third — see .anchor-mode-stack's own comment above. Its base
-   rule's min-width:76px (fine anywhere there's a full row/column to
-   itself) is what was pushing this past the edge of Anchor's own
-   half-width column here — letting it actually shrink (and tightening its
-   padding a bit) keeps it contained instead. */
-#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .btn-anchor-null {
-    flex: 1 1 0;
-    min-width: 0;
-    height: auto;
-    padding: 4px 8px;
-}
-/* ── Anchor "tiny" width (narrow-stack, close to the panel's own minimum) ────
-   Below ANCHOR_TINY_THRESHOLD (see _syncAnchorTiers in main.js) even
-   "Masks" alone plus the checkbox is about all that fits — the "Ignore "
-   half of the label drops first, only here (not throughout narrow-stack),
-   since it's genuinely still readable at the wider end of that range. The
-   dropdown/Null button sizing itself is handled throughout all of
-   narrow-stack already (see .anchor-mode-stack's own flex-thirds comment
-   above), not specifically gated to this tighter tier. */
-#homeToolGrid.anchor-tiny #homeTopGroup .tool-body[data-block-id="anchor"] .ignore-masks-prefix {
-    display: none;
-}
-/* ── Anchor "medium" width (Compact only, well above narrow-stack) ───────────
-   Between NARROW_STACK_THRESHOLD and ANCHOR_MEDIUM_THRESHOLD (see
-   _syncAnchorTiers in main.js), the dropdown/Ignore Masks/Null row no
-   longer fits comfortably beside the grid even at #homeTopGroup's zoom
-   floor — stacked into a column instead, each control given a legible
-   1.5x height on top of that (see below). Deliberately just
-   flex-direction:column here, NOT flex:1: flex:1 would make this row's own
-   height depend on how much space Anchor ends up with, which
-   _anchorNaturalHeight then measures right back out of it (it sums this
-   row, not narrow-stack's own max-based version) — a self-feeding loop
-   that grows without bound on every resize tick. Plain column sizing keeps
-   this row's height exactly its own (now taller, but bounded) natural
-   content size, which safely grows Anchor's own measured height to match
-   with no gap left over, instead of chasing whatever height already
-   exists. */
-#homeToolGrid.anchor-medium #sec-quick-actions {
-    /* _syncAnchorRowUnit (main.js) pins #homeTopGroup's two row-tracks
-       explicitly in medium mode — row 1 to exactly Quick Actions' own
-       natural height, row 2 to whatever's left for Favorite. That alone
-       is what actually stops Quick Actions from ending up in a
-       taller-than-it-needs track (CSS Grid's own row distribution for a
-       rowspan-2 item, like Anchor, otherwise happily grows BOTH tracks it
-       spans past what a single-row item like Quick Actions needs) —
-       align-self:start here is just a belt-and-suspenders backup in case
-       that computed row height is ever momentarily stale (e.g. the instant
-       before a resize's ResizeObserver callback fires). */
-    align-self: start;
-}
-#homeToolGrid.anchor-medium #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-line {
-    min-width: 0;
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-tools-group {
+    width: 100%;
+    height: 100%;
     flex-direction: column;
-    flex-wrap: nowrap;
     align-items: stretch;
 }
-#homeToolGrid.anchor-medium #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-line .vsep {
-    width: auto;
-    height: 1px;
-    align-self: stretch;
-    margin: 4px 0;
+/* Splits the column evenly between the two controls — a plain flex-grow
+   ratio, not a computed pixel/percentage height, so they only ever divide
+   up whatever height the grid already established, never demand more of
+   it and inflate Anchor's own box to fit (safe here specifically because
+   _anchorNaturalHeight takes narrow-stack's MAX of this row vs. the grid,
+   not a sum, so nothing here ever measures back into its own input). */
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-btn,
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-null-cluster {
+    flex: 1 1 0;
+    min-height: 0;
+    min-width: 0;
+    height: auto;
 }
-/* 1.5x each control's own normal height (18px dropdown, 26px Null button —
-   its .btn base height, which .anchor-mode-line normally overrides to
-   auto/stretch; this needs to win over that now that the column above has
-   the height to spend on them). */
-#homeToolGrid.anchor-medium #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-stack select {
-    height: 27px;
+/* The seam between the two rows (see .anchor-null-cluster's own base-rule
+   border-left comment) flips to a top border once they're stacked instead
+   of side by side. */
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-null-cluster {
+    border-left: none;
+    border-top: 1px solid #2e2e2e;
+    padding-left: 0;
+    padding-top: 3px;
 }
-#homeToolGrid.anchor-medium #homeTopGroup .tool-body[data-block-id="anchor"] .btn-anchor-null {
-    height: 39px;
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-null-btn {
+    height: auto;
+    padding: 4px 6px;
 }
-
 /* Favorited widgets: half-width by default (matching the Favorite slot's
    actual half-width real estate the rest of the time), reverted back to
    their full-line/one-line form here once narrow-stack forces the slot
@@ -1002,7 +940,8 @@ body.layout-classic .tool-grid {
 #homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="autocrop"] .ac-controls-start {
     margin-left: auto;
 }
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-preview {
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-preview,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-interp-btn {
     display: none;
 }
 #homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="sizing"] .btn-group-wide,
@@ -1152,6 +1091,7 @@ body.layout-classic .tool-grid {
 .tool-box[data-span="3"] { grid-column: span 3; }
 .tool-box[data-span="6"] { grid-column: span 6; }
 .tool-box[data-rowspan="2"] { grid-row: span 2; }
+.tool-box[data-rowspan="3"] { grid-row: span 3; }
 
 .tool-box {
     position: relative;
@@ -1229,10 +1169,8 @@ body.layout-classic .tool-grid {
    override below back out to full width regardless of their own width
    rules, since align-items:stretch wins over width:auto on a flex child.
    Opting out here is what actually lets those toolbars hug their own
-   content. The divider needs to explicitly opt back in since it has no
-   content of its own to size itself by otherwise. */
+   content. */
 #homeClassic .tool-body { align-items: flex-start; }
-#homeClassic .tool-box-divider { align-self: stretch; }
 
 /* Anchor: a small, fixed 3×3 grid instead of one that grows to fill
    whatever width the column happens to have. */
@@ -1259,38 +1197,34 @@ body.layout-classic .tool-grid {
 #homeClassic .anchor-btn:hover  { background: #2e2e2e; color: #F9F9F4; }
 #homeClassic .anchor-btn svg { width: 26px; height: 26px; }
 #homeClassic .anchor-mode-line { justify-content: flex-start; }
-/* Ignore Masks sits inline with the dropdown here instead of stacked below
-   it (Compact's own column layout, kept as-is there) — "Based on" labels
-   the dropdown now that there's a full row's width to spare for it. */
-#homeClassic .anchor-mode-stack {
+/* Compact's .anchor-tools-group (see its own base rule) is always a
+   fixed two-row stack that fills the square tile's full width below the
+   grid — Classic has a full-width row to work with instead, plenty of
+   room already, so it goes back to a single inline row at natural size
+   (Null is hidden here anyway — see .anchor-null-btn below — so it's just
+   the mode dropdown and Ignore Masks sitting side by side). */
+#homeClassic .anchor-tools-group {
+    flex: 0 0 auto;
     flex-direction: row;
     align-items: center;
-    flex: 0 0 auto;
-}
-#homeClassic .anchor-based-on-lbl {
-    display: inline;
 }
 /* .anchor-row's shared base rule centers the grid (right for Compact's
    square tile, since there's no room to its side) — Classic's grid is a
    small fixed-size 3x3 (see .anchor-grid above), so left-pin it instead of
    leaving it stranded in the middle of the full-width row. */
 #homeClassic .anchor-row { justify-content: flex-start; }
-/* Classic wants the "Anchor based on" mode dropdown + Ignore Masks above
-   the grid instead of below it (Compact's own order, kept as-is there) —
-   order alone moves it ahead of its two DOM-order-earlier siblings without
-   touching the shared markup. The divider needs its own order too (-1,
-   between the two) — left at its default it'd keep its DOM position after
-   .anchor-row, landing below the grid with nothing left to divide from. */
+/* Classic wants the mode/Ignore Masks/Null toolbar above the grid instead
+   of below it (Compact's own order, kept as-is there) — order alone moves
+   it ahead of its one DOM-order-earlier sibling without touching the
+   shared markup. */
 #homeClassic .anchor-mode-line { order: -2; }
-#homeClassic .tool-body[data-block-id="anchor"] > .tool-box-divider { order: -1; }
 /* Classic docks the Null/Copy-Paste panel beside the grid (see
    _applyLayoutMode in main.js), which already has its own "Null" button —
-   the shared anchor-mode-line's copy would just be a redundant second one,
-   so it (and the divider that only exists to separate it from Ignore
-   Masks) is dropped here. Compact keeps both untouched — it never shows
-   the Copy-Paste panel inline, so there's no duplication there. */
-#homeClassic .btn-anchor-null,
-#homeClassic .anchor-mode-line > .vsep {
+   the shared toolbar's copy would just be a redundant second one, so it's
+   dropped here (Ignore Masks and the mode dropdown stay — neither is
+   duplicated elsewhere). Compact keeps it untouched — it never shows the
+   Copy-Paste panel inline, so there's no duplication there. */
+#homeClassic .anchor-null-btn {
     display: none;
 }
 
@@ -1371,63 +1305,216 @@ body.layout-classic .tool-grid {
    above, but its "Ease Copy" text label isn't, so the whole row needs its
    own hide here to avoid a text-only duplicate of Classic's own header. */
 #homeClassic .ease-title-row { display: none; }
+/* Also dropped specifically in the Favorite slot — that slot's own height
+   is fixed/shared with whatever else gets favorited (see #sec-favorite),
+   so freeing up the title row's space there gets the graph/buttons more
+   room without needing to grow the slot itself. Still shown when Ease Copy
+   is a standalone Bottom Layout widget, where there's no such squeeze. */
+#sec-favorite .tool-body[data-block-id="ease"] .ease-title-row { display: none; }
 
 /* Hidden via Classic's Sections list (shared state — see
    _applySharedHiddenState in main.js) — removed from the grid entirely. */
 .tool-box.home-hidden { display: none !important; }
 
+/* Matches .tool-body's own generic gap (8px) between the grid and the
+   dropdown row — .tool-box's generic bottom padding (10px) read
+   noticeably looser than that gap right above it. Scoped to just the
+   bottom side, and just this widget, rather than touching the shared
+   .tool-box padding shorthand every other widget also relies on. A
+   flex:1 attempt at fixing this the other way (growing the gap to match
+   the padding) worked for the internal balance but also grew Anchor's own
+   measured height — which #sec-quick-actions/#sec-favorite then match via
+   --home-anchor-unit, so the whole top-group visibly grew with it.
+   Shrinking the padding instead avoids that entirely. */
 .tool-box-anchor {
     align-items: stretch;
+    padding-bottom: 8px;
 }
 
 .anchor-mode-line {
     justify-content: flex-start;
+    /* No align-self/flex override here — this needs to keep inheriting
+       .tool-box-anchor's plain align-items:stretch for its WIDTH (filling
+       the square's full column width instead of hugging its own content
+       width) WITHOUT also flexing for HEIGHT. flex:1 here once did exactly
+       that (to fill the leftover height below the grid) and created a
+       genuine runaway loop: _anchorNaturalHeight (main.js) sets Anchor's
+       own height by SUMMING this row's rendered height, so any flex-grow
+       that responds to "available height in Anchor's own box" feeds
+       straight back into the very measurement that height came from —
+       each tick growing a little more, forever. Width doesn't have that
+       problem (it comes from the grid's fixed column track, not a JS
+       measurement of this row), so only that axis gets to stretch. */
+    max-width: 100%;
 }
-/* Mode dropdown and Ignore Masks stack vertically on the left (sharing
-   one column instead of competing for horizontal space), a divider, then
-   Null sits on its own at its natural size on the right. */
-.anchor-mode-stack {
-    display: flex;
+.anchor-tools-group {
+    /* Fills the row's full WIDTH (this box was .anchor-mode-line's only
+       child to begin with) — see .anchor-mode-line's own comment for why
+       there's no equivalent height-side flex here. */
+    flex: 1;
+    max-width: 100%;
+    /* Always two rows — the mode dropdown full-width on its own line,
+       Ignore Masks + Null full-width below it — rather than trying to sit
+       inline and only wrapping once too narrow to fit both; that inline
+       attempt read as messed up/unpredictable in practice. */
     flex-direction: column;
-    gap: 5px;
+}
+/* .btn-group's own align-items:center (defined later in this file, so it
+   wins the cascade over a plain .anchor-tools-group rule despite equal
+   specificity) was quietly overriding this — chaining both classes here
+   is what actually makes align-items:stretch stick, so each row fills the
+   box's full width instead of sitting centered at its own natural width. */
+.btn-group.anchor-tools-group {
+    align-items: stretch;
+    /* .btn-group's own border (same specificity issue as align-items
+       above — chaining both classes to actually win it) — each button
+       inside already has its own visible border, so this outer one was
+       just a second, redundant edge right next to theirs. */
+    border: none;
+}
+/* A visible border/fill at rest, not just on hover (unlike the flat
+   .btn-group .icon-btn convention this box otherwise borrows) — sitting
+   in a bordered box gave the mode button, Ignore Masks, and Null no
+   boundary of their own to read as distinct pressable/selectable things
+   until the mouse found them. Slightly darker/recessed than the plain
+   buttons below (rather than raised like them) so this one specifically
+   reads as a dropdown field, not just another button — reinforcing the
+   chevron rather than relying on it alone. */
+.anchor-mode-btn {
+    /* flex-basis used to be a width hint for the old inline/wrap layout —
+       .anchor-tools-group is a column now (always 2 rows), so this is
+       just "don't grow/shrink along that column's main axis (height),
+       take your own natural height instead"; width comes from the
+       parent's align-items:stretch. */
+    flex: 0 0 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-start;
+    white-space: nowrap;
+    height: 31px;
+    padding: 0 8px;
+    background: #1a1a1a;
+    border: 1px solid #333333;
+    border-radius: 6px;
+    color: #b8b8b8;
+    cursor: pointer;
+}
+.anchor-mode-btn:hover  { background: #242424; border-color: #444444; color: #d0d0d0; }
+.anchor-mode-btn:active { background: var(--bg-btn-act); border-color: var(--bg-btn-act); color: #fff; }
+.anchor-mode-btn-icon {
+    display: flex;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+}
+.anchor-mode-btn-icon svg { width: 100%; height: 100%; }
+.anchor-mode-btn-lbl {
     flex: 1;
     min-width: 0;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
-/* Outside narrow-stack (which needs the unrestricted shrink above — its
-   own column is often narrower than this floor), a real floor here is what
-   lets .anchor-mode-line's own flex-wrap (inherited from .ctrl-row) do its
-   job: once the row genuinely can't fit the dropdown/Ignore Masks AND the
-   Null button at a legible width, the Null button wraps onto its own line
-   — a normal, bounded content-driven height increase — instead of
-   min-width:0 letting this shrink toward unreadable first. */
-#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-stack {
-    min-width: 70px;
+.anchor-mode-btn-chevron {
+    flex-shrink: 0;
+    width: 9px;
+    height: 9px;
+    opacity: 0.6;
 }
-.anchor-mode-stack select {
-    height: 18px;
-    padding: 0 4px;
-    /* A <select> won't shrink below its content's natural width by default
-       (min-width:auto on flex items) — same fix as Align/Distribute's own
-       half-width selects, since this is what was actually bleeding past
-       the box's edge in narrow-stack's side-by-side grid+controls split. */
-    min-width: 0;
-}
-/* Compact has no room for a label beside the dropdown (it's already
-   squeezed into half of the anchor square) — Classic gets it back below,
-   inline with the dropdown instead of stacked above Ignore Masks. */
-.anchor-based-on-lbl {
-    display: none;
-}
-.anchor-mode-line .vsep {
-    align-self: stretch;
-    height: auto;
-}
-.anchor-mode-line .btn-anchor-null {
+/* Ignore Masks + Null, always inline with each other (see
+   doToggleIgnoreMasks in main.js) — this is the second of
+   .anchor-tools-group's always-two rows, full-width below the mode
+   button. No divider of its own here — now that each button has its own
+   visible border (see .anchor-ignore-masks-btn/.anchor-null-btn), a
+   second line this close to the mode button's own border just doubled
+   up; .anchor-tools-group's own gap is separation enough. Narrow-stack
+   (further up) still gets one, where its own stacked layout benefits from
+   a clearer top/bottom seam. */
+.anchor-null-cluster {
     flex: 0 0 auto;
-    align-self: stretch;
-    height: auto;
-    min-width: 76px;
-    padding: 4px 16px;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+/* Raised/bordered rather than the dropdown's darker recessed look above
+   (see .anchor-mode-btn's own comment) — Ignore Masks and Null are plain
+   direct-action buttons, not a field that opens something, so they read
+   lighter/pressable instead of sunken. */
+.anchor-ignore-masks-btn {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #a0a0a0;
+    cursor: pointer;
+}
+.anchor-ignore-masks-btn svg { width: 14px; height: 14px; pointer-events: none; }
+.anchor-ignore-masks-btn:hover { background: #383838; border-color: #4a4a4a; color: #d0d0d0; }
+/* Deliberately not just a hover-adjacent tint — needs to read as clearly
+   "on" at a glance since the icon itself can't fully carry that meaning
+   (the tooltip fills in the rest). Same active-highlight language as
+   .settings-btn.active. */
+.anchor-ignore-masks-btn.active {
+    background: rgba(36, 112, 224, 0.18);
+    border-color: #4d9bff;
+    color: #7aaaff;
+}
+.anchor-null-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 26px;
+    padding: 0 10px;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #c0c0c0;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.anchor-null-btn:hover  { background: #383838; border-color: #4a4a4a; color: #f0f0f0; }
+.anchor-null-btn:active { background: var(--bg-btn-act); border-color: var(--bg-btn-act); color: #fff; }
+
+/* Wide tier only (narrow-stack gets its own height:auto further up, and
+   Classic isn't nested under #homeToolGrid at all) — flexing this
+   subsection to fill Anchor's leftover height turned out to loop forever
+   (see .anchor-mode-line's own comment on _anchorNaturalHeight), so this
+   is a plain fixed size for the base rules above to hit instead — no
+   measurement feedback, just resized. 36/43px are 52/62px scaled down
+   30% (was itself a 26/31px scaled up 100%) — same shape, smaller. */
+#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-null-btn,
+#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-ignore-masks-btn {
+    height: 36px;
+}
+/* ~20% taller than the 36px the other two use — the dropdown row gets its
+   own slightly bigger target rather than matching Null/Ignore Masks. */
+#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-btn {
+    height: 43px;
+}
+#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-ignore-masks-btn {
+    width: 36px;
+}
+#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-ignore-masks-btn svg {
+    width: 18px;
+    height: 18px;
+}
+#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-btn-icon {
+    width: 18px;
+    height: 18px;
+}
+#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-btn-chevron {
+    width: 11px;
+    height: 11px;
 }
 
 .tool-box-nullcp {
@@ -1440,18 +1527,16 @@ body.layout-classic .tool-grid {
 .tool-box[data-rowspan="1"] {
     min-height: var(--home-anchor-unit);
 }
-/* anchor-medium pins Quick Actions/Favorite's heights explicitly instead
-   (see _syncAnchorRowUnit's medium branch) — that branch never touches
-   --home-anchor-unit, so it stays frozen at whatever it last was set to
-   while normal/narrow-stack tier was active. Left unscoped, that stale
-   value could floor a rowspan-1 box taller than the row track medium just
-   explicitly pinned it to, spilling its content past #homeTopGroup's own
-   bottom edge — exactly what a favorited widget's box was doing right
-   after shrinking down from the normal tier. Medium's own mechanism is
-   the sole authority on these heights, so the generic floor above should
-   never apply while it's active. */
-#homeToolGrid.anchor-medium #homeTopGroup .tool-box[data-rowspan="1"] {
-    min-height: 0;
+/* Quick Actions/Favorite split that 50/50 default unevenly instead, closer
+   to 1:2 — Favorite's own content (whichever widget is currently docked
+   there) tends to want more room than Quick Actions' fixed 3x2 icon grid
+   does. #id selectors here outrank the generic rule above regardless of
+   source order. */
+#sec-quick-actions.tool-box[data-rowspan="1"] {
+    min-height: calc(var(--home-anchor-unit) * 0.6667);
+}
+#sec-favorite.tool-box[data-rowspan="1"] {
+    min-height: calc(var(--home-anchor-unit) * 1.3333);
 }
 
 /* Organize quick actions — 3x2 grid of icon-only tiles. */
@@ -2114,14 +2199,6 @@ body.bl-drag-active {
     white-space: nowrap;
 }
 .qa-add-tile-hidden { display: none; }
-
-/* Divider between the merged Align/Distribute blocks inside one tool-box */
-.tool-box-divider {
-    height: 1px;
-    background: #2a2a2a;
-    margin: 2px 0;
-    flex-shrink: 0;
-}
 
 /* "Offset" toggle — a keyframe diamond instead of a checkbox, right-aligned
    in the Align/Distribute control rows via margin-left:auto. */
@@ -3216,17 +3293,6 @@ input[type="checkbox"]:checked::after {
 .btn.wide { min-width: 70px; }
 .btn.fill { width: 100%; }
 
-/* Anchor mode-line's Null button — icon + label inline, sized to its own
-   content rather than .cp-btn's width:100% (this row isn't a full column). */
-.btn-anchor-null {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    white-space: nowrap;
-}
-.btn-anchor-null svg { flex-shrink: 0; }
-
 /* ── Layer Sort ───────────────────────────────────────────────────────────────
    Redesigned to reuse the same vocabulary as every other Bottom Layout
    widget instead of its own one-off button/toggle/layout: plain <select>s
@@ -3333,7 +3399,7 @@ input[type="checkbox"]:checked::after {
     display: block;
     position: relative;
     width: 100%;
-    flex: 2 1 0; /* ~66/33 split with the button row's own flex: 1 1 0 below */
+    flex: 3 1 0; /* ~50/50 with the panels row's own flex:1 below, now that the interp row between them takes a fixed slice first */
     min-height: 50px;
     padding: 6px;
     background: #131313;
@@ -3341,11 +3407,53 @@ input[type="checkbox"]:checked::after {
     border-radius: 6px;
     overflow: hidden;
 }
-/* Never the one to shrink/clip when the box is squeezed — the preview
-   above it (flex:1, min-height as its own floor) gives way first. */
-.tool-box[data-block-id="ease"] .ease-panels-row,
-#sec-favorite .tool-body[data-block-id="ease"] .ease-panels-row {
-    flex-shrink: 0;
+/* The quick-swap interpolation button — only makes sense alongside the
+   graph above (acts on the live Timeline selection the corner indicator
+   is also showing), so it's hidden at the same widths .ease-preview
+   itself is. One square button now (used to be 3 small ones in a bordered
+   bar — see _openEaseInterpCtx in main.js for where the other two modes
+   went). height:100%, same as .ease-action-btn (Copy/Paste) right below —
+   they both need to grow/shrink together as this row's own flex share
+   changes with the panel's width, not just match at one fixed size.
+   aspect-ratio (tried twice here) is NOT what keeps this square — combined
+   with a flex item's percentage height, it blew the computed width up to
+   the size of the whole panel instead of this row, apparently computing
+   the ratio off something other than the actual stretched height in this
+   CEF build. width is instead kept in sync with the real rendered height
+   in JS (see _easeInterpSquareSync/_initEaseInterpSquare in main.js) —
+   more moving parts, but it reads the actual box instead of asking the
+   engine to derive it. */
+.ease-interp-btn { display: none; }
+.tool-box[data-block-id="ease"][data-span="3"] .ease-interp-btn,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-interp-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    height: 100%;
+    background: #1e1e1e;
+    border: 1px solid #2c2c2c;
+    border-radius: 6px;
+    color: #808080;
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.03s linear, color 0.03s linear;
+}
+.ease-interp-btn svg { width: 55%; height: 55%; pointer-events: none; }
+/* Same scoped compound selector as the base rule above, not just
+   .ease-interp-btn:hover — that plain a selector has lower specificity
+   than .tool-box[data-block-id="ease"][data-span="3"] .ease-interp-btn's
+   own background, so it was losing the cascade and never actually
+   painting on hover/active despite matching. */
+.tool-box[data-block-id="ease"][data-span="3"] .ease-interp-btn:hover,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-interp-btn:hover {
+    background: #2c2c2c;
+    color: #d0d0d0;
+}
+.tool-box[data-block-id="ease"][data-span="3"] .ease-interp-btn:active,
+#sec-favorite .tool-body[data-block-id="ease"] .ease-interp-btn:active {
+    background: var(--bg-btn-act);
+    color: #fff;
 }
 .ease-preview-svg {
     display: block;
@@ -3358,6 +3466,7 @@ input[type="checkbox"]:checked::after {
        overflow:visible lets that overflow render into that padding instead
        of being clipped before it ever gets there. */
     overflow: visible;
+    cursor: default;
 }
 .ease-preview-value-path {
     fill: none;
@@ -3367,27 +3476,17 @@ input[type="checkbox"]:checked::after {
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
 }
-.ease-preview-points circle {
-    fill: #101010;
-    stroke: #7aaaff;
-    stroke-width: 1.4;
-    vector-effect: non-scaling-stroke;
-}
-/* Bezier handles — the same speed/influence-derived control points AE's
-   own graph editor draws, one dimmer line from each keyframe to its
-   handle plus a small dot at the handle itself. Only drawn for genuine
-   bezier segments (see _easePreviewRender in main.js) — hold/linear
-   segments have no real handle to show. */
-.ease-preview-handles line {
-    stroke: #7aaaff;
-    stroke-width: 1;
-    stroke-opacity: 0.45;
-    vector-effect: non-scaling-stroke;
-}
-.ease-preview-handles circle {
-    fill: #7aaaff;
-    fill-opacity: 0.55;
-    stroke: none;
+/* Keyframe markers — always a diamond (a <polygon>, its vertices computed
+   in main.js to counteract the SVG's own non-uniform stretch so it renders
+   as a true symmetric diamond rather than a squished rhombus — see
+   _easePreviewRender) regardless of the keyframe's real interpolation
+   type. Bigger/higher-contrast than plain circular dots would be — a light
+   fill plus a visible stroke reads as a clear point rather than a faint
+   ring. No bezier handle lines are drawn. */
+.ease-preview-points polygon {
+    fill: #1c2733;
+    stroke: #8fb4ff;
+    stroke-width: 2;
     vector-effect: non-scaling-stroke;
 }
 .ease-preview-empty {
@@ -3396,11 +3495,56 @@ input[type="checkbox"]:checked::after {
     inset: 0;
     align-items: center;
     justify-content: center;
+    gap: 5px;
     color: #555555;
     font-size: 10px;
 }
+/* Same clipboard icon as the widget's own title (.ease-title-row .sec-icon),
+   in grey (currentColor, matching this message's own dim color) rather than
+   its red — this is a plain empty-state hint, not the widget's identity. */
+.ease-preview-empty-icon { width: 13px; height: 13px; flex-shrink: 0; }
 .ease-preview.is-empty .ease-preview-empty { display: flex; }
-.ease-preview.is-empty svg { display: none; }
+/* Direct-child combinator, not a plain descendant selector — this needs to
+   hide only the graph's own curve svg (a direct child of .ease-preview),
+   not the empty message's icon nested inside .ease-preview-empty, which
+   the old plain "svg" selector was also catching and hiding. */
+.ease-preview.is-empty > svg { display: none; }
+
+/* Live-selection readout, corner of the graph — same count+symbol format
+   as #easeDisplay (the "screen" shown instead of this graph at full width/
+   in Classic), just overlaid here rather than swapped in for it, since the
+   graph itself now shows the *copied* ease instead (see _pollEaseGraph).
+   Independent of .is-empty — worth showing even with nothing copied yet. */
+.ease-sel-indicator {
+    display: none;
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    font-size: 18px;
+    line-height: 1;
+    color: var(--text-dim);
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid #2c2c2c;
+    border-radius: 6px;
+    padding: 6px 10px;
+    pointer-events: none;
+    z-index: 1;
+}
+.ease-sel-indicator.visible { display: block; }
+
+/* Clear button, bottom-right of the graph — used to be its own icon
+   button competing with Copy/Paste for space in the row below (see that
+   row's own comment); overlaying it here instead means Copy/Paste can
+   flex into the width it used to take, and it only makes sense to show
+   once there's actually a copied ease to clear (hidden by .is-empty, the
+   same class the empty-state message above is gated on). */
+.ease-preview-clear-btn {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    z-index: 1;
+}
+.ease-preview.is-empty .ease-preview-clear-btn { display: none; }
 
 /* ── Ease subpanel ────────────────────────────────────────────────────────── */
 /* Base rules here match the original two-panel layout (Copy: button +
@@ -3477,13 +3621,21 @@ input[type="checkbox"]:checked::after {
        height this row's own flex share works out to, rather than sitting
        at their own fixed height with dead space around them. */
     align-items: stretch;
-    gap: 6px;
-    flex: 1 1 0; /* ~33/66 split with the preview's own flex: 2 1 0 above */
+    /* Tighter than the base (Classic) rule's 6px — this row can end up
+       with 3 things sharing it (the interp button, Copy, Paste), so every
+       gap trimmed here is real width given back to Copy/Paste's own text
+       instead. */
+    gap: 4px;
+    /* Never the one to shrink/clip when the box is squeezed — the preview
+       above it (flex-grow, min-height as its own floor) gives way first.
+       flex-shrink:0 here, not a separate rule — a second, later rule using
+       the flex shorthand was silently resetting shrink back to 1 (the
+       shorthand always sets all three sub-properties), which is exactly
+       what let this row get squeezed uncushioned in a tight box. */
+    flex: 1 0 0; /* ~33/66 split with the preview's own flex: 3 1 0 above */
 }
 .tool-box[data-block-id="ease"] .ease-action-btn,
-#sec-favorite .tool-body[data-block-id="ease"] .ease-action-btn,
-.tool-box[data-block-id="ease"] .ease-subpanel-body .icon-btn.small,
-#sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-body .icon-btn.small {
+#sec-favorite .tool-body[data-block-id="ease"] .ease-action-btn {
     height: 100%;
 }
 .tool-box[data-block-id="ease"] .ease-subpanel,
@@ -3500,7 +3652,11 @@ input[type="checkbox"]:checked::after {
 }
 .tool-box[data-block-id="ease"] .ease-action-btn,
 #sec-favorite .tool-body[data-block-id="ease"] .ease-action-btn {
-    padding: 0 10px;
+    /* Tighter than the base rule's 0 10px — this row already competes with
+       the interp button for the same narrow space, so every bit of
+       padding given back here is real width Copy/Paste can use for their
+       own text instead. */
+    padding: 0 6px;
     font-size: 11px;
     width: 100%;
 }
@@ -3509,9 +3665,10 @@ input[type="checkbox"]:checked::after {
    forces it full width too) has room for the keyframe-count "screen" —
    Copy, Paste, and the screen share the row (the screen a little wider
    than the two buttons), and the screen doubles as the clear button (hover
-   swaps its text for a trash icon — see doEaseClear in main.js), so the
-   old separate trash icon button is hidden here instead of competing for
-   the same space. */
+   swaps its text for a trash icon — see doEaseClear in main.js). The
+   clipboard's other clear button lives as an overlay on the graph now
+   (.ease-preview-clear-btn, further up) — not shown at this width anyway,
+   since the graph itself is hidden here. */
 .tool-box[data-block-id="ease"][data-span="6"] .ease-copy-btn,
 #homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-copy-btn {
     order: 1;
@@ -3548,18 +3705,14 @@ input[type="checkbox"]:checked::after {
     height: 14px;
     color: #e05555;
 }
-.tool-box[data-block-id="ease"][data-span="6"] .ease-subpanel-body .icon-btn.small,
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-body .icon-btn.small {
-    display: none;
-}
 
 /* Half width (Bottom Layout span=3, or the Favorite slot the rest of the
    time) already shows the bigger live curve/speed-graph preview above this
    row (.ease-preview, its own rule further up) — the keyframe-count screen
    here would just be a smaller, redundant copy of that, so it's dropped
-   instead, and the old separate trash icon button takes its place as a
-   plain fixed-size icon button (not stretched — Copy/Paste share the rest
-   evenly between them). */
+   instead; Copy/Paste now simply split the row evenly between them (the
+   clear button moved onto the graph itself, see .ease-preview-clear-btn
+   further up, so it isn't competing for space here anymore either). */
 .tool-box[data-block-id="ease"][data-span="3"] .ease-copy-btn,
 #sec-favorite .tool-body[data-block-id="ease"] .ease-copy-btn {
     order: 1;
@@ -3569,12 +3722,6 @@ input[type="checkbox"]:checked::after {
 #sec-favorite .tool-body[data-block-id="ease"] #easePasteBtn {
     order: 2;
     flex: 1;
-}
-.tool-box[data-block-id="ease"][data-span="3"] .ease-subpanel-body .icon-btn.small,
-#sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-body .icon-btn.small {
-    display: flex;
-    order: 3;
-    flex: 0 0 auto;
 }
 .tool-box[data-block-id="ease"][data-span="3"] .ease-subpanel-display,
 #sec-favorite .tool-body[data-block-id="ease"] .ease-subpanel-display {
@@ -3594,6 +3741,20 @@ input[type="checkbox"]:checked::after {
     cursor: pointer;
     white-space: nowrap;
     transition: background 0.03s linear, color 0.03s linear, border-color 0.03s linear;
+    /* Copy/Paste are given flex:1 wherever this row gets squeezed (see the
+       data-span rules above) — a flex item's default min-width:auto floors
+       its shrink at its own text+padding regardless of flex-shrink, which
+       was letting these two burst past the row's actual bounds instead of
+       ever actually shrinking (same fix as every other flex-shrunk
+       <select>/button in this file). A real floor here, not 0 — 0 just
+       let the row squeeze them down past their own text's width instead,
+       which read as "cut off" just as badly, only now via the text
+       silently overflowing this button's edge into its neighbor rather
+       than the whole row overflowing its container. overflow/ellipsis is
+       a last-resort backstop for anything still tighter than that floor. */
+    min-width: 34px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .ease-action-btn:hover  { background: var(--bg-btn-h); color: var(--text); border-color: var(--border-h); }
 .ease-action-btn:active { background: var(--bg-btn-act); border-color: var(--bg-btn-act); color: #fff; }

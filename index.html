@@ -155,30 +155,36 @@
               <button class="anchor-btn" title="Bottom Right"  onclick="doAnchor(8)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17,9 17,17 9,17"/></svg></button>
             </div>
           </div>
-          <div class="tool-box-divider"></div>
+          <!-- "Based on" used to be a native <select> + an "Ignore Masks"
+               checkbox; now a custom icon+word button opening a small
+               flyout (see _openAnchorModeCtx/ANCHOR_MODE_OPTIONS in
+               main.js) — a <select> can't show a custom icon in its own
+               closed state. Ignore Masks is back as a small square toggle
+               (see doToggleIgnoreMasks/_ignoreMasks in main.js) instead of
+               a checkbox, sitting inline with Null rather than the mode
+               dropdown. All three share one small bordered .btn-group
+               "toolbar" box (replacing the old full-width divider + stretched
+               buttons) that hugs its own content instead of stretching the
+               whole row — see .anchor-mode-line/.anchor-tools-group in
+               style.css. Mode button and the Null cluster still wrap onto
+               their own rows once the box is too narrow for both. -->
           <div class="ctrl-row anchor-mode-line">
-            <div class="anchor-mode-stack">
-              <span class="lbl anchor-based-on-lbl">Based on</span>
-              <select id="anchorMode">
-                <option value="0" selected>Object</option>
-                <option value="1">Selection</option>
-                <option value="2">Composition</option>
-              </select>
-              <label class="check-label" title="Use layer bounds instead of mask bounds when Object mode is active">
-                <input type="checkbox" id="ignoreMasksCheck"> <span class="ignore-masks-prefix">Ignore </span>Masks
-              </label>
+            <div class="btn-group anchor-tools-group">
+              <button class="anchor-mode-btn" id="anchorModeBtn" onclick="_openAnchorModeCtx(this)" title="Based on: Object">
+                <span class="anchor-mode-btn-icon" id="anchorModeBtnIcon"></span>
+                <span class="anchor-mode-btn-lbl" id="anchorModeBtnLbl">Object</span>
+                <svg class="anchor-mode-btn-chevron" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,1 5,5 9,1"/></svg>
+              </button>
+              <div class="anchor-null-cluster">
+                <button class="anchor-ignore-masks-btn" id="ignoreMasksBtn" onclick="doToggleIgnoreMasks()" title="Ignore Masks: Off">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="14" height="14" rx="2.4" stroke-dasharray="2.2,2"/>
+                    <line x1="2.5" y1="17.5" x2="17.5" y2="2.5"/>
+                  </svg>
+                </button>
+                <button class="anchor-null-btn" onclick="doCreateNull()" title="Create a null at the anchor point">Null</button>
+              </div>
             </div>
-            <div class="vsep"></div>
-            <button class="btn btn-anchor-null" onclick="doCreateNull()" title="Create a null at the anchor point">
-              <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                <circle cx="10" cy="10" r="3.2"/>
-                <line x1="10" y1="1.5" x2="10" y2="5.3"/>
-                <line x1="10" y1="14.7" x2="10" y2="18.5"/>
-                <line x1="1.5" y1="10" x2="5.3" y2="10"/>
-                <line x1="14.7" y1="10" x2="18.5" y2="10"/>
-              </svg>
-              Null
-            </button>
           </div>
         </div>
       </div>
@@ -229,21 +235,64 @@
           </svg>
           <span class="lbl">Ease Copy</span>
         </div>
-        <!-- Live preview of whatever's currently copied — a value curve
-             with a dot at each keyframe, normalized to all the copied
-             keyframes' relative timing. Only shown at half width (see the
-             CSS) — full width has plenty of room for Copy/Paste alone.
-             Populated by _easePreviewRender in main.js from
-             lineup_easeGetClipboard's data (host.jsx). -->
+        <!-- Value-over-time curve of the *copied* ease (the same clipboard
+             Copy/Paste below use — see _pollEaseGraph in main.js and
+             lineup_easeGetClipboard in host.jsx), normalized to the copied
+             keyframes' relative timing. Only shown at half width or in the
+             Favorite slot (see the CSS) — full width has plenty of room
+             for Copy/Paste alone. Keyframes always render as diamonds; no
+             bezier handle lines are drawn, just the curve and the markers.
+             The small corner badge just mirrors #easeDisplay's own count/
+             symbol text (see _easeSelIndicatorRender in main.js) — the
+             same copied-keyframe count, not the live Timeline selection. -->
         <div class="ease-preview" id="easePreview">
           <svg class="ease-preview-svg" id="easePreviewSvg" viewBox="0 0 200 100" preserveAspectRatio="none">
             <path class="ease-preview-value-path" id="easePreviewValuePath" d=""/>
             <g class="ease-preview-handles" id="easePreviewHandles"></g>
             <g class="ease-preview-points" id="easePreviewPoints"></g>
           </svg>
-          <div class="ease-preview-empty" id="easePreviewEmpty">No easing copied</div>
+          <div class="ease-sel-indicator" id="easeSelIndicator"></div>
+          <!-- Clear button, bottom-right — only shown once there's actually
+               something copied to clear (hidden via .is-empty, same class
+               _easePreviewRender already toggles for the empty-state
+               message above). Used to sit as its own icon button in the
+               Copy row below, competing with Copy/Paste for that same
+               narrow space; overlaying it on the graph instead means
+               Copy/Paste can flex into the width it used to take. -->
+          <button class="icon-btn small filled btn-trash ease-preview-clear-btn" title="Clear ease clipboard" onclick="doEaseClear()">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+              <polyline points="3,5 4.5,12 9.5,12 11,5"/>
+              <line x1="2" y1="4" x2="12" y2="4"/>
+              <line x1="5.5" y1="4" x2="5.5" y2="2.5"/>
+              <line x1="8.5" y1="4" x2="8.5" y2="2.5"/>
+              <line x1="5.5" y1="2.5" x2="8.5" y2="2.5"/>
+            </svg>
+          </button>
+          <div class="ease-preview-empty" id="easePreviewEmpty">
+            <svg class="ease-preview-empty-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+              <path d="M12,5 L12,3.5 Q12,2 10.5,2 L3.5,2 Q2,2 2,3.5 L2,10.5 Q2,12 3.5,12 L5,12"/>
+              <rect x="7" y="7" width="10" height="10" rx="1.5"/>
+            </svg>
+            <span>No ease copied</span>
+          </div>
         </div>
         <div class="ease-panels-row">
+          <!-- Quick-swap keyframe interpolation — acts on whatever's selected
+               in the Timeline right now (see doSetKeyInterpolation/
+               lineup_setKeyframeInterpolation), same scope as an AE
+               interpolation shortcut. One square button rather than 3 small
+               ones (they read too cramped in this tight a row) — left-click
+               applies whichever mode is currently active (defaults to
+               Continuous Bezier, the actual reason this control exists —
+               see doSetKeyInterpolation's own comment), right-click opens a
+               flyout to pick Linear/Bezier/Hold instead, same left-click-
+               runs/right-click-swaps convention as Select Paths/Split Text
+               elsewhere in this panel (see EASE_INTERP_MODES/
+               _openEaseInterpCtx in main.js). Only shown alongside the
+               graph above. -->
+          <button class="ease-interp-btn" id="easeInterpBtn" title="Bezier" onclick="_easeInterpRunActive(event)" oncontextmenu="event.preventDefault(); _openEaseInterpCtx(this);">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4.37,4.47 Q4,4 4.6,4 L15.4,4 Q16,4 15.63,4.47 L10.16,11.3 Q10,11.5 9.84,11.3 Z M4.6,16 Q4,16 4.37,15.53 L9.84,8.7 Q10,8.5 10.16,8.7 L15.63,15.53 Q16,16 15.4,16 Z"/></svg>
+          </button>
           <div class="ease-subpanel">
             <span class="ease-subpanel-lbl">Copy</span>
             <div class="ease-subpanel-body">
@@ -258,15 +307,6 @@
                   <line x1="5.5" y1="2.5" x2="8.5" y2="2.5"/>
                 </svg>
               </div>
-              <button class="icon-btn small filled btn-trash" title="Clear ease clipboard" onclick="doEaseClear()">
-                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
-                  <polyline points="3,5 4.5,12 9.5,12 11,5"/>
-                  <line x1="2" y1="4" x2="12" y2="4"/>
-                  <line x1="5.5" y1="4" x2="5.5" y2="2.5"/>
-                  <line x1="8.5" y1="4" x2="8.5" y2="2.5"/>
-                  <line x1="5.5" y1="2.5" x2="8.5" y2="2.5"/>
-                </svg>
-              </button>
             </div>
           </div>
           <div class="ease-subpanel">
@@ -1538,7 +1578,7 @@
     </label>
   </div>
   <div class="settings-popup-ftr">
-    <span class="lbl" id="settingsVersionLbl">Version 1.9.1</span>
+    <span class="lbl" id="settingsVersionLbl">Version 1.9.2</span>
     <button class="btn" onclick="checkForUpdates(true)">Check for Updates</button>
   </div>
  </div>
@@ -1575,7 +1615,7 @@
     <div class="footer-brand">
       <img src="heist_icon_32.png" class="footer-logo" alt="">
       <span class="footer-name">Heist Lineup</span>
-      <span class="footer-version" id="footerVersion">v1.9.1</span>
+      <span class="footer-version" id="footerVersion">v1.9.2</span>
     </div>
     <div class="footer-actions">
     <button class="settings-btn" id="quickActionsEditBtn" onclick="_toggleEditMode()" title="Customize Quick Actions &amp; Rearrange Align / Distribute / Sizing / Auto Crop / Sort">

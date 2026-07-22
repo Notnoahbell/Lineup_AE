@@ -3456,6 +3456,220 @@ function lineup_easeGetClipboard() {
     }
 }
 
+// Influence AE's own default (33.33%) gets stretched a bit further out —
+// still a gentle ease, just with a bit more of the segment shaped by it.
+var LINEUP_BEZIER_DEFAULT_INFLUENCE = 45;
+
+// A fresh temporal ease for a keyframe newly switched to Bezier.
+//
+// zeroVelocity=true (Ctrl-click): speed always 0, same as AE's own Easy
+// Ease keyframe assistant — a simple, predictable default.
+//
+// zeroVelocity=false (default): speed is the median (average) of this
+// keyframe's incoming and outgoing velocity (the neighboring keyframes'
+// own value/time deltas), so the new ease reflects the motion already
+// passing through this keyframe instead of flattening it. Exception: if
+// incoming and outgoing velocity disagree in sign (a peak or valley —
+// motion reverses direction right at this keyframe), speed is forced to 0
+// instead of averaging two opposite-signed numbers into something that
+// doesn't represent either side.
+//
+// Spatial properties (Position, and Anchor Point/etc. whenever isSpatial)
+// get exactly ONE KeyframeEase regardless of how many value dimensions
+// they have — AE's temporal ease for a spatial property describes progress
+// ALONG the path (a single scalar "how fast in time"), not a per-axis
+// rate; the path's actual shape is a separate concept governed by spatial
+// tangents. Passing one entry per dimension there is what
+// setTemporalEaseAtKey's own "Value array does not have 1 elements" error
+// was rejecting. Speed for that one entry is the magnitude of the multi-
+// dimensional velocity vector (matching AE's own Graph Editor) — inherently
+// non-negative, so the sign-disagreement rule above doesn't apply there;
+// the two magnitudes are simply averaged.
+//
+// Non-spatial properties (Scale, Color, Opacity, Rotation, ...) get one
+// KeyframeEase per value dimension instead, each with its OWN signed speed
+// (AE's KeyframeEase.speed is meaningfully signed — see directionalizeEase
+// above, which flips it to indicate the opposite direction).
+//
+// Either way, a keyframe with only one neighbor (first/last key) just uses
+// that single side's velocity; one with no neighbors at all (a lone
+// keyframe) falls back to 0.
+function _lineup_bezierDefaultEase(prop, k, isSpatial, zeroVelocity) {
+    if (zeroVelocity) {
+        if (isSpatial) return [new KeyframeEase(0, LINEUP_BEZIER_DEFAULT_INFLUENCE)];
+        var val0 = prop.keyValue(k);
+        var dims0 = (val0 instanceof Array) ? val0.length : 1;
+        var arr0 = [];
+        for (var d0 = 0; d0 < dims0; d0++) arr0.push(new KeyframeEase(0, LINEUP_BEZIER_DEFAULT_INFLUENCE));
+        return arr0;
+    }
+
+    var hasPrev = k > 1, hasNext = k < prop.numKeys;
+    var thisVal = prop.keyValue(k), thisTime = prop.keyTime(k);
+    var prevVal, prevTime, nextVal, nextTime;
+    if (hasPrev) { prevVal = prop.keyValue(k - 1); prevTime = prop.keyTime(k - 1); }
+    if (hasNext) { nextVal = prop.keyValue(k + 1); nextTime = prop.keyTime(k + 1); }
+    var valDims = (thisVal instanceof Array) ? thisVal.length : 1;
+
+    if (isSpatial) {
+        var inMag = null, outMag = null;
+        if (hasPrev) {
+            var dtIn0 = thisTime - prevTime;
+            if (dtIn0 !== 0) {
+                var sumSqIn = 0;
+                for (var di = 0; di < valDims; di++) {
+                    var tvi = (valDims > 1) ? thisVal[di] : thisVal;
+                    var pvi = (valDims > 1) ? prevVal[di] : prevVal;
+                    var dvi = (tvi - pvi) / dtIn0;
+                    sumSqIn += dvi * dvi;
+                }
+                inMag = Math.sqrt(sumSqIn);
+            }
+        }
+        if (hasNext) {
+            var dtOut0 = nextTime - thisTime;
+            if (dtOut0 !== 0) {
+                var sumSqOut = 0;
+                for (var doi = 0; doi < valDims; doi++) {
+                    var tvo = (valDims > 1) ? thisVal[doi] : thisVal;
+                    var nvo = (valDims > 1) ? nextVal[doi] : nextVal;
+                    var dvo = (nvo - tvo) / dtOut0;
+                    sumSqOut += dvo * dvo;
+                }
+                outMag = Math.sqrt(sumSqOut);
+            }
+        }
+        var magSpeed;
+        if (inMag !== null && outMag !== null) magSpeed = (inMag + outMag) / 2;
+        else if (inMag !== null) magSpeed = inMag;
+        else if (outMag !== null) magSpeed = outMag;
+        else magSpeed = 0;
+        return [new KeyframeEase(magSpeed, LINEUP_BEZIER_DEFAULT_INFLUENCE)];
+    }
+
+    var arr = [];
+    for (var d = 0; d < valDims; d++) {
+        var tv = (valDims > 1) ? thisVal[d] : thisVal;
+        var inVel = null, outVel = null;
+        if (hasPrev) {
+            var pv = (valDims > 1) ? prevVal[d] : prevVal;
+            var dtIn = thisTime - prevTime;
+            if (dtIn !== 0) inVel = (tv - pv) / dtIn;
+        }
+        if (hasNext) {
+            var nv = (valDims > 1) ? nextVal[d] : nextVal;
+            var dtOut = nextTime - thisTime;
+            if (dtOut !== 0) outVel = (nv - tv) / dtOut;
+        }
+        var speed;
+        if (inVel !== null && outVel !== null) {
+            if (inVel !== 0 && outVel !== 0 && (inVel < 0) !== (outVel < 0)) speed = 0;
+            else speed = (inVel + outVel) / 2;
+        }
+        else if (inVel !== null) speed = inVel;
+        else if (outVel !== null) speed = outVel;
+        else speed = 0;
+        arr.push(new KeyframeEase(speed, LINEUP_BEZIER_DEFAULT_INFLUENCE));
+    }
+    return arr;
+}
+
+// Backs the quick-swap interpolation buttons — applies to every currently
+// selected keyframe across every selected layer/property (same scope as
+// pressing an interpolation shortcut in AE itself), not just whatever the
+// graph happens to be showing. kind is one of "hold"/"linear"/"bezier"/
+// "autobezier"/"continuousbezier". Auto/Continuous Bezier are both real
+// Bezier interpolation underneath — they only differ by the
+// setTemporalAutoBezierAtKey/setTemporalContinuousAtKey flags layered on
+// top, same API lineup_retimeKey above already relies on to restore them.
+//
+// setTemporalEaseAtKey has to run BEFORE setInterpolationTypeAtKey, not
+// after — same ordering (and the same reason) as applyPastedEase above:
+// setTemporalEaseAtKey force-promotes both sides of the key to Bezier as an
+// AE API side effect, so calling it AFTER the type was already (re)set is
+// what was silently leaving the key on whatever placeholder ease a plain
+// script-side type flip gets (near-zero speed, negligible influence) —
+// the type call was landing last and nothing after it ever touched ease
+// again. Type is (re)applied after ease for the same reason
+// applyPastedEase does: it's what actually settles the key on Bezier
+// (autoBezier/continuous flags only make sense once that's confirmed, so
+// those still come last, mirroring lineup_retimeKey's own ordering).
+var LINEUP_INTERP_LABELS = { hold: "Hold", linear: "Linear", bezier: "Bezier", autobezier: "Auto Bezier", continuousbezier: "Continuous Bezier" };
+function lineup_setKeyframeInterpolation(kind, zeroVelocity) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var groups = lineup_collectSelectedKeyGroups(comp);
+        if (!groups.length) return "No keyframes selected.";
+
+        app.beginUndoGroup("Set Keyframe Interpolation");
+        var count = 0;
+        for (var g = 0; g < groups.length; g++) {
+            var prop = groups[g].prop, indices = groups[g].indices;
+            for (var i = 0; i < indices.length; i++) {
+                var k = indices[i];
+                try {
+                    if (kind === "hold") {
+                        prop.setInterpolationTypeAtKey(k, KeyframeInterpolationType.HOLD, KeyframeInterpolationType.HOLD);
+                    } else if (kind === "linear") {
+                        prop.setInterpolationTypeAtKey(k, KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.LINEAR);
+                    } else if (kind === "autobezier") {
+                        // Auto-Bezier computes its own ease from the surrounding keys
+                        // once the flag is on — no ease to set by hand, so ordering
+                        // relative to the type call doesn't matter here.
+                        prop.setInterpolationTypeAtKey(k, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+                        try { prop.setTemporalAutoBezierAtKey(k, true); } catch (e2) {}
+                    } else if (kind === "continuousbezier") {
+                        // isSpatial (Position, etc.) needs exactly one KeyframeEase
+                        // covering the whole path, not one per value dimension — see
+                        // _lineup_bezierDefaultEase's own comment for why. Whole
+                        // computation+apply stays one try/catch (not just the
+                        // setTemporalEaseAtKey call) since _lineup_bezierDefaultEase
+                        // itself calls back into the AE DOM and can throw too — left
+                        // unguarded, that exception was escaping to the outer
+                        // per-keyframe catch and skipping the type change entirely,
+                        // which is why interpolation wasn't changing at all.
+                        //
+                        // Re-applied a second time AFTER setTemporalContinuousAtKey —
+                        // turning Continuous on appears to trigger AE's own ease
+                        // recompute as a side effect (the same class of thing Auto
+                        // Bezier does deliberately), which was overwriting a genuinely
+                        // 0 velocity back to some nonzero AE-computed value. Setting
+                        // it again last is what makes it actually stick.
+                        var ne3 = null, isSpatial3 = false;
+                        try {
+                            try { isSpatial3 = prop.isSpatial; } catch (eSp3) {}
+                            ne3 = _lineup_bezierDefaultEase(prop, k, isSpatial3, zeroVelocity);
+                            prop.setTemporalEaseAtKey(k, ne3, ne3);
+                        } catch (e2) {}
+                        prop.setInterpolationTypeAtKey(k, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+                        try { prop.setTemporalAutoBezierAtKey(k, false); } catch (e2) {}
+                        try { prop.setTemporalContinuousAtKey(k, true); } catch (e2) {}
+                        if (ne3) { try { prop.setTemporalEaseAtKey(k, ne3, ne3); } catch (e2) {} }
+                    } else { // plain "bezier"
+                        try {
+                            var isSpatial = false;
+                            try { isSpatial = prop.isSpatial; } catch (eSp) {}
+                            var ne = _lineup_bezierDefaultEase(prop, k, isSpatial, zeroVelocity);
+                            prop.setTemporalEaseAtKey(k, ne, ne);
+                        } catch (e2) {}
+                        prop.setInterpolationTypeAtKey(k, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+                        try { prop.setTemporalAutoBezierAtKey(k, false); } catch (e2) {}
+                        try { prop.setTemporalContinuousAtKey(k, false); } catch (e2) {}
+                    }
+                    count++;
+                } catch (e) {}
+            }
+        }
+        app.endUndoGroup();
+        if (!count) return "Couldn't set interpolation on the selected keyframes.";
+        return "Set " + count + " keyframe" + (count === 1 ? "" : "s") + " to " + (LINEUP_INTERP_LABELS[kind] || kind) + ".";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
 // ── AUTO CROP ─────────────────────────────────────────────────────────────────
 
 function saveMaskShapes(layer) {

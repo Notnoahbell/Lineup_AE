@@ -189,131 +189,75 @@ function _syncAnchorRowUnit() {
     if (!grid) return;
 
     // #homeTopGroup itself carries the CSS zoom set in _syncAnchorTiers
-    // below (still applied here in both medium and normal tiers, only
-    // narrow-stack resets it to ''). getBoundingClientRect() on anything
-    // inside that zoomed subtree — which is all _anchorNaturalHeight/
-    // qaBox measurements are — reports the value already scaled DOWN by
-    // that zoom, since gBCR always answers in the outer/root coordinate
-    // space. But grid-template-rows and --home-anchor-unit are read back
-    // by CSS *inside* this same zoomed element, i.e. in its own
-    // pre-zoom/local space — feeding a post-zoom measurement straight
-    // back in gets zoomed a second time, shrinking the row/box past what
-    // its actual (single-zoomed) content needs and letting that content
-    // spill out the bottom. Dividing by zoom here converts the
-    // measurement back to the local space these properties are actually
-    // interpreted in.
+    // below (only narrow-stack resets it to ''). getBoundingClientRect()
+    // on anything inside that zoomed subtree — which is all
+    // _anchorNaturalHeight's own measurements are — reports the value
+    // already scaled DOWN by that zoom, since gBCR always answers in the
+    // outer/root coordinate space. But --home-anchor-unit is read back by
+    // CSS *inside* this same zoomed element, i.e. in its own pre-zoom/
+    // local space — feeding a post-zoom measurement straight back in gets
+    // zoomed a second time, shrinking the row/box past what its actual
+    // (single-zoomed) content needs and letting that content spill out
+    // the bottom. Dividing by zoom here converts the measurement back to
+    // the local space this property is actually interpreted in.
     var zoom = parseFloat(grid.style.zoom) || 1;
 
-    if (_anchorMedium) {
-        // CSS Grid's own "auto" row-track sizing splits whatever extra
-        // height Anchor's rowspan-2 need requires across BOTH rows it
-        // spans, regardless of align-self on the items inside them —
-        // align-self only positions an item within its track once that
-        // track's size is already decided, it can't stop the track itself
-        // from growing. That's what was still leaving a gap below Quick
-        // Actions even with align-self:start on it. Explicit row heights
-        // instead: row 1 pinned to exactly Quick Actions' own natural
-        // height, row 2 whatever's left over for Favorite to stretch into
-        // (its own align-items:stretch, unchanged) — the two rows' combined
-        // height always exactly matches Anchor's, so there's no gap
-        // anywhere in the column.
-        var qaBox = document.getElementById('sec-quick-actions');
-        var anchorHeight = _anchorNaturalHeight();
-        var qaHeight = qaBox ? qaBox.getBoundingClientRect().height : 0;
-        if (anchorHeight > 0 && qaHeight > 0) {
-            var favHeight = Math.max(0, anchorHeight - qaHeight);
-            grid.style.gridTemplateRows = (qaHeight / zoom) + 'px ' + (favHeight / zoom) + 'px';
-        }
-        return;
-    }
-
-    // Not medium — back to the normal, evenly-split arrangement (see
-    // .home-top-group's own --home-anchor-unit fallback comment).
-    grid.style.gridTemplateRows = '';
+    // Evenly-split arrangement — Quick Actions and Favorite each get half
+    // of Anchor's own natural height (see .home-top-group's own
+    // --home-anchor-unit fallback comment, and the #sec-quick-actions/
+    // #sec-favorite overrides that split it unevenly instead).
     var h = _anchorNaturalHeight();
     if (h > 0) grid.style.setProperty('--home-anchor-unit', (h / zoom / 2) + 'px');
 }
 
 // ── Anchor responsive tiers ──────────────────────────────────────────────────
-// Three bands, all measured off the same #homeToolGrid width:
-//   width >= ANCHOR_MEDIUM_THRESHOLD           : normal — Anchor/Quick
-//                                                 Actions/Favorite scale
-//                                                 down together as one unit
-//                                                 (see #homeTopGroup's zoom
-//                                                 below) as the panel
-//                                                 narrows, so the grid,
-//                                                 dropdown, Ignore Masks,
-//                                                 and Null button all shrink
-//                                                 in the same proportion
-//                                                 instead of any one of them
-//                                                 crowding out of step with
-//                                                 the others.
-//   NARROW_STACK_THRESHOLD <= width <          : medium — the square grid
-//   ANCHOR_MEDIUM_THRESHOLD                      has shrunk enough that the
-//                                                 dropdown/Ignore Masks/Null
-//                                                 row no longer fits
-//                                                 comfortably beside it even
-//                                                 at the zoom floor above;
-//                                                 stacked into a column
-//                                                 instead (see .anchor-medium
-//                                                 in style.css — plain
-//                                                 flex-direction:column, NOT
-//                                                 flex:1, which is what
-//                                                 caused the earlier
-//                                                 self-feeding "melting"
-//                                                 height bug), each control
-//                                                 given a legible 1.5x
-//                                                 height on top of that.
-//   width < NARROW_STACK_THRESHOLD             : narrow-stack — every
-//                                                 widget, including the top
-//                                                 group, goes full-width/
-//                                                 stacked; Anchor's own
-//                                                 grid+controls sit side by
-//                                                 side instead, at native
-//                                                 scale (the zoom above
-//                                                 resets to 1 here — full
-//                                                 width is the intended
-//                                                 remedy for this range, not
-//                                                 shrinking everything down
-//                                                 further on top of it), all
-//                                                 the way down — no smaller
-//                                                 breakpoint below this that
-//                                                 hides the controls
-//                                                 entirely (tried that; it
-//                                                 read worse, and dragged
-//                                                 Quick Actions/Favorite's
-//                                                 own layout down with it
-//                                                 since they share this same
-//                                                 top-group row). The
-//                                                 dropdown/Ignore Masks row/
-//                                                 Null button split the
-//                                                 controls column into
-//                                                 thirds via plain flex-grow
-//                                                 (see .anchor-mode-stack/
-//                                                 .btn-anchor-null's
-//                                                 narrow-stack rules) — pure
-//                                                 CSS, no JS-computed pixel
-//                                                 heights, so they can never
-//                                                 demand more than the
-//                                                 column's own actual height
-//                                                 and inflate Anchor's box
-//                                                 to fit (the same class of
-//                                                 bug medium mode's flex:1
-//                                                 attempt caused earlier).
-//   width < ANCHOR_TINY_THRESHOLD               : narrow-stack, tiny —
-//                                                 halfway between
-//                                                 NARROW_STACK_THRESHOLD and
-//                                                 the panel's own minimum
-//                                                 width (CSXS/manifest.xml's
-//                                                 MinSize), "Ignore Masks"
-//                                                 would actually bleed past
-//                                                 the edge at this point, so
-//                                                 its "Ignore " prefix drops
-//                                                 to just "Masks" (see
-//                                                 .ignore-masks-prefix).
+// Two bands, both measured off the same #homeToolGrid width (a former
+// third "medium" tier — stacking Anchor's dropdown/Null column once the
+// square grid got too cramped to sit beside it — was removed; normal/wide's
+// zoom-based scaling now just runs all the way down to
+// NARROW_STACK_THRESHOLD instead):
+//   width >= NARROW_STACK_THRESHOLD  : normal — Anchor/Quick Actions/
+//                                       Favorite scale down together as one
+//                                       unit (see #homeTopGroup's zoom
+//                                       below) as the panel narrows, so the
+//                                       grid, mode button, and Null button
+//                                       all shrink in the same proportion
+//                                       instead of any one of them crowding
+//                                       out of step with the others.
+//   width < NARROW_STACK_THRESHOLD   : narrow-stack — every widget,
+//                                       including the top group, goes
+//                                       full-width/stacked; Anchor's own
+//                                       grid+controls sit side by side
+//                                       instead, at native scale (the zoom
+//                                       above resets to 1 here — full width
+//                                       is the intended remedy for this
+//                                       range, not shrinking everything
+//                                       down further on top of it), all the
+//                                       way down — no smaller breakpoint
+//                                       below this that hides the controls
+//                                       entirely (tried that; it read
+//                                       worse, and dragged Quick Actions/
+//                                       Favorite's own layout down with it
+//                                       since they share this same top-
+//                                       group row). The mode button/Null
+//                                       cluster split the controls column
+//                                       evenly via plain flex-grow (see
+//                                       .anchor-mode-btn/.anchor-null-
+//                                       cluster's narrow-stack rules) —
+//                                       pure CSS, no JS-computed pixel
+//                                       heights, so they can never demand
+//                                       more than the column's own actual
+//                                       height and inflate Anchor's box to
+//                                       fit.
+//   width < ANCHOR_TINY_THRESHOLD    : narrow-stack, tiny — halfway
+//                                       between NARROW_STACK_THRESHOLD and
+//                                       the panel's own minimum width
+//                                       (CSXS/manifest.xml's MinSize); no
+//                                       tighter treatment currently hooks
+//                                       into this sub-tier, kept in case a
+//                                       future control needs it.
 // Tune any of these directly if they kick in too early/late once actually
 // seen in AE.
-var ANCHOR_MEDIUM_THRESHOLD = 471; // roughly where the zoom below hits its floor and stops shrinking further
 var NARROW_STACK_THRESHOLD = 330;
 var ANCHOR_TINY_THRESHOLD = 275; // halfway between NARROW_STACK_THRESHOLD (330) and the panel's own MinSize width (220)
 var VECTORTOOLS_TITLE_DROP_WIDTH = 300; // below this, "Shape Tools" drops even in one-line (data-span="6") mode
@@ -324,11 +268,10 @@ var TOP_GROUP_REFERENCE_WIDTH = 550;
 // 0.6 (matching the ratio's own value right at NARROW_STACK_THRESHOLD) read
 // as too small/hard to read well before the panel actually got that narrow
 // — text and icons were shrinking the whole way down. Floored higher so
-// zoom stops shrinking earlier and holds there instead; medium mode above
-// takes over from there.
+// zoom stops shrinking earlier and holds there instead, all the way down
+// to NARROW_STACK_THRESHOLD.
 var TOP_GROUP_ZOOM_FLOOR = 0.82;
 
-var _anchorMedium = false;
 var _narrowStack = false;
 var _anchorTiny = false;
 
@@ -339,14 +282,11 @@ function _syncAnchorTiers() {
     var width = grid.getBoundingClientRect().width;
 
     var isNarrow = width < NARROW_STACK_THRESHOLD;
-    var isMedium = !isNarrow && width < ANCHOR_MEDIUM_THRESHOLD;
     var isTiny = isNarrow && width < ANCHOR_TINY_THRESHOLD;
     var narrowChanged = isNarrow !== _narrowStack;
 
-    _anchorMedium = isMedium;
     _narrowStack = isNarrow;
     _anchorTiny = isTiny;
-    grid.classList.toggle('anchor-medium', isMedium);
     grid.classList.toggle('narrow-stack', isNarrow);
     grid.classList.toggle('anchor-tiny', isTiny);
 
@@ -575,6 +515,18 @@ var WHATS_NEW = {
             icon: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="11" width="11" height="6" rx="1.4" opacity="0.45"/><rect x="4" y="7" width="11" height="6" rx="1.4" opacity="0.7"/><rect x="6" y="3" width="11" height="6" rx="1.4"/></svg>',
             title: 'Smart Stack',
             body: "The Favorites bar now jumps to the page you likely need — Shape Tools the moment you select a shape, Ease Copy the moment you select a keyframe — without fighting a manual swipe. Toggle it off anytime in Settings."
+        }
+    ],
+    '1.9.2': [
+        {
+            icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="3"/><line x1="10" y1="1.5" x2="10" y2="5.5"/><line x1="10" y1="14.5" x2="10" y2="18.5"/><line x1="1.5" y1="10" x2="5.5" y2="10"/><line x1="14.5" y1="10" x2="18.5" y2="10"/></svg>',
+            title: 'Anchor Point, redesigned',
+            body: "The Based-on dropdown is now an icon+word button with a flyout, Ignore Masks is a square toggle instead of a checkbox, and Null sits beside it — a bordered dropdown look and a raised button look now make it obvious which is which."
+        },
+        {
+            icon: '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M4.37,4.47 Q4,4 4.6,4 L15.4,4 Q16,4 15.63,4.47 L10.16,11.3 Q10,11.5 9.84,11.3 Z M4.6,16 Q4,16 4.37,15.53 L9.84,8.7 Q10,8.5 10.16,8.7 L15.63,15.53 Q16,16 15.4,16 Z"/></svg>',
+            title: 'Ease Copy, streamlined',
+            body: "The 3 interpolation buttons are now 1 — click for Continuous Bezier, right-click for Linear/Hold. The graph shows what you've copied again, with a small live keyframe count overlaid in the corner."
         }
     ]
 };
@@ -1177,11 +1129,158 @@ function setSizeFitMode(val) {
 }
 
 // ── ANCHOR POINT ──────────────────────────────────────────────────────────────
+// "Based on" (Object/Selection/Composition) used to be a native <select>
+// plus an "Ignore Masks" checkbox. The checkbox is gone — Object mode
+// always respects masks now (matches its old default, unchecked, behavior;
+// lineup_anchorMove's own ignoreMasks parameter is still there underneath,
+// just always passed 0 from here) — and the dropdown is now a custom
+// icon+word button + flyout, same pattern as Select Paths/Split Text's own
+// AE-native-toolbar flyouts (see _buildAnchorModeCtx/_openAnchorModeCtx
+// below), since a native <select> can't show a custom icon in its own
+// closed state.
+var ANCHOR_MODE_OPTIONS = [
+    {
+        id: 0, label: 'Object', title: 'Based on: Object — this layer’s own bounds',
+        svg: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="6" y="6" width="8" height="8" rx="1.3"/></svg>'
+    },
+    {
+        id: 1, label: 'Selection', title: 'Based on: Selection — combined bounds of every selected layer',
+        svg: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.2" opacity="0.55"/><rect x="9" y="9" width="8" height="8" rx="1.2"/></svg>'
+    },
+    {
+        id: 2, label: 'Composition', title: 'Based on: Composition — the comp’s own bounds',
+        svg: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="15" height="15" rx="1.8"/></svg>'
+    }
+];
+var _anchorMode = 0;
+
+function _anchorModeFindOption(id) {
+    for (var i = 0; i < ANCHOR_MODE_OPTIONS.length; i++) {
+        if (ANCHOR_MODE_OPTIONS[i].id === id) return ANCHOR_MODE_OPTIONS[i];
+    }
+    return ANCHOR_MODE_OPTIONS[0];
+}
+
+function _anchorModeRefreshButton() {
+    var opt = _anchorModeFindOption(_anchorMode);
+    var btn = document.getElementById('anchorModeBtn');
+    if (!btn) return;
+    var icon = document.getElementById('anchorModeBtnIcon');
+    var lbl = document.getElementById('anchorModeBtnLbl');
+    if (icon) icon.innerHTML = opt.svg;
+    if (lbl) lbl.textContent = opt.label;
+    btn.title = opt.title;
+}
+
+// Not persisted across sessions — the native <select> it replaces never
+// was either (always started back at Object/id 0 on reload).
+function _anchorModeInit() {
+    _anchorModeRefreshButton();
+}
+
+function _anchorModeSet(id) {
+    _anchorMode = _anchorModeFindOption(id).id;
+    _anchorModeRefreshButton();
+    _closeAnchorModeCtx();
+}
+
+// Click opens the flyout directly — unlike Select Paths/Split Text's own
+// left-click-runs/right-click-switches convention, picking a "based on"
+// mode doesn't itself DO anything (doAnchor/doCreateNull read whatever's
+// currently set whenever their own buttons are clicked), so there's no
+// "re-run the last one" action for a left-click to perform instead.
+var _anchorModeCtx = null;
+
+function _buildAnchorModeCtx() {
+    var el = document.createElement('div');
+    el.className = 'fav-ctx shape-sel-ctx';
+    var row = document.createElement('div');
+    row.className = 'shape-sel-ctx-row';
+    ANCHOR_MODE_OPTIONS.forEach(function(opt) {
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'shape-sel-ctx-icon-btn';
+        item.title = opt.title;
+        item.innerHTML = opt.svg + '<span class="shape-sel-ctx-lbl">' + opt.label + '</span>';
+        item.setAttribute('data-mode', opt.id);
+        item.addEventListener('click', function() { _anchorModeSet(opt.id); });
+        row.appendChild(item);
+    });
+    el.appendChild(row);
+    document.body.appendChild(el);
+    return el;
+}
+
+// Same positioning approach as _openShapeSelCtx (see its own comment) —
+// re-parented into the button's own .tab-panel and positioned from the
+// difference between two getBoundingClientRect() calls, so the panel's
+// own CSS zoom (Panel Scale) can't throw the flyout off from its button.
+function _openAnchorModeCtx(btn) {
+    if (!_anchorModeCtx) _anchorModeCtx = _buildAnchorModeCtx();
+    var container = btn.closest('.tab-panel') || document.body;
+    container.appendChild(_anchorModeCtx);
+    var items = _anchorModeCtx.querySelectorAll('.shape-sel-ctx-icon-btn');
+    for (var i = 0; i < items.length; i++) {
+        items[i].classList.toggle('active', parseInt(items[i].getAttribute('data-mode'), 10) === _anchorMode);
+    }
+    var cw = container.clientWidth, ch = container.clientHeight;
+    _anchorModeCtx.classList.remove('compact');
+    var wideFits = (_anchorModeCtx.offsetWidth + 8) <= cw;
+    _anchorModeCtx.classList.toggle('compact', !wideFits);
+
+    var containerRect = container.getBoundingClientRect();
+    var rect = btn.getBoundingClientRect();
+    var relLeft   = rect.left   - containerRect.left;
+    var relTop    = rect.top    - containerRect.top;
+    var relBottom = rect.bottom - containerRect.top;
+    var ctxW = _anchorModeCtx.offsetWidth;
+    var ctxH = _anchorModeCtx.offsetHeight;
+    var left = Math.min(Math.max(4, relLeft), cw - ctxW - 4);
+    var top = (relBottom + 4 + ctxH <= ch)
+        ? relBottom + 4
+        : Math.max(4, relTop - ctxH - 4);
+    _anchorModeCtx.style.left = left + 'px';
+    _anchorModeCtx.style.top  = top + 'px';
+    _anchorModeCtx.classList.add('visible');
+    setTimeout(function() {
+        document.addEventListener('mousedown', _anchorModeCtxOutside);
+        document.addEventListener('keydown', _anchorModeCtxKey);
+    }, 0);
+}
+
+function _closeAnchorModeCtx() {
+    if (_anchorModeCtx) _anchorModeCtx.classList.remove('visible');
+    document.removeEventListener('mousedown', _anchorModeCtxOutside);
+    document.removeEventListener('keydown', _anchorModeCtxKey);
+}
+
+function _anchorModeCtxOutside(e) {
+    if (_anchorModeCtx && !_anchorModeCtx.contains(e.target)) _closeAnchorModeCtx();
+}
+
+function _anchorModeCtxKey(e) {
+    if (e.key === 'Escape') _closeAnchorModeCtx();
+}
+
+// Not persisted across sessions, matching the mode dropdown above (and the
+// checkbox this replaces, which also always reset to unchecked/"respect
+// masks" on reload).
+var _ignoreMasks = false;
+
+function _ignoreMasksRefreshButton() {
+    var btn = document.getElementById('ignoreMasksBtn');
+    if (!btn) return;
+    btn.classList.toggle('active', _ignoreMasks);
+    btn.title = _ignoreMasks ? "Ignore Masks: On" : "Ignore Masks: Off";
+}
+
+function doToggleIgnoreMasks() {
+    _ignoreMasks = !_ignoreMasks;
+    _ignoreMasksRefreshButton();
+}
 
 function doAnchor(loc) {
-    var mode = selVal('anchorMode');
-    var ignoreMasks = chkVal('ignoreMasksCheck') ? 1 : 0;
-    run('lineup_anchorMove(' + loc + ',' + mode + ',' + ignoreMasks + ')');
+    run('lineup_anchorMove(' + loc + ',' + _anchorMode + ',' + (_ignoreMasks ? 1 : 0) + ')');
 }
 
 function doAnchorCopy() {
@@ -1206,11 +1305,15 @@ function doAnchorClear() {
 }
 
 function doCreateNull() {
-    var mode = selVal('anchorMode');
-    run('lineup_createNull(' + mode + ')');
+    run('lineup_createNull(' + _anchorMode + ')');
 }
 
 // ── EASE COPY ─────────────────────────────────────────────────────────────────
+// Copy/Paste operate on the ease clipboard as before, and the preview graph
+// is back to showing that same copied ease (not the live Timeline
+// selection — see "Ease/keyframe graph" below) — so every one of these
+// re-polls the graph immediately after, rather than waiting up to 250ms
+// for the next tick to notice the clipboard changed.
 
 function doEaseCopy() {
     run('lineup_easeCopy()', function(result) {
@@ -1218,7 +1321,8 @@ function doEaseCopy() {
             document.querySelector('#easeDisplay .ease-display-text').textContent = result;
             document.getElementById('easePasteBtn').disabled = false;
         }
-        _easePreviewFetch();
+        _pollEaseGraph();
+        _easeSelIndicatorRender();
     });
 }
 
@@ -1233,56 +1337,237 @@ function doEaseClear() {
     run('lineup_easeClear()', function() {
         document.querySelector('#easeDisplay .ease-display-text').textContent = '—';
         document.getElementById('easePasteBtn').disabled = true;
-        _easePreviewRender(null);
+        _pollEaseGraph();
+        _easeSelIndicatorRender();
     });
 }
 
-// ── Ease preview (live curve) ────────────────────────────────────────────────
-// Only ever visible at half width (see the CSS on .ease-preview) — a value
-// curve with a dot at each copied keyframe, normalized to all the copied
-// keyframes' relative timing (not just the first two). Reconstructs the
-// same speed/influence -> bezier handles AE's own graph editor uses (see
+// Backs the quick-swap interpolation button (see EASE_INTERP_MODES below
+// for how it picks which kind to apply) — applies to whatever's currently
+// selected in the Timeline (same scope as an AE interpolation shortcut),
+// independent of the ease clipboard above. Re-polls immediately after so
+// the corner indicator's count/types reflect the new type without waiting
+// for the next tick (the graph itself won't change here — it's tracking
+// the copied ease, not this live selection).
+//
+// The Bezier mode defaults to Continuous Bezier (smooth handles linked
+// through the keyframe) rather than plain manual Bezier — Alt-click it for
+// plain Bezier instead, same modifier convention as Merge/Explode Shapes'
+// own keepOriginals toggle elsewhere in this panel. Independently,
+// Ctrl-click either Bezier flavor to zero out the new ease's speed (Easy-
+// Ease-style) instead of the default median-of-neighboring-velocity — see
+// lineup_setKeyframeInterpolation/_lineup_bezierDefaultEase in host.jsx.
+function doSetKeyInterpolation(kind, e) {
+    if (kind === 'bezier') kind = (e && e.altKey) ? 'bezier' : 'continuousbezier';
+    var zeroVelocity = !!(e && e.ctrlKey);
+    run('lineup_setKeyframeInterpolation(\'' + kind + '\', ' + zeroVelocity + ')', function(result) {
+        if (result) showToast(result, 'info');
+        _pollEaseGraph();
+    });
+}
+
+// One square button instead of 3 small ones (they read too cramped in
+// this tight a row) — left-click applies whichever mode is currently
+// active (_easeInterpRunActive), right-click opens a flyout to pick
+// Linear/Bezier/Hold instead (_openEaseInterpCtx), same left-click-runs/
+// right-click-swaps convention — and the same flyout-building approach,
+// down to the zoom-safe positioning math — as Select Paths' own
+// SHAPE_SEL_MODES/_buildShapeSelCtx/_openShapeSelCtx elsewhere in this
+// file. Picking a mode from the flyout both applies it immediately and
+// becomes the new left-click default, persisted the same way. Bezier is
+// first (not alphabetical) since it's both the default and, per how this
+// control actually gets used, the most common pick.
+var EASE_INTERP_MODES = [
+    {
+        id: 'bezier', title: 'Bezier', kind: 'bezier',
+        svg: '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M4.37,4.47 Q4,4 4.6,4 L15.4,4 Q16,4 15.63,4.47 L10.16,11.3 Q10,11.5 9.84,11.3 Z M4.6,16 Q4,16 4.37,15.53 L9.84,8.7 Q10,8.5 10.16,8.7 L15.63,15.53 Q16,16 15.4,16 Z"/></svg>'
+    },
+    {
+        id: 'linear', title: 'Linear', kind: 'linear',
+        svg: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="6.2" y="6.2" width="7.6" height="7.6" rx="1" transform="rotate(45 10 10)"/></svg>'
+    },
+    {
+        id: 'hold', title: 'Hold', kind: 'hold',
+        svg: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="5" y="5" width="10" height="10" rx="1"/></svg>'
+    }
+];
+var EASE_INTERP_MODE_KEY = 'lineup-ease-interp-mode';
+var _easeInterpMode = 'bezier';
+
+function _easeInterpFindMode(id) {
+    for (var i = 0; i < EASE_INTERP_MODES.length; i++) {
+        if (EASE_INTERP_MODES[i].id === id) return EASE_INTERP_MODES[i];
+    }
+    return EASE_INTERP_MODES[0]; // bezier
+}
+
+function _easeInterpInit() {
+    var saved;
+    try { saved = localStorage.getItem(EASE_INTERP_MODE_KEY); } catch (e) {}
+    _easeInterpMode = _easeInterpFindMode(saved).id;
+    _easeInterpRefreshButton();
+}
+
+// Keeps the button visually square (see its CSS comment for why this is
+// JS, not aspect-ratio) — width is set to whatever height:100% actually
+// rendered as, in real pixels, every time that height can change: once up
+// front, then again whenever the row it stretches to fill resizes (panel
+// width changes, Panel Scale zoom, switching between Bottom Layout/
+// Favorite/Classic, etc.), via ResizeObserver on the row itself rather
+// than the button — the button's own width changing as a RESULT of this
+// isn't a resize this needs to react to, only its height is.
+function _easeInterpSquareSync() {
+    var btn = document.getElementById('easeInterpBtn');
+    if (!btn || !btn.offsetParent) return;
+    btn.style.width = btn.offsetHeight + 'px';
+}
+
+function _initEaseInterpSquare() {
+    var row = document.querySelector('.ease-panels-row');
+    if (!row || typeof ResizeObserver === 'undefined') return;
+    new ResizeObserver(_easeInterpSquareSync).observe(row);
+    _easeInterpSquareSync();
+}
+
+function _easeInterpSetMode(id) {
+    _easeInterpMode = _easeInterpFindMode(id).id;
+    try { localStorage.setItem(EASE_INTERP_MODE_KEY, _easeInterpMode); } catch (e) {}
+    _easeInterpRefreshButton();
+}
+
+function _easeInterpRefreshButton() {
+    var mode = _easeInterpFindMode(_easeInterpMode);
+    var btn = document.getElementById('easeInterpBtn');
+    if (!btn) return;
+    var svg = btn.querySelector('svg');
+    if (svg) svg.outerHTML = mode.svg;
+    btn.title = mode.title;
+}
+
+function _easeInterpRunActive(e) {
+    doSetKeyInterpolation(_easeInterpFindMode(_easeInterpMode).kind, e);
+}
+
+var _easeInterpCtx = null;
+
+function _buildEaseInterpCtx() {
+    var el = document.createElement('div');
+    el.className = 'fav-ctx shape-sel-ctx';
+    var row = document.createElement('div');
+    row.className = 'shape-sel-ctx-row';
+    EASE_INTERP_MODES.forEach(function(mode) {
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'shape-sel-ctx-icon-btn';
+        item.title = mode.title;
+        item.innerHTML = mode.svg + '<span class="shape-sel-ctx-lbl">' + mode.title + '</span>';
+        item.setAttribute('data-mode', mode.id);
+        item.addEventListener('click', function(e) {
+            _easeInterpSetMode(mode.id);
+            doSetKeyInterpolation(mode.kind, e);
+            _closeEaseInterpCtx();
+        });
+        row.appendChild(item);
+    });
+    el.appendChild(row);
+    document.body.appendChild(el);
+    return el;
+}
+
+// Same zoom-safe positioning approach as _openShapeSelCtx (see its own
+// comment) — re-parented into the button's own .tab-panel and positioned
+// from the difference between two getBoundingClientRect() calls, so the
+// panel's own CSS zoom (Panel Scale) can't throw the flyout off from its
+// button.
+function _openEaseInterpCtx(btn) {
+    if (!_easeInterpCtx) _easeInterpCtx = _buildEaseInterpCtx();
+    var container = btn.closest('.tab-panel') || document.body;
+    container.appendChild(_easeInterpCtx);
+    var items = _easeInterpCtx.querySelectorAll('.shape-sel-ctx-icon-btn');
+    for (var i = 0; i < items.length; i++) {
+        items[i].classList.toggle('active', items[i].getAttribute('data-mode') === _easeInterpMode);
+    }
+    var cw = container.clientWidth, ch = container.clientHeight;
+    _easeInterpCtx.classList.remove('compact');
+    var wideFits = (_easeInterpCtx.offsetWidth + 8) <= cw;
+    _easeInterpCtx.classList.toggle('compact', !wideFits);
+
+    var containerRect = container.getBoundingClientRect();
+    var rect = btn.getBoundingClientRect();
+    var relLeft   = rect.left   - containerRect.left;
+    var relTop    = rect.top    - containerRect.top;
+    var relBottom = rect.bottom - containerRect.top;
+    var ctxW = _easeInterpCtx.offsetWidth;
+    var ctxH = _easeInterpCtx.offsetHeight;
+    var left = Math.min(Math.max(4, relLeft), cw - ctxW - 4);
+    var top = (relBottom + 4 + ctxH <= ch)
+        ? relBottom + 4
+        : Math.max(4, relTop - ctxH - 4);
+    _easeInterpCtx.style.left = left + 'px';
+    _easeInterpCtx.style.top  = top + 'px';
+    _easeInterpCtx.classList.add('visible');
+    setTimeout(function() {
+        document.addEventListener('mousedown', _easeInterpCtxOutside);
+        document.addEventListener('keydown', _easeInterpCtxKey);
+    }, 0);
+}
+
+function _closeEaseInterpCtx() {
+    if (_easeInterpCtx) _easeInterpCtx.classList.remove('visible');
+    document.removeEventListener('mousedown', _easeInterpCtxOutside);
+    document.removeEventListener('keydown', _easeInterpCtxKey);
+}
+
+function _easeInterpCtxOutside(e) {
+    if (_easeInterpCtx && !_easeInterpCtx.contains(e.target)) _closeEaseInterpCtx();
+}
+
+function _easeInterpCtxKey(e) {
+    if (e.key === 'Escape') _closeEaseInterpCtx();
+}
+
+// ── Ease/keyframe graph (copied-ease value curve) ────────────────────────────
+// Only ever visible at half width or in the Favorite slot (see the CSS on
+// .ease-preview). Shows the *copied* ease (the same clipboard Copy/Paste
+// use — see lineup_easeGetClipboard in host.jsx), not whatever happens to
+// be selected in the Timeline right now. The small indicator overlaid in
+// its top-left corner (_easeSelIndicatorRender below) mirrors that same
+// copied-keyframe count — the exact same string #easeDisplay already
+// shows in single-line/Classic mode — rather than tracking the live
+// selection independently.
+//
+// A value-over-time curve with a diamond at each keyframe, normalized to
+// the copied keyframes' relative timing. Reconstructs the same speed/
+// influence -> bezier curve AE's own graph editor uses (see
 // _easeSegmentSamples), sampling each segment as a parametric curve rather
-// than trying to invert time -> value, which sidesteps needing to solve the
-// cubic for a given time. Multi-dimensional properties (Position, Scale,
-// etc.) collapse to their first dimension — one representative curve rather
-// than plotting several.
+// than trying to invert time -> value, which sidesteps needing to solve
+// the cubic for a given time. Multi-dimensional properties (Position,
+// Scale, etc.) collapse to their first dimension — one representative
+// curve rather than plotting several, since there's no single meaningful
+// "value" combining multiple independently-eased dimensions. No bezier
+// handle lines are drawn — just the curve and the keyframe markers.
 var EASE_PREVIEW_SAMPLES = 24; // per segment
 var EASE_PREVIEW_W = 200;
 var EASE_PREVIEW_H = 100;
-
-// host.jsx's ExtendScript engine keeps _easeClipboard alive for the whole
-// AE session — this is how a freshly (re)loaded panel picks back up
-// whatever was already copied before it loaded.
-function _easePreviewFetch() {
-    run('lineup_easeGetClipboard()', function(result) {
-        var data = null;
-        try { data = JSON.parse(result); } catch(e) {}
-        _easePreviewRender(Array.isArray(data) ? data : null);
-    });
-}
+var _easeGraphLastRaw = null;
 
 function _easeBezierPoint(p0, p1, p2, p3, u) {
     var mu = 1 - u;
     return mu*mu*mu*p0 + 3*mu*mu*u*p1 + 3*mu*u*u*p2 + u*u*u*p3;
 }
 
-// A keyframe's dimension-0 value, whether it was copied as a plain number
+// A keyframe's dimension-0 value, whether it came through as a plain number
 // (Opacity, Rotation) or a per-dimension array (Position, Scale, ...).
 function _easeDim0(v) {
     if (Array.isArray(v)) return v.length ? v[0] : 0;
     return typeof v === 'number' ? v : 0;
 }
 
-// Samples between two consecutive copied keyframes — { samples, handle }.
-// samples are {t, v} pairs walking the parametric bezier directly (exact,
-// no time->value inversion needed); handle is the pair of actual bezier
-// control points (kA's out-handle, kB's in-handle) for genuine bezier
-// segments, or null for hold/linear ones (they have no real handle to
-// show — see _easePreviewRender, which draws a line + dot for each).
+// {t, v} samples between two consecutive keyframes, walking the parametric
+// bezier directly (exact, no time->value inversion needed).
 function _easeSegmentSamples(kA, kB) {
     var tA = kA.time, tB = kB.time, dt = tB - tA;
-    if (!(typeof tA === 'number' && typeof tB === 'number' && dt > 0)) return { samples: [], handle: null };
+    if (!(typeof tA === 'number' && typeof tB === 'number' && dt > 0)) return [];
     var vA = _easeDim0(kA.value), vB = _easeDim0(kB.value);
     var out = [];
 
@@ -1290,19 +1575,19 @@ function _easeSegmentSamples(kA, kB) {
         for (var i = 0; i <= EASE_PREVIEW_SAMPLES; i++) {
             out.push({ t: tA + (i / EASE_PREVIEW_SAMPLES) * dt, v: vA });
         }
-        return { samples: out, handle: null };
+        return out;
     }
     if (kA.outType === 'linear' && kB.inType === 'linear') {
         for (var j = 0; j <= EASE_PREVIEW_SAMPLES; j++) {
             var uu = j / EASE_PREVIEW_SAMPLES;
             out.push({ t: tA + uu * dt, v: vA + (vB - vA) * uu });
         }
-        return { samples: out, handle: null };
+        return out;
     }
 
     // Bezier (or Bezier mixed with Linear on one side) — reconstruct the
-    // handle positions from speed/influence the same way AE does; a
-    // missing/non-Bezier side falls back to a neutral 1/3 influence, 0 speed.
+    // control points from speed/influence the same way AE does; a missing/
+    // non-Bezier side falls back to a neutral 1/3 influence, 0 speed.
     var outE = (kA.outEase && kA.outEase[0]) || { speed: 0, influence: 100 / 3 };
     var inE  = (kB.inEase  && kB.inEase[0])  || { speed: 0, influence: 100 / 3 };
     var t1 = tA + (outE.influence / 100) * dt;
@@ -1314,19 +1599,48 @@ function _easeSegmentSamples(kA, kB) {
         var u = k / EASE_PREVIEW_SAMPLES;
         out.push({ t: _easeBezierPoint(tA, t1, t2, tB, u), v: _easeBezierPoint(vA, v1, v2, vB, u) });
     }
-    return {
-        samples: out,
-        handle: {
-            from: { t: tA, v: vA }, out: { t: t1, v: v1 },
-            to: { t: tB, v: vB }, in: { t: t2, v: v2 }
-        }
-    };
+    return out;
+}
+
+function _pollEaseGraph() {
+    var box = document.getElementById('easePreview');
+    if (!box || !box.offsetParent) return;
+    // Cheap fallback alongside the ResizeObserver in _initEaseInterpSquare
+    // — belt and suspenders for any resize that observer doesn't catch.
+    _easeInterpSquareSync();
+    cs.evalScript('lineup_easeGetClipboard()', function(result) {
+        if (result === _easeGraphLastRaw) return;
+        _easeGraphLastRaw = result;
+        var clip = null;
+        try { clip = JSON.parse(result); } catch(e) {}
+        _easePreviewRender(clip && { keys: clip });
+    });
+}
+
+// Corner badge, top-left of the graph — just mirrors whatever
+// #easeDisplay's own text currently is (the exact same "N ⧗" string
+// doEaseCopy/doEaseClear already keep it in sync with), so there's no
+// separate count/type computation to maintain here at all. Hidden
+// whenever that text is the placeholder dash, same as the graph itself
+// hiding behind .is-empty when there's nothing copied — both are driven
+// by the same clipboard-empty state.
+function _easeSelIndicatorRender() {
+    var el = document.getElementById('easeSelIndicator');
+    var src = document.querySelector('#easeDisplay .ease-display-text');
+    if (!el || !src) return;
+    var text = src.textContent;
+    if (!text || text === '—') {
+        el.classList.remove('visible');
+        return;
+    }
+    el.textContent = text;
+    el.classList.add('visible');
 }
 
 function _easePreviewRender(data) {
     var box = document.getElementById('easePreview');
     if (!box) return;
-    var keys = Array.isArray(data) ? data.filter(function(k) { return typeof k.time === 'number'; }) : [];
+    var keys = (data && Array.isArray(data.keys)) ? data.keys.filter(function(k) { return typeof k.time === 'number'; }) : [];
     keys.sort(function(a, b) { return a.time - b.time; });
 
     if (keys.length < 2) {
@@ -1335,9 +1649,7 @@ function _easePreviewRender(data) {
     }
     box.classList.remove('is-empty');
 
-    var segments = keys.slice(0, -1).map(function(k, i) { return _easeSegmentSamples(k, keys[i + 1]); });
-
-    var allSamples = [].concat.apply([], segments.map(function(seg) { return seg.samples; }));
+    var allSamples = [].concat.apply([], keys.slice(0, -1).map(function(k, i) { return _easeSegmentSamples(k, keys[i + 1]); }));
     if (!allSamples.length) { box.classList.add('is-empty'); return; }
 
     var tMin = keys[0].time, tMax = keys[keys.length - 1].time, tSpan = (tMax - tMin) || 1;
@@ -1348,10 +1660,7 @@ function _easePreviewRender(data) {
     });
     var vSpan = (vMax - vMin) || 1;
 
-    // 5% margin on both axes — was 0 horizontally (the first/last keyframe
-    // sat exactly on the viewBox edge) and a smaller fixed 6px vertically;
-    // both are now a real, proportional margin baked into the coordinate
-    // mapping itself, on top of .ease-preview's own CSS padding.
+    // 5% margin on both axes, on top of .ease-preview's own CSS padding.
     var X_MARGIN = EASE_PREVIEW_W * 0.05, VALUE_TOP = EASE_PREVIEW_H * 0.05;
     var PLOT_W = EASE_PREVIEW_W - 2 * X_MARGIN, VALUE_H = EASE_PREVIEW_H - 2 * VALUE_TOP;
 
@@ -1366,41 +1675,41 @@ function _easePreviewRender(data) {
     var valueEl = document.getElementById('easePreviewValuePath');
     if (valueEl) valueEl.setAttribute('d', valuePath.trim());
 
-    // Bezier handles — a dimmer line from each keyframe to its actual
-    // control point, plus a small dot at the handle itself (see
-    // _easeSegmentSamples, which only returns one for genuine bezier
-    // segments — hold/linear have no real handle to draw).
     var handlesG = document.getElementById('easePreviewHandles');
-    if (handlesG) {
-        handlesG.innerHTML = '';
-        var svgNS = 'http://www.w3.org/2000/svg';
-        segments.forEach(function(seg) {
-            if (!seg.handle) return;
-            [[seg.handle.from, seg.handle.out], [seg.handle.to, seg.handle.in]].forEach(function(pair) {
-                var line = document.createElementNS(svgNS, 'line');
-                line.setAttribute('x1', xOf(pair[0].t).toFixed(2));
-                line.setAttribute('y1', yOfValue(pair[0].v).toFixed(2));
-                line.setAttribute('x2', xOf(pair[1].t).toFixed(2));
-                line.setAttribute('y2', yOfValue(pair[1].v).toFixed(2));
-                handlesG.appendChild(line);
-                var dot = document.createElementNS(svgNS, 'circle');
-                dot.setAttribute('cx', xOf(pair[1].t).toFixed(2));
-                dot.setAttribute('cy', yOfValue(pair[1].v).toFixed(2));
-                dot.setAttribute('r', 1.5);
-                handlesG.appendChild(dot);
-            });
-        });
-    }
+    if (handlesG) handlesG.innerHTML = '';
 
+    // Keyframe markers — always a diamond, regardless of the keyframe's
+    // real interpolation type. Drawn as a <polygon> with its own vertical/
+    // horizontal reach computed from the SVG's ACTUAL rendered pixel size
+    // (not its 200x100 viewBox) — the viewBox stretches non-uniformly to
+    // fill whatever box .ease-preview-svg ends up at (preserveAspectRatio
+    // ="none"), so a plain square rotated 45° in viewBox-local units comes
+    // out as a squished rhombus once that uneven stretch is applied, not a
+    // symmetric diamond. Sizing each vertex's LOCAL offset as R/scale (R
+    // pixels, divided by that axis's own local-unit-to-pixel scale) instead
+    // makes it land at exactly R real pixels from center on both axes,
+    // canceling the distortion out entirely.
     var pointsG = document.getElementById('easePreviewPoints');
     if (pointsG) {
         pointsG.innerHTML = '';
+        var svgEl = document.getElementById('easePreviewSvg');
+        var svgRect = svgEl ? svgEl.getBoundingClientRect() : null;
+        var sx = (svgRect && svgRect.width)  ? svgRect.width  / EASE_PREVIEW_W : 1;
+        var sy = (svgRect && svgRect.height) ? svgRect.height / EASE_PREVIEW_H : 1;
+        var R = 5; // desired on-screen half-diagonal, in real pixels
+        var rx = R / sx, ry = R / sy;
+        var svgNS = 'http://www.w3.org/2000/svg';
         keys.forEach(function(k) {
-            var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            c.setAttribute('cx', xOf(k.time).toFixed(2));
-            c.setAttribute('cy', yOfValue(_easeDim0(k.value)).toFixed(2));
-            c.setAttribute('r', 2.64); // 2.4 + 10%
-            pointsG.appendChild(c);
+            var cx = xOf(k.time), cy = yOfValue(_easeDim0(k.value));
+            var pts = [
+                cx.toFixed(2) + ',' + (cy - ry).toFixed(2),
+                (cx + rx).toFixed(2) + ',' + cy.toFixed(2),
+                cx.toFixed(2) + ',' + (cy + ry).toFixed(2),
+                (cx - rx).toFixed(2) + ',' + cy.toFixed(2)
+            ].join(' ');
+            var poly = document.createElementNS(svgNS, 'polygon');
+            poly.setAttribute('points', pts);
+            pointsG.appendChild(poly);
         });
     }
 }
@@ -7336,6 +7645,11 @@ function applyCompExport() {
 document.addEventListener('DOMContentLoaded', function() {
     restoreActiveTab();
     _shapeSelInit();
+    _anchorModeInit();
+    _ignoreMasksRefreshButton();
+    _easeInterpInit();
+    _initEaseInterpSquare();
+    _easeSelIndicatorRender();
     _splitTextInit();
     _initAnchorTiers();
     restoreClassicOrder();
@@ -7352,13 +7666,13 @@ document.addEventListener('DOMContentLoaded', function() {
     restoreScale();
     _bcsInit();
     _brnInit();
-    _easePreviewFetch();
     _cpInitScrubs();
     _cpDrawHueCanvas();
     _initHeaderWidthScrub();
     setInterval(_pollKeyAlignMode, 300);
     setInterval(_pollShapeColorHud, 1000);
     setInterval(_pollFavSmartStack, 300);
+    setInterval(_pollEaseGraph, 250);
 
     // Distribute pickers' own star buttons (favorite a Z/Path/Radial/Grid
     // distribute mode) persist independently of any UI chrome — just load
