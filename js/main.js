@@ -37,6 +37,12 @@ function switchTab(name) {
         var btn = document.getElementById('tabBtn-' + n);
         if (btn) btn.classList.toggle('active', n === name);
     });
+    // Classic's own Trophy toggle (see _toggleClassicTrophyTab) — same
+    // active/inactive convention as the real tab buttons above, just a
+    // single button since Classic only ever toggles Trophy on/off, not
+    // between three tabs.
+    var classicTrophyBtn = document.getElementById('classicTrophyBtn');
+    if (classicTrophyBtn) classicTrophyBtn.classList.toggle('active', name === 'trophy');
     // The pencil (Customize Quick Actions & Rearrange...) lives in the
     // shared footer, so it's visible regardless of tab by default — only
     // makes sense on Home (nothing to rearrange on Tools/Trophy).
@@ -133,9 +139,28 @@ function _applyTabPanels(name) {
 }
 
 function restoreActiveTab() {
+    var mode;
+    try { mode = localStorage.getItem('lineup-layout-mode'); } catch(e) {}
     var name;
     try { name = localStorage.getItem('lineup-active-tab'); } catch(e) {}
+    if (mode === 'classic') {
+        // Classic hides the real tab bar entirely (see body.layout-classic
+        // .tab-bar in style.css) — there's no Tools tab reachable there at
+        // all, so that one never restores. Trophy DOES have its own way in
+        // (the footer's classicTrophyBtn, see _toggleClassicTrophyTab), so
+        // it's fine to restore that one.
+        if (name === 'trophy') switchTab(name);
+        return;
+    }
     if (name === 'tools' || name === 'trophy') switchTab(name);
+}
+
+// Classic's footer Trophy button (see index.html's classicTrophyBtn) has
+// no sibling tab buttons to switch between — it only ever has Home
+// underneath it, so "toggle" just means "go there, or back if already
+// there", unlike switchTab's normal one-way "go to this specific tab".
+function _toggleClassicTrophyTab() {
+    switchTab(_activeTabName === 'trophy' ? 'home' : 'trophy');
 }
 
 // ── Home layout ──────────────────────────────────────────────────────────────
@@ -489,6 +514,14 @@ var CLASSIC_BLOCK_IDS = ['anchor', 'organize', 'ease', 'alignlayers', 'distribut
 function setLayoutMode(mode) {
     if (mode !== 'classic') mode = 'compact';
     try { localStorage.setItem('lineup-layout-mode', mode); } catch(e) {}
+    // Switching to Classic mid-session (unlike a fresh load — see
+    // restoreActiveTab) can genuinely be sitting on Tools right now —
+    // Classic's tab bar (the only way back to Home from there) is about to
+    // disappear, so force Home first rather than stranding the user there.
+    // Trophy doesn't need this: Classic has its own footer toggle button
+    // for it (classicTrophyBtn, see _toggleClassicTrophyTab), so staying
+    // there is fine.
+    if (mode === 'classic' && _activeTabName === 'tools') switchTab('home');
     _applyLayoutMode(mode);
 }
 
@@ -1237,12 +1270,19 @@ function _anchorModeFindOption(id) {
 function _anchorModeRefreshButton() {
     var opt = _anchorModeFindOption(_anchorMode);
     var btn = document.getElementById('anchorModeBtn');
-    if (!btn) return;
-    var icon = document.getElementById('anchorModeBtnIcon');
-    var lbl = document.getElementById('anchorModeBtnLbl');
-    if (icon) icon.innerHTML = opt.svg;
-    if (lbl) lbl.textContent = opt.label;
-    btn.title = opt.title;
+    if (btn) {
+        var icon = document.getElementById('anchorModeBtnIcon');
+        var lbl = document.getElementById('anchorModeBtnLbl');
+        if (icon) icon.innerHTML = opt.svg;
+        if (lbl) lbl.textContent = opt.label;
+        btn.title = opt.title;
+    }
+    // Classic's own native <select> (see .anchor-mode-line-classic in
+    // index.html) — kept in sync here too so switching layout modes
+    // mid-session, or setting the mode from either control, never leaves
+    // the other showing a stale value.
+    var select = document.getElementById('anchorModeSelectClassic');
+    if (select) select.value = String(opt.id);
 }
 
 // Not persisted across sessions — the native <select> it replaces never
@@ -1349,9 +1389,15 @@ var _ignoreMasks = false;
 
 function _ignoreMasksRefreshButton() {
     var btn = document.getElementById('ignoreMasksBtn');
-    if (!btn) return;
-    btn.classList.toggle('active', _ignoreMasks);
-    btn.title = _ignoreMasks ? "Ignore Masks: On" : "Ignore Masks: Off";
+    if (btn) {
+        btn.classList.toggle('active', _ignoreMasks);
+        btn.title = _ignoreMasks ? "Ignore Masks: On" : "Ignore Masks: Off";
+    }
+    // Classic's own plain checkbox (see .anchor-mode-line-classic in
+    // index.html) — kept in sync here too, same reasoning as the mode
+    // select above.
+    var check = document.getElementById('ignoreMasksCheckClassic');
+    if (check) check.checked = _ignoreMasks;
 }
 
 function doToggleIgnoreMasks() {
@@ -1802,9 +1848,29 @@ function _easeSegmentSamples(kA, kB) {
     // non-Bezier side falls back to a neutral 1/3 influence, 0 speed.
     var outE = (kA.outEase && kA.outEase[0]) || { speed: 0, influence: 100 / 3 };
     var inE  = (kB.inEase  && kB.inEase[0])  || { speed: 0, influence: 100 / 3 };
-    var t1 = tA + (outE.influence / 100) * dt;
+    // Each side's influence is independently 0-100% of the segment — AE's
+    // own graph editor stops you from dragging two adjacent handles far
+    // enough to cross, but a keyframe's actual stored ease (exactly what
+    // gets copied here) isn't guaranteed to respect that, so the two can
+    // legitimately sum past 100% on a short segment. Left unclamped, that
+    // pushes t1 past t2 below — the reconstructed time control points
+    // cross, and the parametric curve's time component stops being
+    // monotonic as u sweeps 0→1 (time briefly runs backward before
+    // continuing forward). Connecting those samples with straight lines
+    // then draws a line that doubles back on itself — the jagged zigzag
+    // some segments show, even though the real speed/influence values
+    // (and paste, which just re-applies them as-is) are entirely valid.
+    // Scaling both down proportionally keeps t1 <= t2 always without
+    // altering the actual eased values being sampled.
+    var outInf = outE.influence, inInf = inE.influence;
+    if (outInf + inInf > 100) {
+        var infScale = 100 / (outInf + inInf);
+        outInf *= infScale;
+        inInf *= infScale;
+    }
+    var t1 = tA + (outInf / 100) * dt;
     var v1 = vA + outE.speed * (t1 - tA);
-    var t2 = tB - (inE.influence / 100) * dt;
+    var t2 = tB - (inInf / 100) * dt;
     var v2 = vB - inE.speed * (tB - t2);
 
     for (var k = 0; k <= EASE_PREVIEW_SAMPLES; k++) {
@@ -7849,7 +7915,7 @@ function applyCompExport() {
 
 // ── Activity tracking (Trophy tab) ─────────────────────────────────────────
 // Gamifies AE usage — a workday streak plus running totals of keyframes
-// made, layers created, and exports completed, converted into a score.
+// edited, layers created, and effects applied, converted into a score.
 // AE's ExtendScript API has no events for any of this (no "keyframe added"/
 // "layer created" hook, and undo presses/graph-editor curve edits aren't
 // observable at all from a panel — the Timeline never sends CEP its
@@ -7868,7 +7934,7 @@ function applyCompExport() {
 // keyframes added to layers that aren't selected at poll time.
 var ACTIVITY_KEY = 'lineup-activity';
 var ACTIVITY_POLL_MS = 3000; // a background stat, not a live UI sync — no need for anything faster
-var ACTIVITY_POINTS = { keyframes: 1, layers: 3, exports: 15 };
+var ACTIVITY_POINTS = { layers: 1, keyframes: 2, fx: 5 };
 
 var _activityData = null;     // persisted totals/score/streak/history — see _activityLoad
 var _activityBaseline = null; // last-seen raw snapshot from host.jsx; NOT persisted — every fresh
@@ -7877,10 +7943,10 @@ var _activityBaseline = null; // last-seen raw snapshot from host.jsx; NOT persi
 
 function _activityDefaults() {
     return {
-        totals: { keyframes: 0, layers: 0, exports: 0 },
+        totals: { layers: 0, keyframes: 0, fx: 0 },
         score: 0,
         streak: { current: 0, best: 0, lastActiveDate: null },
-        history: {} // 'YYYY-MM-DD' -> { keyframes, layers, exports, score } — days with any activity
+        history: {} // 'YYYY-MM-DD' -> { layers, keyframes, fx, score } — days with any activity
     };
 }
 
@@ -7944,7 +8010,7 @@ function _activityCheckStreak() {
 // spent into the same per-day record, just without touching score/totals).
 function _activityGetOrCreateDay(key) {
     var day = _activityData.history[key];
-    if (!day) { day = { keyframes: 0, layers: 0, exports: 0, score: 0, seconds: 0 }; _activityData.history[key] = day; }
+    if (!day) { day = { layers: 0, keyframes: 0, fx: 0, score: 0, seconds: 0 }; _activityData.history[key] = day; }
     return day;
 }
 
@@ -7955,18 +8021,24 @@ function _activityAddPoints(kind, count) {
     _activityData.score += pts;
 
     var day = _activityGetOrCreateDay(_activityToday());
-    day[kind] += count;
+    // A day recorded before some kind existed in the schema (e.g. fx,
+    // added after exports was retired) won't have that key at all yet —
+    // day[kind] += count against undefined would silently corrupt it to
+    // NaN forever (NaN + anything is still NaN), same class of bug
+    // totals[kind] above is already guarded against.
+    day[kind] = (day[kind] || 0) + count;
     day.score += pts;
 }
 
 // Diffs the latest snapshot against the previous one to award points for
-// whatever increased. projectId/compId identity checks gate WHICH deltas
-// are trusted this tick: switching to a different project (or just a
-// different comp, for the comp-scoped keyframe count) makes for a huge,
-// meaningless one-tick jump that isn't "activity" at all — those deltas
-// are simply skipped rather than counted, and the new snapshot becomes the
-// baseline going forward. The very first tick after a panel load has no
-// prior baseline yet either, so it only ever captures one, never scores.
+// whatever increased. A genuine project SWITCH (see projectSwitch below —
+// both projectId and compId changed, meaning this is really a different,
+// unrelated CompItem, not just the same project saved under a new name)
+// makes for a huge, meaningless one-tick jump that isn't "activity" at
+// all, so that tick's deltas are simply skipped rather than counted, and
+// the new snapshot becomes the baseline going forward. The very first
+// tick after a panel load has no prior baseline yet either, so it only
+// ever captures one, never scores.
 function _activityPollTick() {
     cs.evalScript('lineup_getActivitySnapshot()', function(result) {
         if (!result || result.indexOf('ERROR:') === 0) return;
@@ -7980,30 +8052,49 @@ function _activityPollTick() {
         var projectChanged = baseline.projectId !== snap.projectId;
         var compChanged = baseline.compId !== snap.compId;
         var selectionChanged = baseline.selectionId !== snap.selectionId;
+        var propSelectionChanged = baseline.propSelectionId !== snap.propSelectionId;
         var timeChanged = baseline.currentTime !== snap.currentTime;
 
-        var dLayers = 0, dExports = 0, dKeyframes = 0;
-        if (!projectChanged) {
+        // A Save As / Increment-and-Save changes proj.file (and so
+        // projectId, which is derived from its path) without touching
+        // anything else about the project — same in-memory CompItem, same
+        // layers, same selection. Gating purely on projectId was throwing
+        // away legitimate layer/keyframe/fx credit for whatever got
+        // created right around that save — exactly the common habit of
+        // incrementing a save right before or after rendering out a
+        // version. A genuine switch to a different, unrelated project
+        // (closing this one, opening another) also swaps out compId,
+        // since it's an entirely different CompItem object — THAT's the
+        // real "don't trust this jump" signal, not the file path alone.
+        var projectSwitch = projectChanged && compChanged;
+
+        var dLayers = 0, dKeyframes = 0, dFx = 0;
+        if (!projectSwitch) {
             dLayers = snap.layerCount - baseline.layerCount;
-            dExports = snap.exportsDone - baseline.exportsDone;
             if (dLayers > 0) _activityAddPoints('layers', dLayers);
-            if (dExports > 0) _activityAddPoints('exports', dExports);
         }
-        // Keyframe count is scoped to the current layer selection (see
-        // lineup_getActivitySnapshot) — a selection change alone swings that
-        // number just as hard as a project/comp switch does, so it gets the
-        // same "don't count this tick, just rebaseline" treatment.
-        if (!projectChanged && !compChanged && !selectionChanged) {
+        // Keyframe count is scoped to comp.selectedProperties (see
+        // lineup_getActivitySnapshot) — a change in WHICH properties are
+        // row-selected swings that number just as hard as a genuine
+        // project switch does, so it gets the same "don't count this
+        // tick, just rebaseline" treatment. fx count is scoped to layer
+        // selection instead (it's a per-layer effect count, not property-
+        // level), so it keys off selectionChanged, not propSelectionChanged.
+        if (!projectSwitch && !propSelectionChanged) {
             dKeyframes = snap.keyframeCount - baseline.keyframeCount;
             if (dKeyframes > 0) _activityAddPoints('keyframes', dKeyframes);
+        }
+        if (!projectSwitch && !selectionChanged) {
+            dFx = snap.fxCount - baseline.fxCount;
+            if (dFx > 0) _activityAddPoints('fx', dFx);
         }
 
         // Anything different from last poll — including changes that don't
         // score any points (switching comps, moving the playhead, changing
         // selection) — still counts as "the user is doing something" for
         // the Trophy timer's auto-resume/inactivity check below.
-        if (projectChanged || compChanged || selectionChanged || timeChanged ||
-            dLayers !== 0 || dExports !== 0 || dKeyframes !== 0) {
+        if (projectChanged || compChanged || selectionChanged || propSelectionChanged || timeChanged ||
+            dLayers !== 0 || dKeyframes !== 0 || dFx !== 0) {
             _timerMarkActivity();
         }
 
@@ -8095,22 +8186,26 @@ function _activityRenderDayStrip() {
     wrap.innerHTML = out;
 }
 
-// Score/Keyframes/Layers/Exports show TODAY's numbers, not the all-time
+// Score/Layers/Keyframes/Effects show TODAY's numbers, not the all-time
 // cumulative — d.score/d.totals still track the all-time sums underneath
 // (used by the leaderboard's All-Time tab and unaffected by this), this
 // just changes what the Trophy tab itself displays day to day.
 function _activityRenderTab() {
     if (!_activityData) return;
     var d = _activityData;
-    var today = d.history[_activityToday()] || { keyframes: 0, layers: 0, exports: 0, score: 0 };
+    var today = d.history[_activityToday()] || { layers: 0, keyframes: 0, fx: 0, score: 0 };
     var scoreEl = document.getElementById('trophyScoreValue');
     if (scoreEl) scoreEl.textContent = today.score;
-    var kfEl = document.getElementById('trophyStatKeyframes');
-    if (kfEl) kfEl.textContent = today.keyframes;
     var layEl = document.getElementById('trophyStatLayers');
-    if (layEl) layEl.textContent = today.layers;
-    var expEl = document.getElementById('trophyStatExports');
-    if (expEl) expEl.textContent = today.exports;
+    if (layEl) layEl.textContent = today.layers || 0;
+    var kfEl = document.getElementById('trophyStatKeyframes');
+    if (kfEl) kfEl.textContent = today.keyframes || 0;
+    var fxEl = document.getElementById('trophyStatFx');
+    // || 0, not a bare today.fx — a day recorded before fx existed in the
+    // schema has no such key at all, and assigning undefined to
+    // textContent renders as a genuinely blank tile, not even "0" (the
+    // DOM's null/undefined-to-empty-string coercion for textContent).
+    if (fxEl) fxEl.textContent = today.fx || 0;
     var streakEl = document.getElementById('trophyStreakCount');
     if (streakEl) streakEl.textContent = d.streak.current;
     var bestEl = document.getElementById('trophyStreakBest');
@@ -8142,9 +8237,114 @@ function _scoringEnabled() {
     return v !== '0';
 }
 
-function _activityApplyScoringEnabled(enabled) {
-    var notice = document.getElementById('scoringDisabledNotice');
-    if (notice) notice.style.display = enabled ? 'none' : '';
+// Animates one element between shown and collapsed by driving max-height
+// (or max-width, for a flex-row item like the score card) as an inline
+// style rather than snapping display:none on/off — a CSS transition can't
+// interpolate to/from 'auto', so collapsing pins the element's CURRENT
+// rendered size first (forcing a reflow so the browser actually registers
+// that as the "before" value) and only THEN, next frame, animates it down
+// to 0; expanding does the same in reverse, measuring the target size
+// after unhiding but before animating to it. display:none is applied only
+// once the collapse transition finishes (and removed immediately before an
+// expand starts), so the container's own `gap` stops reserving space for
+// it exactly like a genuinely-removed element — the negative margin during
+// the animation itself cancels that same gap for the brief moment the
+// element is mid-transition but still technically in flow.
+// animate=false snaps straight to the final state with no transition at
+// all — used on initial page load, where a fade would just look like a
+// flash of the "wrong" layout while the panel is still opening.
+function _trophySetCollapsed(el, collapsed, isRow, animate) {
+    if (!el) return;
+    var sizeProp = isRow ? 'maxWidth' : 'maxHeight';
+    var marginProp = isRow ? 'marginRight' : 'marginTop';
+
+    // Toggling rapidly (e.g. flipping the checkbox twice before the first
+    // animation finishes) would otherwise leave the PRIOR call's
+    // transitionend listener still attached — it'd fire alongside this
+    // call's own once the new transition lands on the same property, and
+    // could stomp display/max-* right back to the stale state. Clearing
+    // whatever's pending before starting a new one keeps only the latest
+    // call able to act.
+    if (el._trophyCollapseHandler) {
+        el.removeEventListener('transitionend', el._trophyCollapseHandler);
+        el._trophyCollapseHandler = null;
+    }
+
+    if (!animate) {
+        var prevTransition = el.style.transition;
+        el.style.transition = 'none';
+        el.style.display = collapsed ? 'none' : '';
+        el.style[sizeProp] = collapsed ? '0px' : '';
+        el.style.opacity = collapsed ? '0' : '';
+        el.style[marginProp] = collapsed ? '-10px' : '';
+        el.style.pointerEvents = collapsed ? 'none' : '';
+        void el.offsetHeight; // flush before restoring the transition, or it'd animate this snap too
+        el.style.transition = prevTransition;
+        return;
+    }
+
+    if (collapsed) {
+        // getBoundingClientRect, not scrollWidth/scrollHeight — the score
+        // card's width comes from flex-grow distribution against its
+        // sibling, not from its own content, so scrollWidth (content
+        // extent) undershoots the box's actual rendered size. Animating to
+        // a wrong target is exactly what caused the visible "pop" once the
+        // cap was later released back to the real size.
+        var startSize = isRow ? el.getBoundingClientRect().width : el.getBoundingClientRect().height;
+        el.style[sizeProp] = startSize + 'px';
+        void el.offsetHeight;
+        requestAnimationFrame(function () {
+            el.style[sizeProp] = '0px';
+            el.style.opacity = '0';
+            el.style[marginProp] = '-10px'; // cancels the parent's own 10px gap while this is mid-collapse
+            el.style.pointerEvents = 'none';
+        });
+        el._trophyCollapseHandler = function (e) {
+            if (e.target !== el || e.propertyName.indexOf('max-') !== 0) return;
+            el.style.display = 'none';
+            el.removeEventListener('transitionend', el._trophyCollapseHandler);
+            el._trophyCollapseHandler = null;
+        };
+        el.addEventListener('transitionend', el._trophyCollapseHandler);
+    } else {
+        el.style.display = '';
+        el.style[marginProp] = ''; // restore before measuring, so the target size reflects the real expanded box
+        el.style[sizeProp] = ''; // momentarily unconstrained — the box needs to actually resolve its real size (flex-grow for a row item, content height for a block) to measure it accurately, since that's what determines the box size once the cap is released at the end anyway
+        el.style.opacity = '0';
+        void el.offsetHeight; // reflow now, before reading the rect below, or it'd measure stale layout
+        var targetSize = (isRow ? el.getBoundingClientRect().width : el.getBoundingClientRect().height) + 'px';
+        el.style[sizeProp] = '0px'; // re-clamp before the next paint so the fully-expanded state never actually flashes on screen
+        void el.offsetHeight;
+        requestAnimationFrame(function () {
+            el.style[sizeProp] = targetSize;
+            el.style.opacity = '1';
+            el.style.pointerEvents = '';
+        });
+        el._trophyCollapseHandler = function (e) {
+            if (e.target !== el || e.propertyName.indexOf('max-') !== 0) return;
+            el.style[sizeProp] = ''; // release the cap so later growth (e.g. the leaderboard list) isn't clipped
+            el.removeEventListener('transitionend', el._trophyCollapseHandler);
+            el._trophyCollapseHandler = null;
+        };
+        el.addEventListener('transitionend', el._trophyCollapseHandler);
+    }
+}
+
+// With the poll off, keyframes/layers/fx/score never move — the
+// Points card, the three stat tiles, and the leaderboard (which is just a
+// ranking of that same score) would all sit frozen showing stale or zero
+// numbers. Rather than leave them visible-but-meaningless, scoring off
+// collapses the Trophy tab down to just the session timer and the
+// streak/calendar widget, since those two stay meaningful either way (the
+// timer keeps ticking locally regardless of scoring — see _timerInit).
+function _activityApplyScoringLayout(enabled, animate) {
+    _trophySetCollapsed(document.querySelector('.trophy-score-card'), !enabled, true, animate);
+    _trophySetCollapsed(document.querySelector('.trophy-stats-grid'), !enabled, false, animate);
+    _trophySetCollapsed(document.querySelector('.trophy-leaderboard-card'), !enabled, false, animate);
+}
+
+function _activityApplyScoringEnabled(enabled, animate) {
+    _activityApplyScoringLayout(enabled, animate);
     if (enabled) {
         if (!_activityPollIntervalId) _activityPollIntervalId = setInterval(_activityPollTick, ACTIVITY_POLL_MS);
     } else if (_activityPollIntervalId) {
@@ -8155,14 +8355,20 @@ function _activityApplyScoringEnabled(enabled) {
 
 function toggleScoring(on) {
     try { localStorage.setItem('lineup-scoring-enabled', on ? '1' : '0'); } catch (e) {}
-    _activityApplyScoringEnabled(!!on);
+    // Settings is reachable from any tab (its gear button lives in the
+    // shared footer, not just Home) — only animate if Trophy is actually
+    // the visible tab right now. Animating while #tab-trophy's ancestor is
+    // display:none would measure the score card's getBoundingClientRect as
+    // all-zero (an unrendered subtree has no box), pinning a bogus 0
+    // target that stays stuck the next time Trophy is actually shown.
+    _activityApplyScoringEnabled(!!on, _activeTabName === 'trophy');
 }
 
 function restoreScoringSetting() {
     var enabled = _scoringEnabled();
     var chk = document.getElementById('scoringEnabledCheck');
     if (chk) chk.checked = enabled;
-    _activityApplyScoringEnabled(enabled);
+    _activityApplyScoringEnabled(enabled, false); // page load — snap to the saved state, don't animate into it
 }
 
 // Called by js/leaderboard.js after it merges cloud-synced history into
@@ -8390,7 +8596,7 @@ function _trophyCalGoToToday() {
     _trophyCalResetDetail();
 }
 
-// Icon+value chips (Time/Keyframes/Layers/Exports/Points) — same icons and
+// Icon+value chips (Time/Keyframes/Layers/Effects/Points) — same icons and
 // colors as the tab's own .trophy-stat-tile/.trophy-timer/.trophy-score
 // cards, so a day's detail view reads as the same visual language rather
 // than a plain text summary.
@@ -8411,28 +8617,44 @@ function _showTrophyCalDay(key) {
             '<div class="trophy-cal-detail-empty">No activity this day</div>';
         return;
     }
+
+    var timeChip =
+        '<div class="trophy-cal-detail-stat">' +
+            '<svg viewBox="0 0 20 20" fill="none" stroke="#6cc0ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7.5"/><path d="M10,5.5 V10 L13,12"/></svg>' +
+            '<div class="trophy-cal-detail-stat-value">' + _timerFormat(day.seconds || 0) + '</div>' +
+            '<div class="trophy-cal-detail-stat-label">Time</div>' +
+        '</div>';
+
+    // A day recorded while scoring was off (or before it was ever turned
+    // on) has time but no layers/keyframes/fx/score at all — showing
+    // three zeroed-out chips alongside the one real number reads as broken,
+    // not "no activity yet", so those days collapse to just the Time chip.
+    var hasScoreData = !!(day.layers || day.keyframes || day.fx || day.score);
+    if (!hasScoreData) {
+        detail.innerHTML =
+            '<div class="trophy-cal-detail-date">' + label + '</div>' +
+            '<div class="trophy-cal-detail-stats">' + timeChip + '</div>';
+        return;
+    }
+
     detail.innerHTML =
         '<div class="trophy-cal-detail-date">' + label + '</div>' +
         '<div class="trophy-cal-detail-stats">' +
-            '<div class="trophy-cal-detail-stat">' +
-                '<svg viewBox="0 0 20 20" fill="none" stroke="#6cc0ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7.5"/><path d="M10,5.5 V10 L13,12"/></svg>' +
-                '<div class="trophy-cal-detail-stat-value">' + _timerFormat(day.seconds || 0) + '</div>' +
-                '<div class="trophy-cal-detail-stat-label">Time</div>' +
-            '</div>' +
-            '<div class="trophy-cal-detail-stat">' +
-                '<svg viewBox="0 0 20 20" fill="#7aaaff"><path d="M10,2 L18,10 L10,18 L2,10 Z"/></svg>' +
-                '<div class="trophy-cal-detail-stat-value">' + day.keyframes + '</div>' +
-                '<div class="trophy-cal-detail-stat-label">Keyframes</div>' +
-            '</div>' +
+            timeChip +
             '<div class="trophy-cal-detail-stat">' +
                 '<svg viewBox="0 0 20 20" fill="none" stroke="#7aaaff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="16" height="9" rx="1.5"/><line x1="2" y1="10" x2="18" y2="10"/></svg>' +
-                '<div class="trophy-cal-detail-stat-value">' + day.layers + '</div>' +
+                '<div class="trophy-cal-detail-stat-value">' + (day.layers || 0) + '</div>' +
                 '<div class="trophy-cal-detail-stat-label">Layers</div>' +
             '</div>' +
             '<div class="trophy-cal-detail-stat">' +
-                '<svg viewBox="0 0 20 20" fill="none" stroke="#7aaaff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10,3 V12"/><polyline points="6.5,8.5 10,12 13.5,8.5"/><path d="M4,13.5 V15.5 A1.2,1.2 0 0,0 5.2,16.7 H14.8 A1.2,1.2 0 0,0 16,15.5 V13.5"/></svg>' +
-                '<div class="trophy-cal-detail-stat-value">' + day.exports + '</div>' +
-                '<div class="trophy-cal-detail-stat-label">Exports</div>' +
+                '<svg viewBox="0 0 20 20" fill="#7aaaff"><path d="M10,2 L18,10 L10,18 L2,10 Z"/></svg>' +
+                '<div class="trophy-cal-detail-stat-value">' + (day.keyframes || 0) + '</div>' +
+                '<div class="trophy-cal-detail-stat-label">Keyframes</div>' +
+            '</div>' +
+            '<div class="trophy-cal-detail-stat">' +
+                '<svg viewBox="0 0 20 20" fill="#7aaaff"><path d="M10,2 C10,6 11,9 15,9 C11,9 10,12 10,16 C10,12 9,9 5,9 C9,9 10,6 10,2 Z"/></svg>' +
+                '<div class="trophy-cal-detail-stat-value">' + (day.fx || 0) + '</div>' +
+                '<div class="trophy-cal-detail-stat-label">Effects</div>' +
             '</div>' +
             '<div class="trophy-cal-detail-stat">' +
                 '<svg viewBox="0 0 20 20" fill="#e8c140"><polygon points="10,2 12.4,7.6 18.5,8.2 13.9,12.2 15.3,18.2 10,15 4.7,18.2 6.1,12.2 1.5,8.2 7.6,7.6"/></svg>' +

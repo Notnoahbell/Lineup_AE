@@ -5475,15 +5475,19 @@ function spellcheck_replace(layerIndex, keyIndex, oldWord, newWord) {
 // "the user switched to a different project/comp/selection that already
 // had this content."
 //
-// The keyframe count is scoped to the CURRENTLY SELECTED layers only, not
-// every layer in the comp — walking every property of every layer on a
-// 3-second timer is cheap on a small comp but scales with total comp
-// complexity (layers × effects × params), and ExtendScript runs
-// synchronously on AE's main thread, so a slow tick reads as an actual UI
-// stutter, not just background CPU. Scoping to the selection instead caps
-// the walk's cost at "how many layers you have selected" (almost always a
-// handful) regardless of how big the comp is. Trade-off: keyframes added to
-// layers that aren't selected at poll time go untracked.
+// The keyframe count reads comp.selectedProperties — the specific
+// properties whose row is actually highlighted in the Timeline, which AE
+// already tracks for you — instead of recursively walking every property
+// of every selected layer (effects, transform, everything) on a 3-second
+// timer. That walk scaled with total comp complexity per layer (layers ×
+// effects × params) and ExtendScript runs synchronously on AE's main
+// thread, so a slow tick read as an actual UI stutter, not just background
+// CPU; reading selectedProperties is a small, already-computed list
+// regardless of how big the comp or its layers are. Trade-off: a keyframe
+// added to a property that isn't currently row-selected in the Timeline
+// (e.g. via script/expression, or while a different property's row is
+// selected) goes untracked — same spirit as the pre-existing "layers that
+// aren't selected go untracked" trade-off, just one level more specific.
 function lineup_getActivitySnapshot() {
     var proj = app.project;
     var projectId = proj.file ? proj.file.fsName : "__unsaved__";
@@ -5510,43 +5514,45 @@ function lineup_getActivitySnapshot() {
     selIndices.sort(function (a, b) { return a - b; });
     var selectionId = selIndices.join(',');
 
+    // matchName (falling back to name) is stable and English-independent
+    // per property — sorted before joining so the identity string only
+    // changes when the actual SET of selected properties changes, not
+    // whatever order AE happens to return them in this tick.
     var keyframeCount = 0;
-    for (var s2 = 0; s2 < selected.length; s2++) {
-        try { keyframeCount += _lineup_countKeyframesRecursive(selected[s2]); } catch (e) {}
+    var propIds = [];
+    var selectedProps = isComp ? comp.selectedProperties : [];
+    for (var p = 0; p < selectedProps.length; p++) {
+        var prop;
+        try { prop = selectedProps[p]; } catch (e) { continue; }
+        if (!prop || prop.propertyType !== PropertyType.PROPERTY) continue;
+        try { if (prop.numKeys) keyframeCount += prop.numKeys; } catch (e) {}
+        try { propIds.push(prop.matchName || prop.name); } catch (e) {}
     }
+    propIds.sort();
+    var propSelectionId = propIds.join(',');
 
-    var exportsDone = 0;
-    var rq = proj.renderQueue;
-    for (var r = 1; r <= rq.numItems; r++) {
-        try { if (rq.item(r).status === RQItemStatus.DONE) exportsDone++; } catch (e) {}
+    // Effects Applied stat (see ACTIVITY_POINTS.fx / _activityPollTick in
+    // main.js) — a flat per-layer effect count, not a walk of each effect's
+    // own sub-properties, since "how many effects are applied" doesn't
+    // need those inspected. Still scoped to selected LAYERS (not
+    // selectedProperties above, which is keyframe-specific) — same
+    // reasoning as before, caps cost at however many layers are selected.
+    var fxCount = 0;
+    for (var s2 = 0; s2 < selected.length; s2++) {
+        try {
+            var fxGroup = selected[s2].property("ADBE Effect Parade");
+            if (fxGroup) fxCount += fxGroup.numProperties;
+        } catch (e) {}
     }
 
     return JSON.stringify({
         projectId: projectId,
         compId: compId,
         selectionId: selectionId,
+        propSelectionId: propSelectionId,
         currentTime: currentTime,
         layerCount: layerCount,
         keyframeCount: keyframeCount,
-        exportsDone: exportsDone
+        fxCount: fxCount
     });
-}
-
-// Recursively sums numKeys across every leaf property under propGroup
-// (Layer objects themselves behave as the top-level property group, so
-// this is called directly on each layer — no separate layer-vs-group case
-// needed).
-function _lineup_countKeyframesRecursive(propGroup) {
-    var count = 0;
-    for (var i = 1; i <= propGroup.numProperties; i++) {
-        var prop;
-        try { prop = propGroup.property(i); } catch (e) { continue; }
-        if (!prop) continue;
-        if (prop.propertyType === PropertyType.PROPERTY) {
-            try { if (prop.numKeys) count += prop.numKeys; } catch (e) {}
-        } else {
-            count += _lineup_countKeyframesRecursive(prop);
-        }
-    }
-    return count;
 }

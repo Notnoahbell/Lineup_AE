@@ -69,6 +69,33 @@ body.high-contrast input[type="number"] {
 }
 body.high-contrast .keyframe-toggle-diamond { border-color: #909090; }
 body.high-contrast .keyframe-toggle-hourglass path { stroke: #909090; }
+/* Ease Copy's graph "screen" (.ease-preview) and its Bezier/interpolation
+   quick-swap button (.ease-interp-btn) had no high-contrast coverage at
+   all — both stayed their normal dark-gray-on-dark-gray look, which reads
+   as functionally invisible once the surrounding panel goes solid black.
+   Their base rules are scoped compound selectors (.tool-box[data-block-
+   id="ease"][data-span="3"] …, #sec-favorite .tool-body[data-block-
+   id="ease"] …), so the override has to repeat that same scoping with
+   body.high-contrast prefixed on top — a plain body.high-contrast
+   .ease-preview/.ease-interp-btn rule has fewer classes than those and
+   would lose the cascade despite matching. */
+body.high-contrast .tool-box[data-block-id="ease"][data-span="3"] .ease-preview,
+body.high-contrast #sec-favorite .tool-body[data-block-id="ease"] .ease-preview {
+    background: #000000;
+    border-color: #909090;
+}
+body.high-contrast .ease-preview-empty { color: #909090; }
+body.high-contrast .tool-box[data-block-id="ease"][data-span="3"] .ease-interp-btn,
+body.high-contrast #sec-favorite .tool-body[data-block-id="ease"] .ease-interp-btn {
+    background: #000000;
+    border-color: #909090;
+    color: #e0e0e0;
+}
+body.high-contrast .tool-box[data-block-id="ease"][data-span="3"] .ease-interp-btn:hover,
+body.high-contrast #sec-favorite .tool-body[data-block-id="ease"] .ease-interp-btn:hover {
+    background: #3a3a3a;
+    color: #ffffff;
+}
 body.high-contrast .tab-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
 body.high-contrast .tab-btn.active { background: #163e73; border-color: #4d9bff; color: #ffffff; }
 body.high-contrast .tools-search-input { background: #000000; border: 1px solid #909090; }
@@ -114,6 +141,15 @@ body.high-contrast .edit-mode-bar-icon-btn:hover { background: #3a3a3a; color: #
 body.high-contrast .quick-actions-btn { color: #e0e0e0; border-color: #909090; }
 body.high-contrast .quick-actions-btn:hover { background: #3a3a3a; color: #ffffff; }
 body.high-contrast .qa-grid-1x6 { border-color: #909090; }
+/* The top Quick Actions bar's own #sec-quick-actions .quick-actions-btn
+   rule (further down) hardcodes a darkened background/border for that bar
+   specifically — an ID selector, which outranks the plain-class override
+   two lines up regardless of source order (same specificity mistake the
+   #toolsSearchInput comment above already called out for a different
+   element). Left alone, this bar's tiles silently kept their normal dark
+   gray instead of ever going high-contrast black. */
+body.high-contrast #sec-quick-actions .quick-actions-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
+body.high-contrast #sec-quick-actions .quick-actions-btn:hover { background: #3a3a3a; border-color: #ffffff; color: #ffffff; }
 /* .btn is generic/shared (Check for Updates and many others) — its own
    color already tracks var(--text), just never had a background/border
    override anywhere, so it stayed a normal dark gray in high contrast. */
@@ -269,7 +305,6 @@ body.high-contrast .trophy-timer-clock-icon { color: #c0c0c0; }
 body.high-contrast .trophy-timer-btn { border-color: #909090; }
 body.high-contrast .trophy-timer-btn:hover { border-color: #ffffff; }
 body.high-contrast .trophy-streak-best-panel { background: #000000; border-color: #909090; }
-body.high-contrast .trophy-disabled-notice { background: #000000; border-color: #909090; }
 body.high-contrast .trophy-stat-tile svg,
 body.high-contrast .trophy-leaderboard-icon { color: #6db4ff; }
 
@@ -342,6 +377,14 @@ body.layout-classic .tab-bar {
     max-height: 0;
     padding-top: 0;
     pointer-events: none;
+}
+/* Smart Stack jumps the Favorites bar, which is Compact-only — Classic has
+   no Favorites bar for it to do anything to, so this row is hidden there.
+   Enable Scoring stays available in both: Classic can reach the Trophy tab
+   too now, via the footer's classicTrophyBtn (see _toggleClassicTrophyTab
+   in main.js), so scoring is just as relevant there. */
+body.layout-classic #smartStackRow {
+    display: none;
 }
 .tab-btn {
     flex: 1;
@@ -720,18 +763,16 @@ body.layout-classic .tab-bar {
 }
 #tab-trophy.active { display: flex; flex-direction: column; }
 
-/* Shown when Settings > Enable Scoring is off — see _activityApplyScoringEnabled
-   in main.js. The rest of the tab just keeps showing whatever was last
-   recorded (frozen, not cleared) — this is purely a "here's why it isn't
-   moving" cue, not a state change of its own. */
-.trophy-disabled-notice {
-    font-size: 11px;
-    color: var(--text-dim);
-    text-align: center;
-    background: #232323;
-    border: 1px solid #2c2c2c;
-    border-radius: 8px;
-    padding: 8px 10px;
+/* Enable Scoring toggling these between shown/hidden is interpolated, not
+   snapped — see _trophySetCollapsed in main.js, which drives max-height/
+   max-width, opacity, and margin as inline styles. This just declares the
+   properties as transitionable and keeps each box's overflow clipped
+   while its size is mid-interpolation. */
+.trophy-score-card,
+.trophy-stats-grid,
+.trophy-leaderboard-card {
+    overflow: hidden;
+    transition: max-height 0.22s ease, max-width 0.22s ease, opacity 0.18s ease, margin 0.22s ease;
 }
 
 /* Score + session timer sit side by side as a matched pair of cards —
@@ -741,20 +782,37 @@ body.layout-classic .tab-bar {
     gap: 10px;
     align-items: stretch;
 }
-.trophy-top-row .trophy-score-card { flex: 1.3; }
+/* min-width:0 overrides the flex item's automatic min-width floor (which
+   would otherwise refuse to shrink below the icon/text's own content
+   size) — needed so the collapse animation's inline max-width:0 (see
+   _trophySetCollapsed in main.js) can actually reach 0 instead of stopping
+   at that floor. */
+.trophy-top-row .trophy-score-card { flex: 1.3; min-width: 0; }
 .trophy-top-row .trophy-timer-card { flex: 1; }
 
 /* Session timer — no state-based color coding (no green) — Active/Inactive
    is conveyed by the status text alone. Same vertical icon/value/label
    rhythm as .trophy-score-card beside it so the pair reads as matched
    twins. tabular-nums keeps the digits from jittering the layout width as
-   they change. */
+   they change.
+
+   min-height matches .trophy-score-card's own (taller, bigger icon/value/
+   padding) natural height explicitly, rather than relying purely on
+   .trophy-top-row's align-items:stretch to match them — stretch only
+   works while both cards are actually in the flex line. Once scoring is
+   off and the score card collapses away to display:none (see
+   _trophySetCollapsed in main.js), stretch has nothing left to match
+   against, so the timer card would otherwise drop straight to its own
+   shorter height with no transition covering that drop at all. Pinning
+   the same min-height on both means the timer card is already that tall
+   on its own, so removing its sibling changes nothing about its size. */
 .trophy-timer-card {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 5px;
+    min-height: 120px;
     background: #181818;
     border: 1px solid #2c2c2c;
     border-radius: 12px;
@@ -802,6 +860,7 @@ body.layout-classic .tab-bar {
     flex-direction: column;
     align-items: center;
     gap: 4px;
+    min-height: 120px; /* matches .trophy-timer-card's own — see the comment there */
     background: #181818;
     border: 1px solid #2c2c2c;
     border-radius: 12px;
@@ -952,6 +1011,7 @@ body.layout-classic .tab-bar {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
+    min-height: 0; /* overrides its flex-item auto min-height floor so the collapse animation's max-height:0 can actually reach 0 */
 }
 .trophy-stat-tile {
     display: flex;
@@ -965,6 +1025,13 @@ body.layout-classic .tab-bar {
     min-width: 0;
 }
 .trophy-stat-tile svg { width: 20px; height: 20px; color: #7aaaff; flex-shrink: 0; }
+/* transform:scale, not a bigger width/height — this tile sits in the same
+   flex row as Keyframes/Layers, and actually growing the box would push
+   this tile's own value/label down relative to the other two (whose icons
+   stayed at 20px), throwing the whole row's text out of alignment. Scale
+   only changes what's painted, not the 20x20 box the layout reserves for
+   it, so the icon reads bigger with no effect on anything around it. */
+.trophy-stat-tile svg.trophy-stat-icon-fx { transform: scale(1.4); }
 .trophy-stat-value { font-size: 18px; font-weight: 700; color: var(--text); }
 .trophy-stat-label {
     font-size: 10px;
@@ -982,6 +1049,7 @@ body.layout-classic .tab-bar {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    min-height: 0; /* overrides its flex-item auto min-height floor so the collapse animation's max-height:0 can actually reach 0 */
     background: #181818;
     border: 1px solid #2c2c2c;
     border-radius: 12px;
@@ -1155,22 +1223,27 @@ body.layout-classic .tab-bar {
 .lb-medal-bronze { background: linear-gradient(135deg, #e0965a, #b06a35); }
 
 /* Podium rows (top 3) — tinted background/border matching their medal,
-   text bumped back to full brightness against it, and "slightly wider"
-   via a small negative margin that lets them bleed past the rest of the
-   list's edges (padding bumped by the same amount so the inner content
-   stays aligned instead of just looking cramped). Widest for #1, down to
-   least for #3, so the "podium" reads as a hierarchy at a glance. */
+   text bumped back to full brightness against it, and ~20% TALLER than a
+   normal row instead of wider — same horizontal padding as every other
+   row (8px, inherited from .lb-row, untouched here), so the list's
+   left/right edges stay flush and only vertical space grows. A normal
+   row's rendered height is roughly its 6px+6px padding plus its own
+   content line-height/border (~30px total); bumping vertical padding to
+   9px+9px adds ~6px, which is close to a genuine 20% increase over that
+   full height, not just of the padding in isolation. */
 .lb-row.rank-1, .lb-row.rank-2, .lb-row.rank-3 {
     position: relative;
     overflow: hidden;
+    padding-top: 9px;
+    padding-bottom: 9px;
 }
 .lb-row.rank-1 .lb-name, .lb-row.rank-1 .lb-score,
 .lb-row.rank-2 .lb-name, .lb-row.rank-2 .lb-score,
 .lb-row.rank-3 .lb-name, .lb-row.rank-3 .lb-score { color: var(--text); }
 
-.lb-row.rank-1 { background: rgba(232, 193, 64, 0.16); border-color: #e8c140; margin: 0 -6px; padding-left: 14px; padding-right: 14px; }
-.lb-row.rank-2 { background: rgba(200, 200, 208, 0.14); border-color: #c0c0c8; margin: 0 -4px; padding-left: 12px; padding-right: 12px; }
-.lb-row.rank-3 { background: rgba(205, 127, 50, 0.16); border-color: #cd7f32; margin: 0 -2px; padding-left: 10px; padding-right: 10px; }
+.lb-row.rank-1 { background: rgba(232, 193, 64, 0.16); border-color: #e8c140; }
+.lb-row.rank-2 { background: rgba(200, 200, 208, 0.14); border-color: #c0c0c8; }
+.lb-row.rank-3 { background: rgba(205, 127, 50, 0.16); border-color: #cd7f32; }
 
 /* Cursor-follow glow on hover — same recipe as the Anchor Point grid's own
    glow (.anchor-grid::before), just re-tinted per medal color and sized
@@ -1984,36 +2057,35 @@ body.layout-classic .tool-grid {
 }
 #homeClassic .anchor-btn:hover  { background: #2e2e2e; color: #F9F9F4; }
 #homeClassic .anchor-btn svg { width: 26px; height: 26px; }
-#homeClassic .anchor-mode-line { justify-content: flex-start; }
-/* Compact's .anchor-tools-group (see its own base rule) is always a
-   fixed two-row stack that fills the square tile's full width below the
-   grid — Classic has a full-width row to work with instead, plenty of
-   room already, so it goes back to a single inline row at natural size
-   (Null is hidden here anyway — see .anchor-null-btn below — so it's just
-   the mode dropdown and Ignore Masks sitting side by side). */
-#homeClassic .anchor-tools-group {
-    flex: 0 0 auto;
-    flex-direction: row;
-    align-items: center;
-}
+/* Classic used to keep Compact's whole mode/Ignore Masks/Null toolbar,
+   just repositioned and with Null itself dropped (it already has its own
+   dedicated Null/Copy-Paste panel docked beside the grid — see
+   _applyLayoutMode in main.js) — but that left Compact's icon+flyout
+   button and square toggle showing through unchanged, which is exactly
+   what read as "messed up" once Classic inherited that redesign. Hiding
+   the whole row here instead and giving Classic its own separate
+   .anchor-mode-line-classic row (native <select> + checkbox, see its own
+   rule and the HTML comment above it) restores the original look. */
+#homeClassic .anchor-mode-line { display: none; }
 /* .anchor-row's shared base rule centers the grid (right for Compact's
    square tile, since there's no room to its side) — Classic's grid is a
    small fixed-size 3x3 (see .anchor-grid above), so left-pin it instead of
    leaving it stranded in the middle of the full-width row. */
 #homeClassic .anchor-row { justify-content: flex-start; }
-/* Classic wants the mode/Ignore Masks/Null toolbar above the grid instead
-   of below it (Compact's own order, kept as-is there) — order alone moves
-   it ahead of its one DOM-order-earlier sibling without touching the
-   shared markup. */
-#homeClassic .anchor-mode-line { order: -2; }
-/* Classic docks the Null/Copy-Paste panel beside the grid (see
-   _applyLayoutMode in main.js), which already has its own "Null" button —
-   the shared toolbar's copy would just be a redundant second one, so it's
-   dropped here (Ignore Masks and the mode dropdown stay — neither is
-   duplicated elsewhere). Compact keeps it untouched — it never shows the
-   Copy-Paste panel inline, so there's no duplication there. */
-#homeClassic .anchor-null-btn {
-    display: none;
+/* .tool-body[data-block-id="anchor"] prefix, not just the bare class — a
+   plain .anchor-mode-line-classic { display:none } has the same (0,1,0)
+   specificity as the generic .ctrl-row { display:flex } rule further down
+   this file, and that one declared LATER was winning the tie regardless of
+   layout mode, showing this row in Compact too. */
+.tool-body[data-block-id="anchor"] .anchor-mode-line-classic { display: none; }
+/* Same "above the grid" placement Compact's row used to take in Classic
+   (order:-2 ahead of its one DOM-order-earlier sibling), just on this row
+   instead now. */
+#homeClassic .anchor-mode-line-classic {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    order: -2;
 }
 
 /* Organize: one continuous toolbar of icon buttons, not a grid of
@@ -5697,6 +5769,10 @@ input.gap-inline-input {
    Actions/Bottom Layout are both Compact-only), so it collapses away —
    the Settings gear beside it (#settingsGearBtn) stays put in both modes. */
 body.layout-classic #quickActionsEditBtn { width: 0; opacity: 0; pointer-events: none; }
+/* Inverse of the edit pencil above — hidden in Compact (the real tab bar
+   already has a Trophy button there), shown only in Classic. */
+.classic-trophy-btn { width: 0; opacity: 0; pointer-events: none; }
+body.layout-classic .classic-trophy-btn { width: 28px; opacity: 1; pointer-events: auto; }
 
 /* ── Settings overlay ─────────────────────────────────────────────────────── */
 

@@ -173,10 +173,10 @@
             </div>
           </div>
           <!-- "Based on" used to be a native <select> + an "Ignore Masks"
-               checkbox; now a custom icon+word button opening a small
-               flyout (see _openAnchorModeCtx/ANCHOR_MODE_OPTIONS in
+               checkbox; Compact now uses a custom icon+word button opening
+               a small flyout (see _openAnchorModeCtx/ANCHOR_MODE_OPTIONS in
                main.js) — a <select> can't show a custom icon in its own
-               closed state. Ignore Masks is back as a small square toggle
+               closed state. Ignore Masks is a small square toggle there
                (see doToggleIgnoreMasks/_ignoreMasks in main.js) instead of
                a checkbox, sitting inline with Null rather than the mode
                dropdown. All three share one small bordered .btn-group
@@ -184,7 +184,10 @@
                buttons) that hugs its own content instead of stretching the
                whole row — see .anchor-mode-line/.anchor-tools-group in
                style.css. Mode button and the Null cluster still wrap onto
-               their own rows once the box is too narrow for both. -->
+               their own rows once the box is too narrow for both.
+               Compact-only now — this whole row is hidden in Classic (see
+               #homeClassic .anchor-mode-line in style.css), which gets its
+               own separate original-style row instead, just below. -->
           <div class="ctrl-row anchor-mode-line">
             <div class="btn-group anchor-tools-group">
               <button class="anchor-mode-btn" id="anchorModeBtn" onclick="_openAnchorModeCtx(this, event)" title="Based on: Object">
@@ -202,6 +205,30 @@
                 <button class="anchor-null-btn" onclick="doCreateNull()" title="Create a null at the anchor point">Null</button>
               </div>
             </div>
+          </div>
+          <!-- Classic-only equivalent of the row above — the ORIGINAL
+               native <select> + checkbox instead of Compact's icon+flyout
+               button/square toggle, which read wrong once Classic's own
+               redesign-time relocation carried it over unchanged (that's
+               the "messed up" bit this replaces). Same shared state
+               (_anchorMode/_ignoreMasks in main.js) as the row above —
+               _anchorModeRefreshButton/_ignoreMasksRefreshButton keep both
+               in sync regardless of which one last changed it, so
+               switching layout modes mid-session never shows stale values.
+               No Null here at all — Classic already has its own dedicated
+               Null/Copy-Paste panel docked beside the grid (see
+               _applyLayoutMode in main.js), so a second Null button here
+               would just be redundant. -->
+          <div class="ctrl-row anchor-mode-line-classic">
+            <span class="lbl">Based on</span>
+            <select id="anchorModeSelectClassic" onchange="_anchorModeSet(parseInt(this.value, 10))">
+              <option value="0">Object</option>
+              <option value="1">Selection</option>
+              <option value="2">Composition</option>
+            </select>
+            <label class="check-label" title="Ignore Masks — based-on bounds ignore any masks applied to the layer(s) when checked">
+              <input type="checkbox" id="ignoreMasksCheckClassic" onchange="doToggleIgnoreMasks()"> Ignore Masks
+            </label>
           </div>
         </div>
       </div>
@@ -1525,8 +1552,6 @@
      tool button lives here, it's a pure readout. -->
 <div id="tab-trophy" class="tab-panel">
 
-  <div id="scoringDisabledNotice" class="trophy-disabled-notice" style="display:none">Scoring is paused — enable it in Settings to resume tracking.</div>
-
   <div class="trophy-top-row">
     <div class="trophy-score-card">
       <svg class="trophy-score-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -1589,26 +1614,22 @@
 
   <div class="trophy-stats-grid">
     <div class="trophy-stat-tile">
-      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10,2 L18,10 L10,18 L2,10 Z"/></svg>
-      <div class="trophy-stat-value" id="trophyStatKeyframes">0</div>
-      <div class="trophy-stat-label">Keyframes</div>
-    </div>
-    <div class="trophy-stat-tile">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
         <rect x="2" y="6" width="16" height="9" rx="1.5"/>
         <line x1="2" y1="10" x2="18" y2="10"/>
       </svg>
       <div class="trophy-stat-value" id="trophyStatLayers">0</div>
-      <div class="trophy-stat-label">Layers</div>
+      <div class="trophy-stat-label">Layers Created</div>
     </div>
     <div class="trophy-stat-tile">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M10,3 V12"/>
-        <polyline points="6.5,8.5 10,12 13.5,8.5"/>
-        <path d="M4,13.5 V15.5 A1.2,1.2 0 0,0 5.2,16.7 H14.8 A1.2,1.2 0 0,0 16,15.5 V13.5"/>
-      </svg>
-      <div class="trophy-stat-value" id="trophyStatExports">0</div>
-      <div class="trophy-stat-label">Exports</div>
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10,2 L18,10 L10,18 L2,10 Z"/></svg>
+      <div class="trophy-stat-value" id="trophyStatKeyframes">0</div>
+      <div class="trophy-stat-label">Keyframes Edited</div>
+    </div>
+    <div class="trophy-stat-tile">
+      <svg class="trophy-stat-icon-fx" viewBox="0 0 20 20" fill="currentColor"><path d="M10,2 C10,6 11,9 15,9 C11,9 10,12 10,16 C10,12 9,9 5,9 C9,9 10,6 10,2 Z"/></svg>
+      <div class="trophy-stat-value" id="trophyStatFx">0</div>
+      <div class="trophy-stat-label">Effects Applied</div>
     </div>
   </div>
 
@@ -1796,8 +1817,10 @@
        of that whole feature that costs real evalScript time, see
        _activityApplyScoringEnabled in main.js) and js/leaderboard.js's own
        periodic sync, for anyone who'd rather not risk any of it on a heavy
-       comp. -->
-  <div class="settings-tab-row">
+       comp. Shown in both layout modes — Classic can reach the Trophy tab
+       too, via the footer's classicTrophyBtn (see _toggleClassicTrophyTab
+       in main.js), so this toggle is just as relevant there. -->
+  <div class="settings-tab-row" id="enableScoringRow">
     <span class="lbl">Enable Scoring</span>
     <label class="settings-toggle">
       <input type="checkbox" id="scoringEnabledCheck" checked onchange="toggleScoring(this.checked)">
@@ -1808,8 +1831,10 @@
        keyframes get selected, or to Shape Tools the moment a shape layer
        gets selected — predictive (fires on the selection CHANGE, not
        continuously while it's true), so it never fights a manual swipe
-       away. See _pollFavSmartStack in main.js. -->
-  <div class="settings-tab-row">
+       away. See _pollFavSmartStack in main.js. Classic has no Favorites
+       bar for this to jump around, so this row is hidden there
+       (body.layout-classic #smartStackRow, see style.css). -->
+  <div class="settings-tab-row" id="smartStackRow">
     <span class="lbl settings-row-lbl">
       <svg class="settings-row-icon" viewBox="0 0 16 16" fill="currentColor">
         <rect x="1.5" y="9" width="9" height="5" rx="1.2" opacity="0.45"/>
@@ -1824,7 +1849,7 @@
     </label>
   </div>
   <div class="settings-popup-ftr">
-    <span class="lbl" id="settingsVersionLbl">Version 1.9.3</span>
+    <span class="lbl" id="settingsVersionLbl">Version 1.9.4</span>
     <button class="btn" onclick="checkForUpdates(true)">Check for Updates</button>
   </div>
  </div>
@@ -1861,9 +1886,26 @@
     <div class="footer-brand">
       <img src="heist_icon_32.png" class="footer-logo" alt="">
       <span class="footer-name">Heist Lineup</span>
-      <span class="footer-version" id="footerVersion">v1.9.3</span>
+      <span class="footer-version" id="footerVersion">v1.9.4</span>
     </div>
     <div class="footer-actions">
+    <!-- Classic hides the tab bar entirely (see body.layout-classic
+         .tab-bar in style.css), so Trophy has no tab button to reach it
+         through there — this toggles straight to/from it instead, same
+         crossfade-into-the-edit-pencil's-spot treatment as that button
+         gets in Compact (both sized off the shared .settings-btn base,
+         see the classic-trophy-btn rule below). See
+         _toggleClassicTrophyTab in main.js. -->
+    <button class="settings-btn classic-trophy-btn" id="classicTrophyBtn" onclick="_toggleClassicTrophyTab()" title="Progress">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6,3 H14 V7 A4,4 0 0,1 6,7 Z"/>
+        <path d="M6,4 H3.5 A1.5,1.5 0 0,0 3.5,7 H6"/>
+        <path d="M14,4 H16.5 A1.5,1.5 0 0,1 16.5,7 H14"/>
+        <line x1="10" y1="11" x2="10" y2="13.5"/>
+        <path d="M7.3,13.5 H12.7 L13.2,16.5 H6.8 Z"/>
+        <line x1="6.5" y1="16.5" x2="13.5" y2="16.5"/>
+      </svg>
+    </button>
     <button class="settings-btn" id="quickActionsEditBtn" onclick="_toggleEditMode()" title="Customize Quick Actions &amp; Rearrange Align / Distribute / Sizing / Auto Crop / Sort">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
         <path d="M11,2.5 L13.5,5 L5,13.5 L2,14 L2.5,11 Z"/>

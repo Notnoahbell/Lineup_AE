@@ -41,9 +41,10 @@
    Since Google Workspace already verifies its own accounts, a successful
    Google sign-in is effectively always "emailVerified" already — there's
    no separate manual verification-link step like an email/password flow
-   would need. Also gated to REQUIRE_DOMAIN below so only real company
+   would need. Also gated to REQUIRE_DOMAINS below so only real company
    accounts can post a score; enforced both here (clean error message,
-   plus the `hd` hint that narrows Google's own account picker) and in
+   plus the `hd` hint that narrows Google's own account picker, when
+   there's only one allowed domain to hint) and in
    firestore.rules (the actual security boundary), since a CEP panel can't
    keep its API key or OAuth client secret truly confidential. */
 (function () {
@@ -71,9 +72,10 @@
         clientSecret: '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'
     };
 
-    // Only accounts with this email domain can sign in — must match the
-    // domain baked into firestore.rules (request.auth.token.email.matches).
-    var REQUIRE_DOMAIN = 'thinkingbox.com';
+    // Only accounts with one of these email domains can sign in — must
+    // match the domains baked into firestore.rules
+    // (request.auth.token.email.matches).
+    var REQUIRE_DOMAINS = ['thinkingbox.com', 'theheist.com'];
 
     function _lbConfigured() {
         return FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY' && FIREBASE_CONFIG.projectId !== 'YOUR_PROJECT_ID';
@@ -84,20 +86,23 @@
     }
 
     function _lbEmailAllowed(email) {
-        if (!REQUIRE_DOMAIN) return true;
-        return new RegExp('@' + REQUIRE_DOMAIN.replace(/\./g, '\\.') + '$', 'i').test(email);
+        if (!REQUIRE_DOMAINS.length) return true;
+        return REQUIRE_DOMAINS.some(function (domain) {
+            return new RegExp('@' + domain.replace(/\./g, '\\.') + '$', 'i').test(email);
+        });
     }
 
     var LS_AUTH = 'lineup-lb-auth'; // { uid, email, emailVerified, idToken, refreshToken, expiresAt }
     var LS_NAME = 'lineup-lb-name'; // display name, chosen once (defaults to the account's name/email)
-    // Per-day snapshot of the LOCAL history values this machine has already
-    // told the cloud about — lets every sync send only the delta since last
-    // time (via Firestore's atomic increment transform) instead of the full
-    // local value, which is what makes repeated syncs safe to run forever
-    // without double-counting. See _lbPushActivityDeltas/_lbMergeCloudHistory.
-    var LS_PUSHED_SNAPSHOT = 'lineup-lb-pushed-snapshot';
 
-    var LB_HISTORY_FIELDS = ['keyframes', 'layers', 'exports', 'score', 'seconds'];
+    // _lbMergeCloudHistory rebuilds each day's entry from ONLY the fields
+    // listed here — any per-day field main.js starts tracking has to be
+    // added here too, or it just gets silently dropped back out the next
+    // time a cloud pull merges (score itself stays correct either way,
+    // since that field IS listed and already carries the derived total —
+    // but the raw per-kind count itself would vanish from local history
+    // without this).
+    var LB_HISTORY_FIELDS = ['layers', 'keyframes', 'fx', 'score', 'seconds'];
 
     var LS_PERIOD = 'lineup-lb-period'; // which leaderboard tab was last selected — persists across opens
     var LB_PERIODS = ['daily', 'weekly', 'monthly', 'allTime'];
@@ -289,7 +294,13 @@
                 '&redirect_uri=' + encodeURIComponent(redirectUri) +
                 '&response_type=code' +
                 '&scope=' + encodeURIComponent('openid email profile') +
-                (REQUIRE_DOMAIN ? '&hd=' + encodeURIComponent(REQUIRE_DOMAIN) : '') +
+                // hd only narrows Google's own account picker to a SINGLE
+                // domain — it can't express "one of several", so with more
+                // than one allowed domain it's dropped entirely rather than
+                // arbitrarily picking one to hint (the real enforcement is
+                // _lbEmailAllowed below plus firestore.rules either way,
+                // this is purely a picker convenience).
+                (REQUIRE_DOMAINS.length === 1 ? '&hd=' + encodeURIComponent(REQUIRE_DOMAINS[0]) : '') +
                 '&prompt=select_account';
             if (typeof cs !== 'undefined' && cs.openURLInDefaultBrowser) {
                 cs.openURLInDefaultBrowser(authUrl);
@@ -340,7 +351,12 @@
     function _lbAfterSignIn(uid) {
         function proceed() {
             _lbRefreshView();
-            _lbPushActivityDeltas(function () { _lbPullAndMergeActivity(function () { _lbRefreshView(); }); });
+            // Full history, not just today — this machine may have local
+            // days the cloud doc has never seen (e.g. activity recorded
+            // before this account ever signed in anywhere).
+            var activity = _lbReadLocalActivity();
+            var allDays = activity && activity.history ? Object.keys(activity.history) : [];
+            _lbPushActivityMax(allDays, function () { _lbPullAndMergeActivity(function () { _lbRefreshView(); }); });
         }
         if (_lbGetName()) { proceed(); return; }
         _lbFetchExistingName(uid, function (existingName) {
@@ -359,7 +375,8 @@
         _lbXhr('POST', url, { 'Content-Type': 'application/json' }, body, function (err, data) {
             if (err || !data) { _lbShowAuthError(err || new Error('Firebase sign-in failed')); return; }
             if (!_lbEmailAllowed(data.email || '')) {
-                _lbShowAuthError('Please sign in with your @' + REQUIRE_DOMAIN + ' account.');
+                var domainList = REQUIRE_DOMAINS.map(function (d) { return '@' + d; }).join(' or ');
+                _lbShowAuthError('Please sign in with your ' + domainList + ' account.');
                 return;
             }
             _lbStoreAuthFromResponse(data, function () {
@@ -444,24 +461,48 @@
         _lbEnsureAuth(function (err, freshAuth) {
             if (err) return; // offline, Firebase unreachable, or signed out — skip this tick, try again next time
             var streak = activity.streak || {};
-            var url = 'https://firestore.googleapis.com/v1/projects/' + FIREBASE_CONFIG.projectId +
-                '/databases/(default)/documents/leaderboard/' + freshAuth.uid +
-                '?updateMask.fieldPaths=name&updateMask.fieldPaths=score&updateMask.fieldPaths=scoreDaily' +
-                '&updateMask.fieldPaths=scoreWeekly&updateMask.fieldPaths=scoreMonthly' +
-                '&updateMask.fieldPaths=streakCurrent&updateMask.fieldPaths=streakBest&updateMask.fieldPaths=updatedAt';
+            var docPath = 'projects/' + FIREBASE_CONFIG.projectId + '/databases/(default)/documents/leaderboard/' + freshAuth.uid;
+            var url = 'https://firestore.googleapis.com/v1/projects/' + FIREBASE_CONFIG.projectId + '/databases/(default)/documents:commit';
+            // score (all-time) and streakBest are genuinely monotonic
+            // lifetime values — "biggest ever seen" is the correct number
+            // regardless of which machine last pushed, so they go through
+            // as `maximum` transforms rather than a plain overwrite; a
+            // machine whose local copy hasn't pulled another machine's more
+            // recent total yet would otherwise regress the public
+            // leaderboard back down (same race the old activityData sync
+            // had — see _lbPushActivityMax's own history comment — just
+            // showing up as a value going backward here instead of
+            // forward). scoreDaily/scoreWeekly/scoreMonthly/streakCurrent
+            // are the opposite case — window-scoped or resettable, and
+            // MUST be able to decrease (a new day starts near 0, not stuck
+            // at yesterday's higher number; a broken streak drops back to
+            // 1) — `maximum` on any of those would leave them permanently
+            // stuck at their historical peak instead of ever resetting, so
+            // they stay a plain overwrite. Both go out in the same Write
+            // (update + updateTransforms together, not two separate Writes
+            // in the commit) — Firestore only allows one Write per document
+            // per commit.
             var body = {
-                fields: {
-                    name: { stringValue: name.slice(0, 40) },
-                    score: { integerValue: String(periods.allTime) },
-                    scoreDaily: { integerValue: String(periods.daily) },
-                    scoreWeekly: { integerValue: String(periods.weekly) },
-                    scoreMonthly: { integerValue: String(periods.monthly) },
-                    streakCurrent: { integerValue: String(streak.current || 0) },
-                    streakBest: { integerValue: String(streak.best || 0) },
-                    updatedAt: { timestampValue: new Date().toISOString() }
-                }
+                writes: [{
+                    update: {
+                        name: docPath,
+                        fields: {
+                            name: { stringValue: name.slice(0, 40) },
+                            scoreDaily: { integerValue: String(periods.daily) },
+                            scoreWeekly: { integerValue: String(periods.weekly) },
+                            scoreMonthly: { integerValue: String(periods.monthly) },
+                            streakCurrent: { integerValue: String(streak.current || 0) },
+                            updatedAt: { timestampValue: new Date().toISOString() }
+                        }
+                    },
+                    updateMask: { fieldPaths: ['name', 'scoreDaily', 'scoreWeekly', 'scoreMonthly', 'streakCurrent', 'updatedAt'] },
+                    updateTransforms: [
+                        { fieldPath: 'score', maximum: { integerValue: String(periods.allTime) } },
+                        { fieldPath: 'streakBest', maximum: { integerValue: String(streak.best || 0) } }
+                    ]
+                }]
             };
-            _lbXhr('PATCH', url, { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + freshAuth.idToken }, body, function (err2) {
+            _lbXhr('POST', url, { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + freshAuth.idToken }, body, function (err2) {
                 if (err2) return;
                 _lbLastPushedPeriods = periods;
                 _lbLastPushAt = Date.now();
@@ -477,20 +518,27 @@
     // leaderboard fetch never has to transfer anyone's full history just to
     // show a name and a score.
     //
-    // Same-day activity from two machines is meant to SUM (per the user's
-    // own call on this) — so pushing has to send only the delta since this
-    // machine's own last successful push, via Firestore's atomic `increment`
-    // transform, not the full local value each time. Sending the full value
-    // every sync would double(triple, quadruple...)-count on every single
-    // sync cycle, forever. LS_PUSHED_SNAPSHOT is what makes each push a
-    // delta instead of a full resend.
-    function _lbLoadPushedSnapshot() {
-        try { return JSON.parse(localStorage.getItem(LS_PUSHED_SNAPSHOT) || '{}'); } catch (e) { return {}; }
-    }
-    function _lbSavePushedSnapshot(snap) {
-        try { localStorage.setItem(LS_PUSHED_SNAPSHOT, JSON.stringify(snap)); } catch (e) {}
-    }
-
+    // Same-day activity from two machines used to be summed via Firestore's
+    // atomic `increment` transform, sending only the delta since this
+    // machine's own last successful push — which needed LS_PUSHED_SNAPSHOT
+    // to track exactly what had already been told to the cloud, so the same
+    // delta was never added in twice. That bookkeeping was the actual bug:
+    // an independent push and pull racing each other could read cloud AFTER
+    // a push had landed server-side but BEFORE that push's own callback
+    // updated the local snapshot, so the merge (see _lbMergeCloudHistory)
+    // would add that same delta in again on top — and the next push would
+    // carry the inflated remainder forward, compounding indefinitely.
+    //
+    // Firestore's atomic `maximum` transform sidesteps all of it: every
+    // push just sends this machine's current full value per field, and
+    // cloud ratchets up to whichever value (this push, an earlier one, or
+    // another machine's) is largest. Running this twice, or overlapping it
+    // with a pull in any order, can only ever leave cloud at the max of
+    // everything ever sent — no snapshot to keep in sync, no window for
+    // double-counting. Two machines both active the same day now show the
+    // busier one's count instead of the sum of both, which is the deliberate
+    // trade for not being able to double-count.
+    //
     // Firestore field-path segments containing anything other than plain
     // identifier characters (a date like "2026-07-17" has hyphens) must be
     // backtick-quoted per Firestore's own field path escaping rules.
@@ -498,38 +546,29 @@
         return 'history.`' + day + '`.' + field;
     }
 
-    function _lbPushActivityDeltas(cb) {
+    // days: array of date keys to push this tick — the periodic sync only
+    // needs today's (the one field still actively changing); sign-in also
+    // does a one-time push of every locally-known day, to seed the cloud
+    // doc with history that predates this machine ever signing in.
+    function _lbPushActivityMax(days, cb) {
         if (!_lbConfigured()) { if (cb) cb(); return; }
         var activity = _lbReadLocalActivity();
         if (!activity || !activity.history) { if (cb) cb(); return; }
 
-        var pushed = _lbLoadPushedSnapshot();
         var fieldTransforms = [];
-        var newPushed = {};
-
-        for (var day in activity.history) {
-            if (!activity.history.hasOwnProperty(day)) continue;
+        days.forEach(function (day) {
             var local = activity.history[day];
-            var prev = pushed[day] || {};
+            if (!local) return;
             LB_HISTORY_FIELDS.forEach(function (f) {
-                var delta = (local[f] || 0) - (prev[f] || 0);
-                if (delta > 0) {
-                    fieldTransforms.push({ fieldPath: _lbHistoryFieldPath(day, f), increment: { integerValue: String(delta) } });
-                }
+                var v = local[f] || 0;
+                if (v > 0) fieldTransforms.push({ fieldPath: _lbHistoryFieldPath(day, f), maximum: { integerValue: String(v) } });
             });
-            newPushed[day] = {
-                keyframes: local.keyframes || 0,
-                layers: local.layers || 0,
-                exports: local.exports || 0,
-                score: local.score || 0,
-                seconds: local.seconds || 0
-            };
-        }
+        });
 
         if (!fieldTransforms.length) { if (cb) cb(); return; }
 
         _lbEnsureAuth(function (err, auth) {
-            if (err) { if (cb) cb(err); return; } // offline/signed out — try again next tick, nothing lost since the snapshot only advances on success
+            if (err) { if (cb) cb(err); return; } // offline/signed out — try again next tick
             var url = 'https://firestore.googleapis.com/v1/projects/' + FIREBASE_CONFIG.projectId + '/databases/(default)/documents:commit';
             var body = {
                 writes: [{
@@ -540,9 +579,7 @@
                 }]
             };
             _lbXhr('POST', url, { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + auth.idToken }, body, function (err2) {
-                if (err2) { if (cb) cb(err2); return; }
-                _lbSavePushedSnapshot(newPushed);
-                if (cb) cb();
+                if (cb) cb(err2);
             });
         });
     }
@@ -610,31 +647,24 @@
         };
     }
 
-    function _lbTodayKey() { return _lbDateKey(new Date()); }
-
-    // Merges a freshly-pulled cloud history into the local copy — two
-    // different rules depending on whether a day is still "open":
-    //
-    // TODAY is additive: "cloud" already reflects everything every machine
-    // has successfully pushed for it, EXCEPT this machine's own
-    // not-yet-pushed delta (the gap between its local value and its own
-    // last-pushed snapshot), which gets added back on top — genuine
-    // same-day activity from two machines should sum, not have one mask
-    // the other.
-    //
-    // Any OTHER (closed) day instead takes whichever side has the larger
-    // number per field, not a sum — a past day shouldn't be changing
-    // anymore, so there's no legitimate "new activity to add"; the only
-    // reason local and cloud would ever disagree on a closed day is drift
-    // in the local push-tracking snapshot, and summing in that case would
-    // silently inflate a day's numbers every time it gets re-merged. Taking
-    // the max is idempotent — safe to re-run indefinitely with no risk of
-    // ever double-counting a day that's already finished.
+    // Merges a freshly-pulled cloud history into the local copy: every day
+    // (today included, no "still open" special case) takes whichever side
+    // has the larger number per field, not a sum. This used to add same-day
+    // activity from two machines together instead, but that required
+    // tracking exactly what this machine had already told the cloud
+    // (LS_PUSHED_SNAPSHOT) so the delta being summed in never included
+    // anything cloud already had — and an independent push/pull pair racing
+    // against each other was enough to break that bookkeeping and
+    // double-count, compounding on every subsequent sync. max() has no such
+    // failure mode: it's commutative and idempotent regardless of what
+    // order push/pull run in or how many times either re-runs, since both
+    // sides always converge on the single largest value anyone has ever
+    // reported for that day. The trade-off is real (two machines both
+    // active the same day now show the busier one's count, not the sum of
+    // both) but that's the deliberate choice here over a bug-prone sum.
     function _lbMergeCloudHistory(cloudHistory) {
-        var activity = _lbReadLocalActivity() || { totals: { keyframes: 0, layers: 0, exports: 0 }, score: 0, streak: { current: 0, best: 0, lastActiveDate: null }, history: {} };
+        var activity = _lbReadLocalActivity() || { totals: { layers: 0, keyframes: 0, fx: 0 }, score: 0, streak: { current: 0, best: 0, lastActiveDate: null }, history: {} };
         var localHistory = activity.history || {};
-        var pushed = _lbLoadPushedSnapshot();
-        var todayKey = _lbTodayKey();
         var mergedHistory = {};
 
         var allDays = {};
@@ -645,28 +675,20 @@
             var cloud = cloudHistory[day] || {};
             var local = localHistory[day] || {};
             var entry = {};
-            if (day === todayKey) {
-                var prev = pushed[day] || {};
-                LB_HISTORY_FIELDS.forEach(function (f) {
-                    var notYetPushed = Math.max(0, (local[f] || 0) - (prev[f] || 0));
-                    entry[f] = (cloud[f] || 0) + notYetPushed;
-                });
-            } else {
-                LB_HISTORY_FIELDS.forEach(function (f) {
-                    entry[f] = Math.max(cloud[f] || 0, local[f] || 0);
-                });
-            }
+            LB_HISTORY_FIELDS.forEach(function (f) {
+                entry[f] = Math.max(cloud[f] || 0, local[f] || 0);
+            });
             mergedHistory[day] = entry;
         }
 
         activity.history = mergedHistory;
 
-        var totals = { keyframes: 0, layers: 0, exports: 0 };
+        var totals = { layers: 0, keyframes: 0, fx: 0 };
         var score = 0;
         for (var dk in mergedHistory) {
-            totals.keyframes += mergedHistory[dk].keyframes;
             totals.layers += mergedHistory[dk].layers;
-            totals.exports += mergedHistory[dk].exports;
+            totals.keyframes += mergedHistory[dk].keyframes;
+            totals.fx += mergedHistory[dk].fx;
             score += mergedHistory[dk].score;
         }
         activity.totals = totals;
@@ -1010,12 +1032,18 @@
         return v !== '0';
     }
 
+    // Push and pull can safely run on two fully independent setIntervals —
+    // unlike the old increment/notYetPushed approach, maximum-transform
+    // pushes and max()-based merges (see _lbPushActivityMax/
+    // _lbMergeCloudHistory) are commutative and idempotent no matter how
+    // the two interleave, so there's nothing here that needs chaining or a
+    // busy-flag to stay correct.
     document.addEventListener('DOMContentLoaded', function () {
         _lbRefreshView();
         setInterval(function () {
             if (!_lbScoringEnabled()) return;
             _lbPushScore(false);
-            _lbPushActivityDeltas(function () {}); // no-ops instantly if nothing changed since last push
+            _lbPushActivityMax([_lbDateKey(new Date())], function () {}); // no-ops instantly if today hasn't changed
         }, TICK_MS);
         // Slower cadence — this is about catching what OTHER machines
         // contributed since we last checked, not this machine's own state.
