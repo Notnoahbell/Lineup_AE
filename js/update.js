@@ -50,6 +50,18 @@
         banner.setAttribute('data-latest-url', latest.url || '');
         banner.setAttribute('data-latest-zip', latest.zipUrl || '');
         banner.classList.remove('update-banner-hidden');
+
+        // Reset any progress UI left over from a previous install attempt
+        // (e.g. a failed download) so a freshly-shown banner always starts
+        // back at the plain Update-button state.
+        var btn          = document.getElementById('updateBannerBtn');
+        var progressRow  = document.getElementById('updateBannerProgressRow');
+        var progressFill = document.getElementById('updateBannerProgressFill');
+        var progressPct  = document.getElementById('updateBannerProgressPct');
+        if (btn) btn.classList.remove('update-progress-hidden');
+        if (progressRow) progressRow.classList.add('update-progress-hidden');
+        if (progressFill) progressFill.style.width = '0%';
+        if (progressPct) progressPct.textContent = '0%';
     }
 
     function _hideBanner() {
@@ -79,16 +91,21 @@
 
         // "Check for Updates" lives inside the Settings modal — both share
         // the same .settings-overlay z-index, so Settings (later in the DOM)
-        // would otherwise sit on top and hide this dialog entirely.
-        if (typeof closeSettings === 'function') closeSettings();
+        // would otherwise sit on top and hide this dialog entirely. Was
+        // calling closeSettings(), which doesn't exist (the real function
+        // is closeSettingsPopup) — the typeof guard silently swallowed
+        // that instead of throwing, so this never actually ran.
+        if (typeof closeSettingsPopup === 'function') closeSettingsPopup();
 
         _installing = false;
         var actions      = document.getElementById('updateConfirmActions');
         var progressWrap = document.getElementById('updateConfirmProgressWrap');
         var progressFill = document.getElementById('updateConfirmProgressFill');
+        var progressPct  = document.getElementById('updateConfirmProgressPct');
         if (actions) actions.classList.remove('update-progress-hidden');
         if (progressWrap) progressWrap.classList.add('update-progress-hidden');
         if (progressFill) progressFill.style.width = '0%';
+        if (progressPct) progressPct.textContent = '0%';
 
         text.textContent = 'Lineup v' + latest.version + ' is available (you have v' + _localVersion + '). Install it now?';
         overlay.setAttribute('data-latest-version', latest.version);
@@ -130,11 +147,13 @@
         var progressWrap = document.getElementById('updateConfirmProgressWrap');
         var progressText = document.getElementById('updateConfirmProgressText');
         var progressFill = document.getElementById('updateConfirmProgressFill');
+        var progressPct  = document.getElementById('updateConfirmProgressPct');
         if (actions) actions.classList.add('update-progress-hidden');
         if (progressWrap) progressWrap.classList.remove('update-progress-hidden');
 
         _installUpdate(zipUrl, progressText, function (pct) {
             if (progressFill) progressFill.style.width = pct + '%';
+            if (progressPct) progressPct.textContent = pct + '%';
         }, function () {
             // Install failed — showToast already explained why; let the
             // user close the dialog and try again instead of being stuck.
@@ -471,7 +490,23 @@
         var zipUrl  = banner ? banner.getAttribute('data-latest-zip') : '';
 
         if (_nodeAvailable() && zipUrl) {
-            _installUpdate(zipUrl, text);
+            var btn          = document.getElementById('updateBannerBtn');
+            var progressRow  = document.getElementById('updateBannerProgressRow');
+            var progressFill = document.getElementById('updateBannerProgressFill');
+            var progressPct  = document.getElementById('updateBannerProgressPct');
+            if (btn) btn.classList.add('update-progress-hidden');
+            if (progressRow) progressRow.classList.remove('update-progress-hidden');
+
+            _installUpdate(zipUrl, text, function (pct) {
+                if (progressFill) progressFill.style.width = pct + '%';
+                if (progressPct) progressPct.textContent = pct + '%';
+            }, function () {
+                // Install failed — showToast already explained why; put the
+                // Update button back so the user isn't stuck behind a dead
+                // progress bar with no way to retry.
+                if (btn) btn.classList.remove('update-progress-hidden');
+                if (progressRow) progressRow.classList.add('update-progress-hidden');
+            });
             return;
         }
 

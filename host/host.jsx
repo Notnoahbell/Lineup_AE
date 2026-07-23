@@ -5464,3 +5464,89 @@ function spellcheck_replace(layerIndex, keyIndex, oldWord, newWord) {
         return "ERROR:" + e.message;
     }
 }
+
+// ── ACTIVITY TRACKING ─────────────────────────────────────────────────────────
+// Read-only snapshot for the Trophy tab's gamification poll (see
+// _activityPollTick in main.js). There's no ExtendScript event for "a
+// keyframe was added"/"a layer was created"/etc. — the panel calls this on
+// a timer and diffs the counts itself to infer new activity, so this just
+// reports raw totals plus enough identity info (projectId/compId/
+// selectionId) for the caller to tell "the user did something" apart from
+// "the user switched to a different project/comp/selection that already
+// had this content."
+//
+// The keyframe count is scoped to the CURRENTLY SELECTED layers only, not
+// every layer in the comp — walking every property of every layer on a
+// 3-second timer is cheap on a small comp but scales with total comp
+// complexity (layers × effects × params), and ExtendScript runs
+// synchronously on AE's main thread, so a slow tick reads as an actual UI
+// stutter, not just background CPU. Scoping to the selection instead caps
+// the walk's cost at "how many layers you have selected" (almost always a
+// handful) regardless of how big the comp is. Trade-off: keyframes added to
+// layers that aren't selected at poll time go untracked.
+function lineup_getActivitySnapshot() {
+    var proj = app.project;
+    var projectId = proj.file ? proj.file.fsName : "__unsaved__";
+
+    var layerCount = 0;
+    for (var i = 1; i <= proj.numItems; i++) {
+        try { if (proj.item(i) instanceof CompItem) layerCount += proj.item(i).numLayers; } catch (e) {}
+    }
+
+    var comp = proj.activeItem;
+    var isComp = comp && comp instanceof CompItem;
+    var compId = isComp ? comp.id : -1;
+    // Playhead position — not scored, purely a cheap extra "is the user
+    // still doing something" signal for the Trophy timer's inactivity
+    // check (scrubbing/playback moves this without necessarily changing
+    // any of the counts above).
+    var currentTime = isComp ? comp.time : -1;
+
+    var selected = isComp ? comp.selectedLayers : [];
+    var selIndices = [];
+    for (var s = 0; s < selected.length; s++) {
+        try { selIndices.push(selected[s].index); } catch (e) {}
+    }
+    selIndices.sort(function (a, b) { return a - b; });
+    var selectionId = selIndices.join(',');
+
+    var keyframeCount = 0;
+    for (var s2 = 0; s2 < selected.length; s2++) {
+        try { keyframeCount += _lineup_countKeyframesRecursive(selected[s2]); } catch (e) {}
+    }
+
+    var exportsDone = 0;
+    var rq = proj.renderQueue;
+    for (var r = 1; r <= rq.numItems; r++) {
+        try { if (rq.item(r).status === RQItemStatus.DONE) exportsDone++; } catch (e) {}
+    }
+
+    return JSON.stringify({
+        projectId: projectId,
+        compId: compId,
+        selectionId: selectionId,
+        currentTime: currentTime,
+        layerCount: layerCount,
+        keyframeCount: keyframeCount,
+        exportsDone: exportsDone
+    });
+}
+
+// Recursively sums numKeys across every leaf property under propGroup
+// (Layer objects themselves behave as the top-level property group, so
+// this is called directly on each layer — no separate layer-vs-group case
+// needed).
+function _lineup_countKeyframesRecursive(propGroup) {
+    var count = 0;
+    for (var i = 1; i <= propGroup.numProperties; i++) {
+        var prop;
+        try { prop = propGroup.property(i); } catch (e) { continue; }
+        if (!prop) continue;
+        if (prop.propertyType === PropertyType.PROPERTY) {
+            try { if (prop.numKeys) count += prop.numKeys; } catch (e) {}
+        } else {
+            count += _lineup_countKeyframesRecursive(prop);
+        }
+    }
+    return count;
+}

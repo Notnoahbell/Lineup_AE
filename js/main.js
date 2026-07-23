@@ -8,7 +8,7 @@ var cs = new CSInterface();
 
 // Tab order determines slide direction — switching to a LATER tab (home →
 // tools) slides right, an EARLIER one (tools → home) slides left.
-var TAB_ORDER = ['home', 'tools'];
+var TAB_ORDER = ['home', 'tools', 'trophy'];
 var _activeTabName = 'home'; // matches the panel/button markup's own default-active tab
 var _tabSwitchSeq = 0;
 
@@ -33,15 +33,15 @@ function switchTab(name) {
     _activeTabName = name;
     var mySeq = ++_tabSwitchSeq;
 
-    ['home', 'tools'].forEach(function(n) {
+    ['home', 'tools', 'trophy'].forEach(function(n) {
         var btn = document.getElementById('tabBtn-' + n);
         if (btn) btn.classList.toggle('active', n === name);
     });
     // The pencil (Customize Quick Actions & Rearrange...) lives in the
     // shared footer, so it's visible regardless of tab by default — only
-    // makes sense on Home (nothing to rearrange on Tools).
+    // makes sense on Home (nothing to rearrange on Tools/Trophy).
     var editBtn = document.getElementById('quickActionsEditBtn');
-    if (editBtn) editBtn.style.display = (name === 'tools') ? 'none' : '';
+    if (editBtn) editBtn.style.display = (name === 'tools' || name === 'trophy') ? 'none' : '';
     try { localStorage.setItem('lineup-active-tab', name); } catch(e) {}
 
     var oldPanel = document.getElementById(prevName === 'home' ? 'panel-content' : 'tab-' + prevName);
@@ -110,7 +110,7 @@ function _tabAnimate(el, keyframes, opts) {
 }
 
 function _applyTabPanels(name) {
-    ['home', 'tools'].forEach(function(n) {
+    ['home', 'tools', 'trophy'].forEach(function(n) {
         var panel = document.getElementById(n === 'home' ? 'panel-content' : 'tab-' + n);
         if (panel) panel.classList.toggle('active', n === name);
     });
@@ -135,7 +135,7 @@ function _applyTabPanels(name) {
 function restoreActiveTab() {
     var name;
     try { name = localStorage.getItem('lineup-active-tab'); } catch(e) {}
-    if (name === 'tools') switchTab(name);
+    if (name === 'tools' || name === 'trophy') switchTab(name);
 }
 
 // ── Home layout ──────────────────────────────────────────────────────────────
@@ -151,13 +151,28 @@ function _homeBoxes() {
     return Array.prototype.slice.call(document.querySelectorAll('#homeTopGroup .tool-box[data-block-id], #homeGrid .tool-box[data-block-id]'));
 }
 
-// Sums each child of Anchor's own tool-body (icon grid, divider, mode-line
-// row) rather than reading the tool-body's own rendered height, which can
-// be stretched taller by a tall neighbor sharing its grid row-track.
-// Narrow stack lays these children out as a row instead (grid left,
-// controls right — see the CSS), so summing them there would wildly
-// overstate the natural height; the tallest child is the real height in
-// that layout, same as any other row of same-height-cross-axis items.
+// Sums Anchor's own natural content (icon grid, toolbar) rather than
+// reading the tool-body's own rendered height, which can be stretched
+// taller by a tall neighbor sharing its grid row-track. Narrow stack lays
+// these children out as a row instead (grid left, controls right — see
+// the CSS), so summing them there would wildly overstate the natural
+// height; the tallest child is the real height in that layout, same as
+// any other row of same-height-cross-axis items.
+//
+// Non-narrow-stack specifically measures .anchor-tools-group, NOT its
+// parent .anchor-mode-line — .anchor-mode-line is flex:1/align-items:
+// stretch (fills whatever height is left below the grid AND stretches
+// .anchor-tools-group to match, so the toolbar's buttons can actually grow
+// into that space instead of leaving it as dead space — see .anchor-mode-
+// line's own CSS comment), and reading either of their rendered heights
+// back in here would feed that fill straight back into the very number
+// driving it: taller row -> bigger sum -> bigger --home-anchor-unit ->
+// taller neighbor -> taller shared row -> taller row again, forever.
+// .anchor-tools-group's own flex:1/.anchor-mode-btn's and .anchor-null-
+// cluster's flex:1 all get temporarily reset to their natural (min-height-
+// floored) size for just this one measurement, then restored — giving a
+// stable, non-circular number regardless of how much they're actually
+// stretched the rest of the time.
 function _anchorNaturalHeight() {
     var toolBox = document.querySelector('.tool-box[data-block-id="anchor"]');
     var body    = document.querySelector('.tool-body[data-block-id="anchor"]');
@@ -175,13 +190,25 @@ function _anchorNaturalHeight() {
     }
 
     var gap = parseFloat(getComputedStyle(body).rowGap) || 0;
-    var total = 0;
-    Array.prototype.forEach.call(body.children, function(child, i) {
-        if (i > 0) total += gap;
-        total += child.getBoundingClientRect().height;
-    });
-    total += padding;
-    return total;
+    var anchorRow  = body.querySelector('.anchor-row');
+    var toolsGroup = body.querySelector('.anchor-tools-group');
+    var rowH = anchorRow ? anchorRow.getBoundingClientRect().height : 0;
+    var toolsH = 0;
+    if (toolsGroup) {
+        var modeBtn     = toolsGroup.querySelector('.anchor-mode-btn');
+        var nullCluster = toolsGroup.querySelector('.anchor-null-cluster');
+        var prevGroupAlign  = toolsGroup.style.alignSelf;
+        var prevModeFlex    = modeBtn     ? modeBtn.style.flex     : '';
+        var prevClusterFlex = nullCluster ? nullCluster.style.flex : '';
+        toolsGroup.style.alignSelf = 'flex-start';
+        if (modeBtn)     modeBtn.style.flex     = '0 0 auto';
+        if (nullCluster) nullCluster.style.flex = '0 0 auto';
+        toolsH = toolsGroup.getBoundingClientRect().height;
+        toolsGroup.style.alignSelf = prevGroupAlign;
+        if (modeBtn)     modeBtn.style.flex     = prevModeFlex;
+        if (nullCluster) nullCluster.style.flex = prevClusterFlex;
+    }
+    return rowH + gap + toolsH + padding;
 }
 
 function _syncAnchorRowUnit() {
@@ -347,6 +374,52 @@ function _initAnchorTiers() {
     var grid = document.getElementById('homeToolGrid');
     if (!grid || typeof ResizeObserver === 'undefined') return;
     new ResizeObserver(function() { _syncAnchorTiers(); }).observe(grid);
+}
+
+// Cursor-follow spotlight on the anchor grid (see .anchor-grid::before in
+// style.css) — same look as the board-editing drag glow, but a single
+// element instead of a whole draggable-widget list, so this just runs its
+// own small eased-position loop directly, only while the pointer is
+// actually over the grid (mouseenter starts it, mouseleave stops it)
+// rather than continuously in the background.
+var _anchorGlowRAF = null;
+var _anchorGlowRawX = -9999, _anchorGlowRawY = -9999;
+var _anchorGlowX = -9999, _anchorGlowY = -9999;
+
+function _anchorGlowMove(e) {
+    _anchorGlowRawX = e.clientX;
+    _anchorGlowRawY = e.clientY;
+}
+
+function _anchorGlowTick() {
+    var grid = document.querySelector('.anchor-grid');
+    if (!grid) { _anchorGlowRAF = null; return; }
+    var dx = _anchorGlowRawX - _anchorGlowX, dy = _anchorGlowRawY - _anchorGlowY;
+    _anchorGlowX += dx * 0.12;
+    _anchorGlowY += dy * 0.12;
+    var rect = grid.getBoundingClientRect();
+    grid.style.setProperty('--glow-x', (_anchorGlowX - rect.left) + 'px');
+    grid.style.setProperty('--glow-y', (_anchorGlowY - rect.top) + 'px');
+    _anchorGlowRAF = requestAnimationFrame(_anchorGlowTick);
+}
+
+function _initAnchorGridGlow() {
+    var grid = document.querySelector('.anchor-grid');
+    if (!grid) return;
+    grid.addEventListener('mouseenter', function(e) {
+        // Snap the eased position to the cursor immediately instead of
+        // easing in from off-screen (-9999) — the same reasoning as the
+        // drag glow's own "no first-frame snap" comment, just applied at
+        // the start of hover here instead of continuously beforehand.
+        _anchorGlowRawX = _anchorGlowX = e.clientX;
+        _anchorGlowRawY = _anchorGlowY = e.clientY;
+        document.addEventListener('mousemove', _anchorGlowMove);
+        if (!_anchorGlowRAF) _anchorGlowRAF = requestAnimationFrame(_anchorGlowTick);
+    });
+    grid.addEventListener('mouseleave', function() {
+        document.removeEventListener('mousemove', _anchorGlowMove);
+        if (_anchorGlowRAF) { cancelAnimationFrame(_anchorGlowRAF); _anchorGlowRAF = null; }
+    });
 }
 
 // Align/Distribute's header row (icon + "Align to"/"Distribute to" + select
@@ -1141,7 +1214,7 @@ function setSizeFitMode(val) {
 var ANCHOR_MODE_OPTIONS = [
     {
         id: 0, label: 'Object', title: 'Based on: Object — this layer’s own bounds',
-        svg: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="6" y="6" width="8" height="8" rx="1.3"/></svg>'
+        svg: '<svg viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="4.5"/></svg>'
     },
     {
         id: 1, label: 'Selection', title: 'Based on: Selection — combined bounds of every selected layer',
@@ -1211,11 +1284,19 @@ function _buildAnchorModeCtx() {
     return el;
 }
 
-// Same positioning approach as _openShapeSelCtx (see its own comment) —
-// re-parented into the button's own .tab-panel and positioned from the
-// difference between two getBoundingClientRect() calls, so the panel's
-// own CSS zoom (Panel Scale) can't throw the flyout off from its button.
-function _openAnchorModeCtx(btn) {
+// Anchored to the click itself (via the event's clientX/Y) rather than
+// the button's own getBoundingClientRect() — clientX/Y come straight from
+// the OS pointer and are never distorted by CSS zoom the way an element's
+// gBCR can be in this CEF build (see the old approach this replaced,
+// still used as the no-event fallback below: re-parenting into the
+// button's own .tab-panel and diffing two gBCR calls, which canceled out
+// a single zoom layer like the panel-wide Panel Scale but not the extra,
+// independent zoom #homeTopGroup applies on top of it for Anchor/
+// Favorites-bar buttons specifically — that stacked distortion was
+// throwing the flyout off from where it was actually clicked). Anchoring
+// to the pointer sidesteps the whole class of bug instead of trying to
+// cancel out an unknown number of nested zooms.
+function _openAnchorModeCtx(btn, e) {
     if (!_anchorModeCtx) _anchorModeCtx = _buildAnchorModeCtx();
     var container = btn.closest('.tab-panel') || document.body;
     container.appendChild(_anchorModeCtx);
@@ -1230,15 +1311,14 @@ function _openAnchorModeCtx(btn) {
 
     var containerRect = container.getBoundingClientRect();
     var rect = btn.getBoundingClientRect();
-    var relLeft   = rect.left   - containerRect.left;
-    var relTop    = rect.top    - containerRect.top;
-    var relBottom = rect.bottom - containerRect.top;
+    var cx = (e ? e.clientX : rect.left) - containerRect.left;
+    var cy = (e ? e.clientY : rect.top)  - containerRect.top;
     var ctxW = _anchorModeCtx.offsetWidth;
     var ctxH = _anchorModeCtx.offsetHeight;
-    var left = Math.min(Math.max(4, relLeft), cw - ctxW - 4);
-    var top = (relBottom + 4 + ctxH <= ch)
-        ? relBottom + 4
-        : Math.max(4, relTop - ctxH - 4);
+    var left = Math.min(Math.max(4, cx - ctxW / 2), cw - ctxW - 4);
+    var top = (cy + 4 + ctxH <= ch)
+        ? cy + 4
+        : Math.max(4, cy - ctxH - 4);
     _anchorModeCtx.style.left = left + 'px';
     _anchorModeCtx.style.top  = top + 'px';
     _anchorModeCtx.classList.add('visible');
@@ -1279,7 +1359,137 @@ function doToggleIgnoreMasks() {
     _ignoreMasksRefreshButton();
 }
 
-function doAnchor(loc) {
+// Keeps the button visually square — it stretches height:100% to match
+// .anchor-null-btn's own height now (see .anchor-ignore-masks-btn's CSS
+// comment for why that's not aspect-ratio), so width is kept in sync with
+// however tall that actually renders, in JS, exactly like the ease-copy
+// interpolation button's own square-sync (_easeInterpSquareSync above).
+function _anchorIgnoreMasksSquareSync() {
+    var btn = document.getElementById('ignoreMasksBtn');
+    if (!btn || !btn.offsetParent) return;
+    btn.style.width = btn.offsetHeight + 'px';
+}
+
+function _initAnchorIgnoreMasksSquare() {
+    var cluster = document.querySelector('.anchor-null-cluster');
+    if (!cluster || typeof ResizeObserver === 'undefined') return;
+    new ResizeObserver(_anchorIgnoreMasksSquareSync).observe(cluster);
+    _anchorIgnoreMasksSquareSync();
+}
+
+// Same 9 directions the icons used to slide via CSS :hover (index here is
+// loc, 0-8, matching the grid's own reading-order layout) — null at index
+// 4 (Center) since that one scales instead of translating.
+var ANCHOR_HOVER_OFFSETS = [
+    [-4, -4], [0, -4], [4, -4],
+    [-4, 0],  null,    [4, 0],
+    [-4, 4],  [0, 4],  [4, 4]
+];
+// More than double the hover slide — "all the way to the edge" of the
+// button rather than the small hover nudge.
+var ANCHOR_SNAP_OFFSETS = [
+    [-11, -11], [0, -11], [11, -11],
+    [-11, 0],   null,     [11, 0],
+    [-11, 11],  [0, 11],  [11, 11]
+];
+// Smooth deceleration, no overshoot (was cubic-bezier(0.34,1.56,0.64,1),
+// an easeOutBack — the >1 middle value is exactly what made it bounce
+// past its target before settling; this curve never exceeds 1). A gentler
+// falloff than a first pass at this (0.22,1,0.36,1, an easeOutQuint) —
+// that one was still snapping to speed almost immediately; this eases
+// into it more gradually. Shared by every state change below (hover
+// in/out, click) so they all feel like the same motion regardless of
+// which one's currently playing.
+var ANCHOR_ICON_EASING = 'cubic-bezier(0.33, 1, 0.68, 1)';
+
+function _anchorIconTransform(loc, hovered) {
+    if (loc === 4) return hovered ? 'scale(1.12)' : 'scale(1)';
+    var off = hovered ? ANCHOR_HOVER_OFFSETS[loc] : [0, 0];
+    return 'translate(' + off[0] + 'px, ' + off[1] + 'px)';
+}
+
+// One Animation per icon at a time, tracked so a new one can cancel
+// whatever's still playing and continue smoothly FROM its current
+// (possibly mid-flight) transform instead of snapping there first — this
+// is what makes hovering off mid-click, or re-hovering mid-fade-out,
+// blend instead of jump. getComputedStyle reads whatever the in-progress
+// animation has interpolated to at this exact instant, so restarting from
+// it is seamless regardless of when the interruption happens.
+var _anchorIconAnims = new WeakMap();
+
+function _anchorAnimateIconTo(svg, toTransform, duration) {
+    var prev = _anchorIconAnims.get(svg);
+    var from = getComputedStyle(svg).transform;
+    if (prev) prev.cancel();
+    var anim = svg.animate(
+        [{ transform: from }, { transform: toTransform }],
+        { duration: duration, easing: ANCHOR_ICON_EASING, fill: 'forwards' }
+    );
+    _anchorIconAnims.set(svg, anim);
+    anim.onfinish = function() {
+        // Bake the end state into a plain inline style and let the
+        // Animation itself go — leaving fill:'forwards' Animations
+        // stacked up indefinitely is what future getComputedStyle reads
+        // (the next interruption) would otherwise have to unwind.
+        svg.style.transform = toTransform;
+        anim.cancel();
+        if (_anchorIconAnims.get(svg) === anim) _anchorIconAnims.delete(svg);
+    };
+    return anim;
+}
+
+// Hover in/out — same easing/mechanism as the click punch below, just a
+// two-point animation instead of three, and short enough to read as
+// immediate. Replaces the old CSS :hover transition entirely (see
+// .anchor-btn svg's own comment in style.css for why that couldn't
+// coexist with the click animation).
+function _anchorHoverIconTo(btn, loc, hovered) {
+    var svg = btn && btn.querySelector('svg');
+    if (!svg || typeof svg.animate !== 'function') return;
+    _anchorAnimateIconTo(svg, _anchorIconTransform(loc, hovered), 180);
+}
+
+function _initAnchorBtnHoverAnim() {
+    var buttons = document.querySelectorAll('.anchor-grid .anchor-btn');
+    for (var i = 0; i < buttons.length; i++) {
+        (function(btn, loc) {
+            btn.addEventListener('mouseenter', function() { _anchorHoverIconTo(btn, loc, true); });
+            btn.addEventListener('mouseleave', function() { _anchorHoverIconTo(btn, loc, false); });
+        })(buttons[i], i);
+    }
+}
+
+// Punches the clicked corner/edge icon out to the edge, then settles back
+// to the hover position — an exaggerated continuation of the hover slide
+// above, not a replacement for it. If the cursor leaves mid-animation,
+// _anchorHoverIconTo's own mouseleave handler (registered independently
+// above) fires _anchorAnimateIconTo again and cancels this one — reading
+// its current in-flight transform first, so the retarget to rest blends
+// instead of snapping, exactly like any other interruption here.
+function _animateAnchorClick(loc, btn) {
+    var svg = btn && btn.querySelector('svg');
+    if (!svg || typeof svg.animate !== 'function') return;
+    var edgeTransform = loc === 4
+        ? 'scale(1.3)'
+        : 'translate(' + ANCHOR_SNAP_OFFSETS[loc][0] + 'px, ' + ANCHOR_SNAP_OFFSETS[loc][1] + 'px)';
+    var hoverTransform = _anchorIconTransform(loc, true);
+    var prev = _anchorIconAnims.get(svg);
+    var from = getComputedStyle(svg).transform;
+    if (prev) prev.cancel();
+    var anim = svg.animate(
+        [{ transform: from }, { transform: edgeTransform }, { transform: hoverTransform }],
+        { duration: 346, easing: ANCHOR_ICON_EASING, fill: 'forwards' } // 384 * 0.9
+    );
+    _anchorIconAnims.set(svg, anim);
+    anim.onfinish = function() {
+        svg.style.transform = hoverTransform;
+        anim.cancel();
+        if (_anchorIconAnims.get(svg) === anim) _anchorIconAnims.delete(svg);
+    };
+}
+
+function doAnchor(loc, btn) {
+    _animateAnchorClick(loc, btn);
     run('lineup_anchorMove(' + loc + ',' + _anchorMode + ',' + (_ignoreMasks ? 1 : 0) + ')');
 }
 
@@ -1442,6 +1652,10 @@ function _easeInterpRefreshButton() {
     var svg = btn.querySelector('svg');
     if (svg) svg.outerHTML = mode.svg;
     btn.title = mode.title;
+    // Colors the button by type (see .ease-interp-btn[data-mode] in
+    // style.css) — a plain data attribute rather than 3 classes since only
+    // ever one applies at a time.
+    btn.setAttribute('data-mode', mode.id);
 }
 
 function _easeInterpRunActive(e) {
@@ -1474,12 +1688,11 @@ function _buildEaseInterpCtx() {
     return el;
 }
 
-// Same zoom-safe positioning approach as _openShapeSelCtx (see its own
-// comment) — re-parented into the button's own .tab-panel and positioned
-// from the difference between two getBoundingClientRect() calls, so the
-// panel's own CSS zoom (Panel Scale) can't throw the flyout off from its
-// button.
-function _openEaseInterpCtx(btn) {
+// Same cursor-anchored positioning as _openShapeSelCtx (see its own
+// comment) — clientX/Y from the event, not the button's own
+// getBoundingClientRect(), since the latter can be distorted by CSS zoom
+// in this CEF build in a way clientX/Y never are.
+function _openEaseInterpCtx(btn, e) {
     if (!_easeInterpCtx) _easeInterpCtx = _buildEaseInterpCtx();
     var container = btn.closest('.tab-panel') || document.body;
     container.appendChild(_easeInterpCtx);
@@ -1494,15 +1707,14 @@ function _openEaseInterpCtx(btn) {
 
     var containerRect = container.getBoundingClientRect();
     var rect = btn.getBoundingClientRect();
-    var relLeft   = rect.left   - containerRect.left;
-    var relTop    = rect.top    - containerRect.top;
-    var relBottom = rect.bottom - containerRect.top;
+    var cx = (e ? e.clientX : rect.left) - containerRect.left;
+    var cy = (e ? e.clientY : rect.top)  - containerRect.top;
     var ctxW = _easeInterpCtx.offsetWidth;
     var ctxH = _easeInterpCtx.offsetHeight;
-    var left = Math.min(Math.max(4, relLeft), cw - ctxW - 4);
-    var top = (relBottom + 4 + ctxH <= ch)
-        ? relBottom + 4
-        : Math.max(4, relTop - ctxH - 4);
+    var left = Math.min(Math.max(4, cx - ctxW / 2), cw - ctxW - 4);
+    var top = (cy + 4 + ctxH <= ch)
+        ? cy + 4
+        : Math.max(4, cy - ctxH - 4);
     _easeInterpCtx.style.left = left + 'px';
     _easeInterpCtx.style.top  = top + 'px';
     _easeInterpCtx.classList.add('visible');
@@ -3235,31 +3447,27 @@ function _buildShapeSelCtx() {
     return el;
 }
 
-// Anchored to the button itself (below it by default, flipping above when
-// there isn't room), not the right-click cursor position — matching AE's
-// own tool-group flyout, which drops from the button, not from wherever
-// you happened to click on it. Dimensions are measured BEFORE adding
-// .visible: .fav-ctx's base state is opacity:0, not display:none, so it's
-// already laid out and measurable without a visible flash at the wrong
-// spot first — same trick used here to test-fit the labeled layout: try
-// it, measure, and only fall back to icon-only/.compact if it wouldn't
-// actually fit, all before anything is shown.
+// Anchored to the right-click position itself via the event's clientX/Y,
+// not the button's own getBoundingClientRect() — clientX/Y come straight
+// from the OS pointer and are never distorted by CSS zoom the way an
+// element's gBCR can be in this CEF build. Dimensions are measured BEFORE
+// adding .visible: .fav-ctx's base state is opacity:0, not display:none,
+// so it's already laid out and measurable without a visible flash at the
+// wrong spot first — same trick used here to test-fit the labeled
+// layout: try it, measure, and only fall back to icon-only/.compact if it
+// wouldn't actually fit, all before anything is shown.
 //
-// Positioned relative to the button's own .tab-panel (#panel-content or
-// #tab-tools), not the true viewport — a favorited widget's buttons live
-// inside #panel-content, which the panel-scale slider zooms via CSS zoom
-// (see applyScale); this popup is a plain DOM sibling appended outside
-// that zoomed subtree, and turning btn.getBoundingClientRect() (measured
-// INSIDE the zoomed context) directly into viewport-relative fixed
-// coordinates for something OUTSIDE it doesn't line up once the zoom
-// isn't 1 (the default scale is already 1.05, not 100%) — this is exactly
-// what put the flyout visibly off from its button once Shape Tools sat in
-// the Favorites carousel. Re-parenting into the SAME .tab-panel and
-// measuring both rects with the same getBoundingClientRect() call, then
-// working only in the difference between them, cancels that mismatch out
-// regardless of the zoom factor, since both measurements carry the exact
-// same distortion.
-function _openShapeSelCtx(btn) {
+// Still positioned relative to the button's own .tab-panel (#panel-content
+// or #tab-tools), not the true viewport, and still re-parented into it —
+// a favorited widget's buttons live inside #panel-content, which the
+// panel-scale slider zooms via CSS zoom (see applyScale), and this popup
+// needs to sit inside that same zoomed subtree to scale along with it.
+// Positioning FROM the click instead of the button is what actually fixed
+// the flyout landing away from its button once Anchor/Favorites-bar
+// buttons added a second, independent zoom layer (#homeTopGroup's own, on
+// top of Panel Scale) that the old "diff two gBCR calls" approach only
+// ever canceled out one layer of.
+function _openShapeSelCtx(btn, e) {
     if (!_shapeSelCtx) _shapeSelCtx = _buildShapeSelCtx();
     var container = btn.closest('.tab-panel') || document.body;
     container.appendChild(_shapeSelCtx);
@@ -3279,15 +3487,14 @@ function _openShapeSelCtx(btn) {
 
     var containerRect = container.getBoundingClientRect();
     var rect = btn.getBoundingClientRect();
-    var relLeft   = rect.left   - containerRect.left;
-    var relTop    = rect.top    - containerRect.top;
-    var relBottom = rect.bottom - containerRect.top;
+    var cx = (e ? e.clientX : rect.left) - containerRect.left;
+    var cy = (e ? e.clientY : rect.top)  - containerRect.top;
     var ctxW = _shapeSelCtx.offsetWidth;
     var ctxH = _shapeSelCtx.offsetHeight;
-    var left = Math.min(Math.max(4, relLeft), cw - ctxW - 4);
-    var top = (relBottom + 4 + ctxH <= ch)
-        ? relBottom + 4  // below, the default
-        : Math.max(4, relTop - ctxH - 4); // not enough room below — flip above instead
+    var left = Math.min(Math.max(4, cx - ctxW / 2), cw - ctxW - 4);
+    var top = (cy + 4 + ctxH <= ch)
+        ? cy + 4  // below, the default
+        : Math.max(4, cy - ctxH - 4); // not enough room below — flip above instead
     _shapeSelCtx.style.left = left + 'px';
     _shapeSelCtx.style.top  = top + 'px';
     _shapeSelCtx.classList.add('visible');
@@ -3419,12 +3626,13 @@ function _buildSplitTextCtx() {
     return el;
 }
 
-// Positioned relative to the button's own .tab-panel, not the viewport —
-// see the identical reasoning on _openShapeSelCtx above (shared bug, same
-// fix: re-parent into that tab-panel and work in the difference between
-// its rect and the button's, which cancels out whatever the panel-scale
-// zoom does to either measurement).
-function _openSplitTextCtx(btn) {
+// Positioned from the click itself, not the button's own
+// getBoundingClientRect() — see the identical reasoning on
+// _openShapeSelCtx above (shared bug, same fix: clientX/Y from the event
+// aren't distorted by CSS zoom the way an element's gBCR can be here).
+// Still re-parented into the button's own .tab-panel so the popup scales
+// along with whatever zoom that subtree carries.
+function _openSplitTextCtx(btn, e) {
     if (!_splitTextCtx) _splitTextCtx = _buildSplitTextCtx();
     var container = btn.closest('.tab-panel') || document.body;
     container.appendChild(_splitTextCtx);
@@ -3439,15 +3647,14 @@ function _openSplitTextCtx(btn) {
 
     var containerRect = container.getBoundingClientRect();
     var rect = btn.getBoundingClientRect();
-    var relLeft   = rect.left   - containerRect.left;
-    var relTop    = rect.top    - containerRect.top;
-    var relBottom = rect.bottom - containerRect.top;
+    var cx = (e ? e.clientX : rect.left) - containerRect.left;
+    var cy = (e ? e.clientY : rect.top)  - containerRect.top;
     var ctxW = _splitTextCtx.offsetWidth;
     var ctxH = _splitTextCtx.offsetHeight;
-    var left = Math.min(Math.max(4, relLeft), cw - ctxW - 4);
-    var top = (relBottom + 4 + ctxH <= ch)
-        ? relBottom + 4
-        : Math.max(4, relTop - ctxH - 4);
+    var left = Math.min(Math.max(4, cx - ctxW / 2), cw - ctxW - 4);
+    var top = (cy + 4 + ctxH <= ch)
+        ? cy + 4
+        : Math.max(4, cy - ctxH - 4);
     _splitTextCtx.style.left = left + 'px';
     _splitTextCtx.style.top  = top + 'px';
     _splitTextCtx.classList.add('visible');
@@ -7640,6 +7847,615 @@ function applyCompExport() {
     });
 }
 
+// ── Activity tracking (Trophy tab) ─────────────────────────────────────────
+// Gamifies AE usage — a workday streak plus running totals of keyframes
+// made, layers created, and exports completed, converted into a score.
+// AE's ExtendScript API has no events for any of this (no "keyframe added"/
+// "layer created" hook, and undo presses/graph-editor curve edits aren't
+// observable at all from a panel — the Timeline never sends CEP its
+// keystrokes), so this works entirely by polling a cheap snapshot
+// (lineup_getActivitySnapshot in host.jsx) and diffing it against the
+// previous poll to infer what changed. Undo presses and curve edits are
+// deliberately NOT tracked here — there's no reliable way to attribute
+// either without a real event API, and a heuristic (e.g. "count count
+// drops as undos") would be indistinguishable from ordinary deletion.
+// Keyframe counting is scoped to the currently SELECTED layers only (not
+// the whole comp) — walking every property of every layer every 3s scales
+// with total comp complexity and runs synchronously on AE's main thread, so
+// an unscoped walk could cost real, felt UI stutter on a heavy comp.
+// Scoping to the selection caps that cost at "how many layers are
+// selected" regardless of comp size, at the price of not counting
+// keyframes added to layers that aren't selected at poll time.
+var ACTIVITY_KEY = 'lineup-activity';
+var ACTIVITY_POLL_MS = 3000; // a background stat, not a live UI sync — no need for anything faster
+var ACTIVITY_POINTS = { keyframes: 1, layers: 3, exports: 15 };
+
+var _activityData = null;     // persisted totals/score/streak/history — see _activityLoad
+var _activityBaseline = null; // last-seen raw snapshot from host.jsx; NOT persisted — every fresh
+                               // panel load (or project/comp switch) just recaptures a starting
+                               // point instead of crediting whatever the project already had.
+
+function _activityDefaults() {
+    return {
+        totals: { keyframes: 0, layers: 0, exports: 0 },
+        score: 0,
+        streak: { current: 0, best: 0, lastActiveDate: null },
+        history: {} // 'YYYY-MM-DD' -> { keyframes, layers, exports, score } — days with any activity
+    };
+}
+
+function _activityLoad() {
+    var data = null;
+    try { data = JSON.parse(localStorage.getItem(ACTIVITY_KEY) || 'null'); } catch (e) {}
+    _activityData = data || _activityDefaults();
+}
+
+function _activitySave() {
+    try { localStorage.setItem(ACTIVITY_KEY, JSON.stringify(_activityData)); } catch (e) {}
+}
+
+function _activityDateKey(d) {
+    var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+    return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+}
+function _activityToday() { return _activityDateKey(new Date()); }
+function _activityParseDate(key) {
+    var parts = key.split('-');
+    return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+}
+function _activityIsWeekend(d) { var dow = d.getDay(); return dow === 0 || dow === 6; }
+
+// Counts Mon-Fri dates strictly BETWEEN two dates (both ends excluded) —
+// this is the whole streak rule in one number: 0 missed workdays in
+// between means the streak continues no matter what either date itself
+// falls on, which is exactly "skip weekends silently, but a weekend open
+// still keeps things going" without needing separate weekend-case logic.
+function _activityWorkdaysBetween(start, end) {
+    var count = 0;
+    var cur = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+    while (cur.getTime() < end.getTime()) {
+        if (!_activityIsWeekend(cur)) count++;
+        cur.setDate(cur.getDate() + 1);
+    }
+    return count;
+}
+
+// Runs once per calendar day the panel is actually used (a no-op every
+// other tick, via the lastActiveDate === today early-out) — extends the
+// streak when the gap since last use contains zero missed workdays
+// (see _activityWorkdaysBetween above), otherwise resets it to 1.
+function _activityCheckStreak() {
+    var today = _activityToday();
+    var streak = _activityData.streak;
+    if (streak.lastActiveDate === today) return;
+
+    if (!streak.lastActiveDate) {
+        streak.current = 1;
+    } else {
+        var gap = _activityWorkdaysBetween(_activityParseDate(streak.lastActiveDate), _activityParseDate(today));
+        streak.current = (gap === 0) ? (streak.current + 1) : 1;
+    }
+    streak.best = Math.max(streak.best || 0, streak.current);
+    streak.lastActiveDate = today;
+    _activitySave();
+}
+
+// Shared by _activityAddPoints and the Trophy timer (which stamps time
+// spent into the same per-day record, just without touching score/totals).
+function _activityGetOrCreateDay(key) {
+    var day = _activityData.history[key];
+    if (!day) { day = { keyframes: 0, layers: 0, exports: 0, score: 0, seconds: 0 }; _activityData.history[key] = day; }
+    return day;
+}
+
+function _activityAddPoints(kind, count) {
+    if (!count || count <= 0) return;
+    var pts = (ACTIVITY_POINTS[kind] || 0) * count;
+    _activityData.totals[kind] = (_activityData.totals[kind] || 0) + count;
+    _activityData.score += pts;
+
+    var day = _activityGetOrCreateDay(_activityToday());
+    day[kind] += count;
+    day.score += pts;
+}
+
+// Diffs the latest snapshot against the previous one to award points for
+// whatever increased. projectId/compId identity checks gate WHICH deltas
+// are trusted this tick: switching to a different project (or just a
+// different comp, for the comp-scoped keyframe count) makes for a huge,
+// meaningless one-tick jump that isn't "activity" at all — those deltas
+// are simply skipped rather than counted, and the new snapshot becomes the
+// baseline going forward. The very first tick after a panel load has no
+// prior baseline yet either, so it only ever captures one, never scores.
+function _activityPollTick() {
+    cs.evalScript('lineup_getActivitySnapshot()', function(result) {
+        if (!result || result.indexOf('ERROR:') === 0) return;
+        var snap;
+        try { snap = JSON.parse(result); } catch (e) { return; }
+
+        var baseline = _activityBaseline;
+        _activityBaseline = snap;
+        if (!baseline) return;
+
+        var projectChanged = baseline.projectId !== snap.projectId;
+        var compChanged = baseline.compId !== snap.compId;
+        var selectionChanged = baseline.selectionId !== snap.selectionId;
+        var timeChanged = baseline.currentTime !== snap.currentTime;
+
+        var dLayers = 0, dExports = 0, dKeyframes = 0;
+        if (!projectChanged) {
+            dLayers = snap.layerCount - baseline.layerCount;
+            dExports = snap.exportsDone - baseline.exportsDone;
+            if (dLayers > 0) _activityAddPoints('layers', dLayers);
+            if (dExports > 0) _activityAddPoints('exports', dExports);
+        }
+        // Keyframe count is scoped to the current layer selection (see
+        // lineup_getActivitySnapshot) — a selection change alone swings that
+        // number just as hard as a project/comp switch does, so it gets the
+        // same "don't count this tick, just rebaseline" treatment.
+        if (!projectChanged && !compChanged && !selectionChanged) {
+            dKeyframes = snap.keyframeCount - baseline.keyframeCount;
+            if (dKeyframes > 0) _activityAddPoints('keyframes', dKeyframes);
+        }
+
+        // Anything different from last poll — including changes that don't
+        // score any points (switching comps, moving the playhead, changing
+        // selection) — still counts as "the user is doing something" for
+        // the Trophy timer's auto-resume/inactivity check below.
+        if (projectChanged || compChanged || selectionChanged || timeChanged ||
+            dLayers !== 0 || dExports !== 0 || dKeyframes !== 0) {
+            _timerMarkActivity();
+        }
+
+        _activitySave();
+        _activityRenderTab();
+    });
+}
+
+// Tiny white clock icon used both here (the streak strip) and in the full
+// calendar's day cells — one shared constant instead of repeating the SVG
+// markup in both render functions.
+var TROPHY_MINI_CLOCK_SVG = '<svg viewBox="0 0 20 20" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7.5"/><path d="M10,5.5 V10 L13,12"/></svg>';
+
+// Finds the date range of the CURRENT streak run — walks backward from the
+// most recent active day that's on or before today, extending the range
+// through consecutive active days with zero missed-workday gaps between
+// them (the same rule _activityCheckStreak uses), stopping at the first
+// break. Returns null if there's no active day at all. Used purely for the
+// day strip's visual grouping (see _activityRenderDayStrip) — the actual
+// streak.current NUMBER is computed independently in _activityCheckStreak.
+function _activityCurrentStreakRange() {
+    var keys = Object.keys(_activityData.history || {}).sort();
+    if (!keys.length) return null;
+    var today = _activityToday();
+
+    var anchor = null;
+    for (var i = keys.length - 1; i >= 0; i--) {
+        if (keys[i] <= today) { anchor = keys[i]; break; }
+    }
+    if (!anchor) return null;
+
+    var start = anchor;
+    var anchorIdx = keys.indexOf(anchor);
+    for (var j = anchorIdx; j > 0; j--) {
+        var gap = _activityWorkdaysBetween(_activityParseDate(keys[j - 1]), _activityParseDate(keys[j]));
+        if (gap !== 0) break;
+        start = keys[j - 1];
+    }
+    return { start: start, end: anchor };
+}
+
+function _activityRenderDayStrip() {
+    var wrap = document.getElementById('trophyStreakDays');
+    if (!wrap) return;
+    var todayKey = _activityToday();
+    var DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    var streakRange = _activityCurrentStreakRange();
+
+    var cells = [];
+    for (var i = 6; i >= 0; i--) {
+        var d = new Date();
+        d.setDate(d.getDate() - i);
+        var key = _activityDateKey(d);
+        var day = _activityData.history[key];
+
+        var cls = 'trophy-day-dot';
+        if (_activityIsWeekend(d)) cls += ' is-weekend';
+        if (day) cls += ' is-active';
+        if (key === todayKey) cls += ' is-today';
+
+        var html = '<span class="trophy-day-dot-letter">' + DOW[d.getDay()] + '</span>';
+        if (day && day.seconds) {
+            html += '<span class="trophy-day-dot-time">' + TROPHY_MINI_CLOCK_SVG + _timerFormat(day.seconds) + '</span>';
+        }
+
+        var inStreak = !!(streakRange && key >= streakRange.start && key <= streakRange.end);
+        cells.push({ inStreak: inStreak, html: '<div class="' + cls + '">' + html + '</div>' });
+    }
+
+    // Group consecutive in-streak cells under one shared .trophy-streak-wrap
+    // instead of tinting every active day individually — the streak reads
+    // as a single contiguous highlighted subsection instead.
+    var out = '';
+    var idx = 0;
+    while (idx < cells.length) {
+        if (cells[idx].inStreak) {
+            var groupHtml = '', groupCount = 0;
+            while (idx < cells.length && cells[idx].inStreak) {
+                groupHtml += cells[idx].html;
+                groupCount++;
+                idx++;
+            }
+            out += '<div class="trophy-streak-wrap" style="flex:' + groupCount + '">' + groupHtml + '</div>';
+        } else {
+            out += cells[idx].html;
+            idx++;
+        }
+    }
+    wrap.innerHTML = out;
+}
+
+// Score/Keyframes/Layers/Exports show TODAY's numbers, not the all-time
+// cumulative — d.score/d.totals still track the all-time sums underneath
+// (used by the leaderboard's All-Time tab and unaffected by this), this
+// just changes what the Trophy tab itself displays day to day.
+function _activityRenderTab() {
+    if (!_activityData) return;
+    var d = _activityData;
+    var today = d.history[_activityToday()] || { keyframes: 0, layers: 0, exports: 0, score: 0 };
+    var scoreEl = document.getElementById('trophyScoreValue');
+    if (scoreEl) scoreEl.textContent = today.score;
+    var kfEl = document.getElementById('trophyStatKeyframes');
+    if (kfEl) kfEl.textContent = today.keyframes;
+    var layEl = document.getElementById('trophyStatLayers');
+    if (layEl) layEl.textContent = today.layers;
+    var expEl = document.getElementById('trophyStatExports');
+    if (expEl) expEl.textContent = today.exports;
+    var streakEl = document.getElementById('trophyStreakCount');
+    if (streakEl) streakEl.textContent = d.streak.current;
+    var bestEl = document.getElementById('trophyStreakBest');
+    if (bestEl) bestEl.textContent = d.streak.best;
+    _activityRenderDayStrip();
+}
+
+function _activityInit() {
+    _activityLoad();
+    _activityCheckStreak();
+    _activityRenderTab();
+}
+
+// ── Enable Scoring (Settings toggle) ─────────────────────────────────────
+// Master on/off for the activity poll specifically — that's the one piece
+// of this whole feature that can actually cost real performance (it walks
+// every property of the selected layers via evalScript every 3s; see
+// lineup_getActivitySnapshot in host.jsx), unlike the session timer's own
+// plain 1s local setInterval, which stays running either way since it
+// isn't what anyone would call "lag." js/leaderboard.js independently
+// checks this same localStorage key before its own periodic push/pull, so
+// one switch mutes both halves of the background work at once. Defaults
+// to ON — absent/anything other than an explicit '0' counts as enabled.
+var _activityPollIntervalId = null;
+
+function _scoringEnabled() {
+    var v;
+    try { v = localStorage.getItem('lineup-scoring-enabled'); } catch (e) {}
+    return v !== '0';
+}
+
+function _activityApplyScoringEnabled(enabled) {
+    var notice = document.getElementById('scoringDisabledNotice');
+    if (notice) notice.style.display = enabled ? 'none' : '';
+    if (enabled) {
+        if (!_activityPollIntervalId) _activityPollIntervalId = setInterval(_activityPollTick, ACTIVITY_POLL_MS);
+    } else if (_activityPollIntervalId) {
+        clearInterval(_activityPollIntervalId);
+        _activityPollIntervalId = null;
+    }
+}
+
+function toggleScoring(on) {
+    try { localStorage.setItem('lineup-scoring-enabled', on ? '1' : '0'); } catch (e) {}
+    _activityApplyScoringEnabled(!!on);
+}
+
+function restoreScoringSetting() {
+    var enabled = _scoringEnabled();
+    var chk = document.getElementById('scoringEnabledCheck');
+    if (chk) chk.checked = enabled;
+    _activityApplyScoringEnabled(enabled);
+}
+
+// Called by js/leaderboard.js after it merges cloud-synced history into
+// localStorage['lineup-activity'] — this module loaded its own in-memory
+// _activityData once at startup and never re-reads localStorage on its
+// own, so without this hook a merge would just sit there until the next
+// periodic _activitySave() (from _activityPollTick/_timerTick) silently
+// overwrote it with this module's stale pre-merge copy. Kept as a small
+// public hook rather than main.js reaching into leaderboard.js, or vice
+// versa, so the two stay fully decoupled either direction.
+window._activityReloadFromCloud = function () {
+    _activityLoad();
+    _activityCheckStreak();
+    var today = _activityToday();
+    var day = _activityData.history[today];
+    _timerElapsedToday = (day && day.seconds) || 0;
+    _activityRenderTab();
+    _timerRender();
+};
+
+// ── Trophy session timer ─────────────────────────────────────────────────────
+// A live "how long have I been working today" clock — starts the moment the
+// panel loads (CEP's own AutoVisible setting is what actually ties that to
+// "AE just opened"), auto-pauses after 5 minutes with no detected activity,
+// and auto-resumes the instant anything happens again — via the same
+// activity heartbeat the poll above already computes (_timerMarkActivity),
+// plus a cheap local mousedown/keydown listener that catches interaction
+// with this panel's own UI without needing an evalScript round-trip at all.
+// The manual pause button is NOT a hard stop — it's the exact same "paused"
+// state as the inactivity timeout, so any detected activity resumes it
+// either way, whether or not the user ever clicks Resume. Doesn't affect
+// score; persisted per-day alongside the other stats (see
+// _activityGetOrCreateDay) purely so a past day's calendar entry can show
+// how long that day's session ran.
+var TIMER_INACTIVITY_MS = 5 * 60 * 1000;
+
+var _timerRunning = false;
+var _timerElapsedToday = 0; // seconds
+var _timerDateKey = null;   // the day _timerElapsedToday currently belongs to
+var _lastActivityAt = 0;
+
+function _timerFormat(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    if (sec < 60) {
+        return '0:' + (sec < 10 ? '0' : '') + sec;
+    }
+    var totalMin = Math.floor(sec / 60);
+    if (totalMin < 60) return totalMin + 'm';
+    var hr = Math.floor(totalMin / 60);
+    var min = totalMin % 60;
+    return hr + 'hr ' + min + 'm';
+}
+
+function _timerRender() {
+    var valueEl = document.getElementById('trophyTimerValue');
+    if (valueEl) valueEl.textContent = _timerFormat(_timerElapsedToday);
+    var statusEl = document.getElementById('trophyTimerStatus');
+    if (statusEl) statusEl.textContent = _timerRunning ? 'Active' : 'Inactive';
+    var card = document.getElementById('trophyTimerCard');
+    if (card) card.classList.toggle('is-paused', !_timerRunning);
+}
+
+// Called both by the activity poll's heartbeat and by this panel's own
+// mousedown/keydown listener — resets the inactivity clock, and if the
+// timer was paused (manually or via timeout), resumes it.
+function _timerMarkActivity() {
+    _lastActivityAt = Date.now();
+    if (!_timerRunning) {
+        _timerRunning = true;
+        _timerRender();
+    }
+}
+
+function _timerToggle() {
+    if (_timerRunning) {
+        _timerRunning = false;
+        _timerRender();
+    } else {
+        _timerMarkActivity(); // resume + reset the inactivity clock together
+    }
+}
+
+function _timerTick() {
+    var today = _activityToday();
+    if (today !== _timerDateKey) {
+        // Crossed midnight with the panel left open — start a fresh
+        // per-day counter and let the streak roll over too, instead of
+        // silently carrying yesterday's seconds into today (or leaving
+        // the streak stale until the next manual reload).
+        _timerDateKey = today;
+        _activityCheckStreak();
+        var existing = _activityData.history[today];
+        _timerElapsedToday = (existing && existing.seconds) || 0;
+    }
+
+    if (_timerRunning) {
+        if (Date.now() - _lastActivityAt > TIMER_INACTIVITY_MS) {
+            _timerRunning = false;
+        } else {
+            _timerElapsedToday++;
+            _activityGetOrCreateDay(today).seconds = _timerElapsedToday;
+            // Saved right here, every second, rather than only relying on
+            // the 3s activity poll's own save — that poll skips its very
+            // first tick (no baseline yet) and only fires at all while
+            // evalScript keeps succeeding, so leaving persistence solely up
+            // to it risked losing a few seconds if AE (and the panel with
+            // it) closed shortly after a session started. This is what
+            // actually guarantees a same-day reopen resumes from the exact
+            // last recorded total instead of an occasionally-stale one.
+            _activitySave();
+        }
+    }
+    _timerRender();
+}
+
+function _timerInit() {
+    _timerDateKey = _activityToday();
+    var existing = _activityData.history[_timerDateKey];
+    _timerElapsedToday = (existing && existing.seconds) || 0;
+    _timerRunning = true;
+    _lastActivityAt = Date.now();
+    document.addEventListener('mousedown', _timerMarkActivity);
+    document.addEventListener('keydown', _timerMarkActivity);
+    _timerRender();
+    setInterval(_timerTick, 1000);
+}
+
+// ── Trophy activity calendar (streak card's expanded 365-day view) ─────────
+// One traditional Sun-start month grid at a time, paginated (Prev/Next)
+// across the past 12 months rather than all stacked into one scroller —
+// built fresh on every open/page turn (cheap: at most ~42 cells, plain DOM).
+var MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+var CAL_DOW_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+var _trophyCalMonthOffset = 0; // months back from the current month; 0..11
+
+function _activityMonthCells(year, month) {
+    var firstDow = new Date(year, month, 1).getDay();
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var cells = [];
+    for (var i = 0; i < firstDow; i++) cells.push(null);
+    for (var day = 1; day <= daysInMonth; day++) cells.push(day);
+    return cells;
+}
+
+function _renderTrophyCalendar() {
+    var body = document.getElementById('trophyCalBody');
+    if (!body) return;
+    body.innerHTML = '';
+    var today = new Date();
+    var todayKey = _activityToday();
+
+    var d = new Date(today.getFullYear(), today.getMonth() - _trophyCalMonthOffset, 1);
+    var y = d.getFullYear(), m = d.getMonth();
+
+    var lbl = document.getElementById('trophyCalMonthLbl');
+    if (lbl) lbl.textContent = MONTH_NAMES[m] + ' ' + y;
+    var prevBtn = document.getElementById('trophyCalPrevBtn');
+    var nextBtn = document.getElementById('trophyCalNextBtn');
+    var todayBtn = document.getElementById('trophyCalTodayBtn');
+    if (prevBtn) prevBtn.disabled = _trophyCalMonthOffset >= 11;
+    if (nextBtn) nextBtn.disabled = _trophyCalMonthOffset <= 0;
+    if (todayBtn) todayBtn.disabled = _trophyCalMonthOffset === 0;
+
+    var dowRow = document.createElement('div');
+    dowRow.className = 'trophy-cal-dow-row';
+    CAL_DOW_LETTERS.forEach(function(l) {
+        var s = document.createElement('span');
+        s.textContent = l;
+        dowRow.appendChild(s);
+    });
+    body.appendChild(dowRow);
+
+    var grid = document.createElement('div');
+    grid.className = 'trophy-cal-grid';
+    _activityMonthCells(y, m).forEach(function(dayNum) {
+        var cell = document.createElement('button');
+        cell.type = 'button';
+        if (dayNum === null) {
+            cell.className = 'trophy-cal-day is-blank';
+            cell.disabled = true;
+            grid.appendChild(cell);
+            return;
+        }
+        var key = y + '-' + (m + 1 < 10 ? '0' : '') + (m + 1) + '-' + (dayNum < 10 ? '0' : '') + dayNum;
+        var day = _activityData.history[key];
+        cell.className = 'trophy-cal-day';
+        var html = '<span class="trophy-cal-day-num">' + dayNum + '</span>';
+        if (day) {
+            cell.classList.add('has-activity');
+            if (day.seconds) {
+                html += '<span class="trophy-cal-day-time">' + TROPHY_MINI_CLOCK_SVG + _timerFormat(day.seconds) + '</span>';
+            }
+        }
+        cell.innerHTML = html;
+        cell.setAttribute('data-date', key);
+        if (key === todayKey) cell.classList.add('is-today');
+        if (_activityParseDate(key).getTime() > today.getTime()) cell.classList.add('is-future');
+        cell.addEventListener('click', function() { _showTrophyCalDay(this.getAttribute('data-date')); });
+        grid.appendChild(cell);
+    });
+    body.appendChild(grid);
+}
+
+function _trophyCalResetDetail() {
+    var detail = document.getElementById('trophyCalDetail');
+    if (detail) detail.innerHTML = '<div class="trophy-cal-detail-empty">Select a day to see stats</div>';
+}
+
+function _trophyCalPrevMonth() {
+    if (_trophyCalMonthOffset >= 11) return;
+    _trophyCalMonthOffset++;
+    _renderTrophyCalendar();
+    _trophyCalResetDetail();
+}
+function _trophyCalNextMonth() {
+    if (_trophyCalMonthOffset <= 0) return;
+    _trophyCalMonthOffset--;
+    _renderTrophyCalendar();
+    _trophyCalResetDetail();
+}
+function _trophyCalGoToToday() {
+    if (_trophyCalMonthOffset === 0) return;
+    _trophyCalMonthOffset = 0;
+    _renderTrophyCalendar();
+    _trophyCalResetDetail();
+}
+
+// Icon+value chips (Time/Keyframes/Layers/Exports/Points) — same icons and
+// colors as the tab's own .trophy-stat-tile/.trophy-timer/.trophy-score
+// cards, so a day's detail view reads as the same visual language rather
+// than a plain text summary.
+function _showTrophyCalDay(key) {
+    var prevSelected = document.querySelector('.trophy-cal-day.is-selected');
+    if (prevSelected) prevSelected.classList.remove('is-selected');
+    var cell = document.querySelector('.trophy-cal-day[data-date="' + key + '"]');
+    if (cell) cell.classList.add('is-selected');
+
+    var detail = document.getElementById('trophyCalDetail');
+    if (!detail) return;
+    var d = _activityParseDate(key);
+    var label = MONTH_NAMES[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+    var day = _activityData.history[key];
+
+    if (!day) {
+        detail.innerHTML = '<div class="trophy-cal-detail-date">' + label + '</div>' +
+            '<div class="trophy-cal-detail-empty">No activity this day</div>';
+        return;
+    }
+    detail.innerHTML =
+        '<div class="trophy-cal-detail-date">' + label + '</div>' +
+        '<div class="trophy-cal-detail-stats">' +
+            '<div class="trophy-cal-detail-stat">' +
+                '<svg viewBox="0 0 20 20" fill="none" stroke="#6cc0ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7.5"/><path d="M10,5.5 V10 L13,12"/></svg>' +
+                '<div class="trophy-cal-detail-stat-value">' + _timerFormat(day.seconds || 0) + '</div>' +
+                '<div class="trophy-cal-detail-stat-label">Time</div>' +
+            '</div>' +
+            '<div class="trophy-cal-detail-stat">' +
+                '<svg viewBox="0 0 20 20" fill="#7aaaff"><path d="M10,2 L18,10 L10,18 L2,10 Z"/></svg>' +
+                '<div class="trophy-cal-detail-stat-value">' + day.keyframes + '</div>' +
+                '<div class="trophy-cal-detail-stat-label">Keyframes</div>' +
+            '</div>' +
+            '<div class="trophy-cal-detail-stat">' +
+                '<svg viewBox="0 0 20 20" fill="none" stroke="#7aaaff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="16" height="9" rx="1.5"/><line x1="2" y1="10" x2="18" y2="10"/></svg>' +
+                '<div class="trophy-cal-detail-stat-value">' + day.layers + '</div>' +
+                '<div class="trophy-cal-detail-stat-label">Layers</div>' +
+            '</div>' +
+            '<div class="trophy-cal-detail-stat">' +
+                '<svg viewBox="0 0 20 20" fill="none" stroke="#7aaaff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10,3 V12"/><polyline points="6.5,8.5 10,12 13.5,8.5"/><path d="M4,13.5 V15.5 A1.2,1.2 0 0,0 5.2,16.7 H14.8 A1.2,1.2 0 0,0 16,15.5 V13.5"/></svg>' +
+                '<div class="trophy-cal-detail-stat-value">' + day.exports + '</div>' +
+                '<div class="trophy-cal-detail-stat-label">Exports</div>' +
+            '</div>' +
+            '<div class="trophy-cal-detail-stat">' +
+                '<svg viewBox="0 0 20 20" fill="#e8c140"><polygon points="10,2 12.4,7.6 18.5,8.2 13.9,12.2 15.3,18.2 10,15 4.7,18.2 6.1,12.2 1.5,8.2 7.6,7.6"/></svg>' +
+                '<div class="trophy-cal-detail-stat-value">' + day.score + '</div>' +
+                '<div class="trophy-cal-detail-stat-label">Points</div>' +
+            '</div>' +
+        '</div>';
+}
+
+function _openTrophyCalendar() {
+    var overlay = document.getElementById('trophyCalOverlay');
+    if (!overlay) return;
+    _trophyCalMonthOffset = 0;
+    _renderTrophyCalendar();
+    _trophyCalResetDetail();
+    overlay.classList.remove('trophy-cal-hidden');
+}
+
+function _closeTrophyCalendar() {
+    var overlay = document.getElementById('trophyCalOverlay');
+    if (overlay) overlay.classList.add('trophy-cal-hidden');
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -7647,11 +8463,14 @@ document.addEventListener('DOMContentLoaded', function() {
     _shapeSelInit();
     _anchorModeInit();
     _ignoreMasksRefreshButton();
+    _initAnchorIgnoreMasksSquare();
     _easeInterpInit();
     _initEaseInterpSquare();
     _easeSelIndicatorRender();
     _splitTextInit();
     _initAnchorTiers();
+    _initAnchorGridGlow();
+    _initAnchorBtnHoverAnim();
     restoreClassicOrder();
     restoreClassicCollapsed();
     restoreLayoutMode();
@@ -7660,6 +8479,7 @@ document.addEventListener('DOMContentLoaded', function() {
     _blApplyLayout();
     restoreHighContrast();
     restoreSmartStack();
+    restoreScoringSetting();
     initToolsSearch();
     _initToolsFilterCompact();
     restoreCollapsed();
@@ -7669,10 +8489,14 @@ document.addEventListener('DOMContentLoaded', function() {
     _cpInitScrubs();
     _cpDrawHueCanvas();
     _initHeaderWidthScrub();
+    _activityInit();
+    _timerInit();
     setInterval(_pollKeyAlignMode, 300);
     setInterval(_pollShapeColorHud, 1000);
     setInterval(_pollFavSmartStack, 300);
     setInterval(_pollEaseGraph, 250);
+    // The activity poll's own interval is started by restoreScoringSetting()
+    // above instead of unconditionally here — see _activityApplyScoringEnabled.
 
     // Distribute pickers' own star buttons (favorite a Z/Path/Radial/Grid
     // distribute mode) persist independently of any UI chrome — just load

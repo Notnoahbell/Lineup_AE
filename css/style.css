@@ -252,6 +252,54 @@ body.high-contrast #homeClassic .anchor-grid { background: #000000; border-color
 body.high-contrast #homeClassic .anchor-btn { background: #000000; color: #d0d0d0; }
 body.high-contrast #homeClassic .anchor-btn:hover { background: #3a3a3a; color: #ffffff; }
 
+/* Trophy tab / Leaderboard — most of these components already use
+   var(--text)/var(--text-dim)/var(--accent)/var(--bg-btn)/var(--border-h)
+   etc. and re-point automatically with the rest of the app; this covers
+   only the pieces written with literal hex values (same reason every
+   other override above exists), matching that same #000000/#909090/
+   #ffffff/#4d9bff high-contrast palette rather than inventing a new one. */
+body.high-contrast .trophy-score-card,
+body.high-contrast .trophy-timer-card,
+body.high-contrast .trophy-streak-card,
+body.high-contrast .trophy-stat-tile,
+body.high-contrast .trophy-leaderboard-card { background: #000000; border-color: #909090; }
+body.high-contrast .trophy-score-icon { color: #ffd75e; }
+body.high-contrast .trophy-streak-icon { color: #ffb066; }
+body.high-contrast .trophy-timer-clock-icon { color: #c0c0c0; }
+body.high-contrast .trophy-timer-btn { border-color: #909090; }
+body.high-contrast .trophy-timer-btn:hover { border-color: #ffffff; }
+body.high-contrast .trophy-streak-best-panel { background: #000000; border-color: #909090; }
+body.high-contrast .trophy-disabled-notice { background: #000000; border-color: #909090; }
+body.high-contrast .trophy-stat-tile svg,
+body.high-contrast .trophy-leaderboard-icon { color: #6db4ff; }
+
+body.high-contrast .trophy-day-dot { background: #000000; border-color: #909090; }
+body.high-contrast .trophy-day-dot.is-active { background: #2c2c2c; border-color: #b0b0b0; }
+body.high-contrast .trophy-day-dot.is-today { background: #163e73; border-color: #4d9bff; color: #ffffff; }
+body.high-contrast .trophy-streak-wrap { border-color: #ffb066; background: rgba(255, 176, 102, 0.14); }
+
+body.high-contrast .trophy-cal-modal,
+body.high-contrast .lb-full-modal { background: #000000; border-color: #909090; }
+body.high-contrast .trophy-cal-nav-btn,
+body.high-contrast .trophy-cal-nav-today-btn { border-color: #909090; }
+body.high-contrast .trophy-cal-nav-btn:hover,
+body.high-contrast .trophy-cal-nav-today-btn:hover { border-color: #ffffff; }
+body.high-contrast .trophy-cal-day { background: #000000; border-color: #909090; }
+body.high-contrast .trophy-cal-day:hover { border-color: #ffffff; }
+body.high-contrast .trophy-cal-day.has-activity { background: #163e73; border-color: #4d9bff; color: #ffffff; }
+body.high-contrast .trophy-cal-detail-stat { background: #000000; border-color: #909090; }
+
+body.high-contrast .lb-row { background: #000000; }
+body.high-contrast .lb-row.is-me { box-shadow: 0 0 0 1px #4d9bff inset; }
+body.high-contrast .lb-row.is-me .lb-name,
+body.high-contrast .lb-row.is-me .lb-score { color: #4d9bff; }
+body.high-contrast .lb-name-input { background: #000000; border-color: #909090; }
+body.high-contrast .lb-auth-btn-ghost { border-color: #909090; color: #e0e0e0; }
+body.high-contrast .lb-auth-btn-ghost:hover { border-color: #ffffff; color: #ffffff; }
+body.high-contrast .lb-period-tab { border-color: #909090; color: #e0e0e0; }
+body.high-contrast .lb-period-tab:hover { border-color: #ffffff; color: #ffffff; }
+body.high-contrast .lb-period-tab.active { background: #163e73; border-color: #4d9bff; color: #ffffff; }
+
 html, body {
     background: var(--bg);
     color: var(--text);
@@ -657,6 +705,746 @@ body.layout-classic .tab-bar {
     .tools-grid-btn svg { width: 32%; height: 32%; }
 }
 
+/* ── Trophy tab (activity tracking / gamification) ───────────────────────── */
+/* Same cap/centering as .tab-bar/.tool-grid/#tab-tools — plain flex column
+   instead of #tab-tools' search/filter grid, since this tab is just a
+   stack of readout cards with no controls of its own. #id beats the
+   generic .tab-panel.active class rule regardless of source order, same
+   trick #tab-tools.active uses above. */
+#tab-trophy {
+    width: 100%;
+    max-width: 570px;
+    margin: 0 auto;
+    padding: 10px;
+    gap: 10px;
+}
+#tab-trophy.active { display: flex; flex-direction: column; }
+
+/* Shown when Settings > Enable Scoring is off — see _activityApplyScoringEnabled
+   in main.js. The rest of the tab just keeps showing whatever was last
+   recorded (frozen, not cleared) — this is purely a "here's why it isn't
+   moving" cue, not a state change of its own. */
+.trophy-disabled-notice {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: center;
+    background: #232323;
+    border: 1px solid #2c2c2c;
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+/* Score + session timer sit side by side as a matched pair of cards —
+   Score is the "headline" number so it gets more of the row. */
+.trophy-top-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+}
+.trophy-top-row .trophy-score-card { flex: 1.3; }
+.trophy-top-row .trophy-timer-card { flex: 1; }
+
+/* Session timer — no state-based color coding (no green) — Active/Inactive
+   is conveyed by the status text alone. Same vertical icon/value/label
+   rhythm as .trophy-score-card beside it so the pair reads as matched
+   twins. tabular-nums keeps the digits from jittering the layout width as
+   they change. */
+.trophy-timer-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    background: #181818;
+    border: 1px solid #2c2c2c;
+    border-radius: 12px;
+    padding: 14px 8px;
+}
+.trophy-timer-clock-icon { width: 20px; height: 20px; color: #787878; }
+.trophy-timer-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+.trophy-timer-status-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.trophy-timer-status { font-size: 11px; color: var(--text-dim); }
+
+.trophy-timer-btn {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--bg-btn);
+    border: 1px solid #323232;
+    color: #d0d0d0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.05s linear, border-color 0.05s linear;
+}
+.trophy-timer-btn:hover { background: var(--bg-btn-h); border-color: var(--border-h); }
+.trophy-timer-btn:active { background: var(--bg-btn-act); border-color: var(--bg-btn-act); color: #fff; }
+.trophy-timer-btn svg { width: 8px; height: 8px; pointer-events: none; }
+.trophy-timer-icon-play { display: none; }
+.trophy-timer-card.is-paused .trophy-timer-icon-pause { display: none; }
+.trophy-timer-card.is-paused .trophy-timer-icon-play { display: block; }
+
+.trophy-score-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: #181818;
+    border: 1px solid #2c2c2c;
+    border-radius: 12px;
+    padding: 18px 10px;
+}
+.trophy-score-icon { width: 26px; height: 26px; color: #e8c140; }
+.trophy-score-value { font-size: 32px; font-weight: 700; color: var(--text); line-height: 1.1; }
+.trophy-score-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+
+.trophy-streak-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #181818;
+    border: 1px solid #2c2c2c;
+    border-radius: 12px;
+    padding: 12px 14px;
+}
+.trophy-streak-hdr {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.trophy-streak-icon { width: 26px; height: 26px; color: #f0954a; flex-shrink: 0; }
+.trophy-streak-text {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+.trophy-streak-count { font-size: 18px; font-weight: 700; color: var(--text); }
+.trophy-streak-lbl { font-size: 12px; color: var(--text-dim); }
+.trophy-streak-best-panel {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: #232323;
+    border: 1px solid #2c2c2c;
+    border-radius: 6px;
+    padding: 3px 8px;
+    flex-shrink: 0;
+}
+.trophy-streak-best-lbl {
+    font-size: 9px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.trophy-streak-best-value { font-size: 12px; font-weight: 700; color: var(--text); }
+
+/* A "clear" button — no background/border in any state, just an icon that
+   recolors on hover, unlike most icon buttons elsewhere which fill in on
+   hover/active. */
+.trophy-streak-expand {
+    background: none;
+    border: none;
+    color: var(--text-dimmer);
+    cursor: pointer;
+    padding: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: color 0.05s linear;
+}
+.trophy-streak-expand:hover { color: var(--text-dim); }
+.trophy-streak-expand svg { width: 14px; height: 14px; pointer-events: none; }
+
+/* height matches .trophy-streak-wrap's own total (32px dot + 3px padding
+   each side = 38px) with align-items:center, so standalone dots outside
+   the wrap — which stay locked at their own explicit 32px height rather
+   than stretching — sit centered at the same vertical position as the
+   dots inside it, instead of misaligning against the wrap's extra padding. */
+.trophy-streak-days { display: flex; align-items: center; gap: 5px; height: 38px; }
+/* Taller than the old single-line letter-only dot (20px) so an active day
+   can also show its abridged time on a second line below the day-of-week
+   letter — see .trophy-day-dot-time below. */
+.trophy-day-dot {
+    flex: 1;
+    height: 32px;
+    border-radius: 5px;
+    background: #232323;
+    border: 1px solid #2c2c2c;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    font-size: 9px;
+    color: var(--text-dimmer);
+    transition: background 0.1s linear, border-color 0.1s linear, color 0.1s linear;
+}
+.trophy-day-dot-letter { line-height: 1; }
+/* Always white (icon + text) regardless of the dot's own active/weekend
+   coloring, per the "little white clock icon" ask — reads as a distinct
+   overlay badge rather than blending into the dot's gold "active" tint. */
+.trophy-day-dot-time {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 7px;
+    line-height: 1;
+    color: #ffffff;
+    white-space: nowrap;
+}
+.trophy-day-dot-time svg { width: 7px; height: 7px; flex-shrink: 0; }
+.trophy-day-dot.is-weekend { opacity: 0.55; }
+/* Active vs. inactive is a plain brightness step (no hue) rather than the
+   old gold tint — "lit up" vs. "recessed," distinguishable at a glance
+   without competing with today's blue or the streak wrap's orange border.
+   Declared before .is-today below so today's own colors still win on
+   equal specificity when a day is both active and today. */
+.trophy-day-dot.is-active {
+    background: #2f2f2f;
+    border-color: #3f3f3f;
+    color: var(--text-dim);
+}
+/* Today is always blue — whether or not it's active, whether or not it's
+   part of the current streak (that's a separate, group-level treatment,
+   see .trophy-streak-wrap below). */
+.trophy-day-dot.is-today {
+    background: rgba(36, 112, 224, 0.18);
+    border-color: #2470e0;
+    color: #4d9bff;
+    opacity: 1;
+}
+
+/* The current streak is called out as one contiguous grouped subsection
+   instead of coloring each individual day — wraps whichever run of cells
+   forms the active streak (see _activityCurrentStreakStart in main.js),
+   which may or may not include today (if today has no activity yet, the
+   streak run ends at the last active day instead, sitting right before
+   today's own always-blue cell). flex is set inline per instance (matches
+   how many cells it's wrapping) so it takes up the right proportional
+   share of the row next to any standalone cells beside it. */
+.trophy-streak-wrap {
+    display: flex;
+    align-items: stretch;
+    gap: 5px;
+    padding: 3px;
+    border: 1.5px solid #f0954a;
+    border-radius: 8px;
+    background: rgba(240, 149, 74, 0.08);
+}
+
+.trophy-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+.trophy-stat-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: #181818;
+    border: 1px solid #2c2c2c;
+    border-radius: 10px;
+    padding: 12px 6px;
+    min-width: 0;
+}
+.trophy-stat-tile svg { width: 20px; height: 20px; color: #7aaaff; flex-shrink: 0; }
+.trophy-stat-value { font-size: 18px; font-weight: 700; color: var(--text); }
+.trophy-stat-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+/* ── Leaderboard (js/leaderboard.js) ──────────────────────────────────────── */
+.trophy-leaderboard-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #181818;
+    border: 1px solid #2c2c2c;
+    border-radius: 12px;
+    padding: 12px 14px;
+}
+.trophy-leaderboard-hdr { display: flex; align-items: center; gap: 8px; }
+.trophy-leaderboard-icon { width: 16px; height: 16px; color: #7aaaff; flex-shrink: 0; }
+.trophy-leaderboard-title { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; }
+/* Reflects whichever period was last picked in the full popup's own tab
+   strip — the compact card has no room for the tabs themselves, so this is
+   the only cue for which one it's currently showing. */
+.trophy-leaderboard-period { font-size: 10px; font-weight: 500; color: var(--text-dim); }
+.lb-expand-btn {
+    background: none;
+    border: none;
+    color: var(--text-dimmer);
+    cursor: pointer;
+    padding: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: color 0.05s linear;
+}
+.lb-expand-btn:hover { color: var(--text-dim); }
+.lb-expand-btn:disabled { opacity: 0.35; pointer-events: none; }
+.lb-expand-btn svg { width: 11px; height: 11px; pointer-events: none; }
+.lb-signout-btn {
+    background: none;
+    border: none;
+    color: var(--text-dimmer);
+    font-size: 10px;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 2px 4px;
+    flex-shrink: 0;
+    transition: color 0.05s linear;
+}
+.lb-signout-btn:hover { color: var(--text-dim); }
+
+.lb-empty { font-size: 11px; color: var(--text-dim); text-align: center; padding: 8px 0; }
+
+.lb-join-row { display: flex; gap: 6px; }
+.lb-name-input {
+    flex: 1;
+    min-width: 0;
+    background: #101010;
+    border: 1px solid #383838;
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 12px;
+    padding: 6px 10px;
+    outline: none;
+    font-family: inherit;
+}
+.lb-name-input::placeholder { color: var(--text-dimmer); }
+.lb-join-btn {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.05s linear;
+}
+.lb-join-btn:hover { background: #3680ea; }
+
+/* Google sign-in — shown when there's no cached account yet. Neutral
+   white/light chrome (not this app's usual dark buttons) since Google's
+   own brand guidelines expect their mark on a light or white pill. */
+.lb-auth-form { display: flex; flex-direction: column; gap: 6px; }
+.lb-google-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: #ffffff;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    color: #3c4043;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: background 0.05s linear, box-shadow 0.05s linear;
+}
+.lb-google-btn:hover { background: #f7f7f7; box-shadow: 0 1px 3px rgba(0,0,0,0.25); }
+.lb-google-btn svg { flex-shrink: 0; }
+/* Cancel, shown in place of the Google button while waiting on the
+   browser/loopback round-trip — without this there was no way back out of
+   that state short of closing the whole panel if the browser tab got
+   closed or the user changed their mind. */
+.lb-auth-btn-ghost {
+    background: none;
+    border: 1px solid #383838;
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+}
+.lb-auth-btn-ghost:hover { background: rgba(255,255,255,0.05); border-color: #555555; color: var(--text); }
+/* Doubles as an error (red) or a neutral in-progress status message ("continue
+   in your browser…", toggled via .lb-auth-status) — one slot, only ever one
+   applies at a time (see _lbShowAuthError/_lbShowAuthWaiting in leaderboard.js). */
+.lb-auth-error {
+    font-size: 11px;
+    color: #e07070;
+    text-align: center;
+    padding: 2px 0;
+}
+.lb-auth-error.lb-auth-status { color: var(--text-dim); }
+
+.lb-list { display: flex; flex-direction: column; gap: 4px; }
+.lb-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: #1e1e1e;
+    border: 1px solid transparent;
+}
+/* is-me is a subtle inset ring layered on top of whatever background the
+   row already has (plain grey, or a rank-N medal color below) — box-shadow
+   rather than background/border-color so it never fights those for the
+   same property, and shows up consistently whether or not the row is also
+   a podium finish. */
+.lb-row.is-me { box-shadow: 0 0 0 1px #2470e0 inset; }
+
+.lb-rank { font-size: 11px; color: var(--text-dim); width: 18px; flex-shrink: 0; text-align: center; }
+.lb-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lb-score { font-size: 13px; font-weight: 700; color: var(--text-dim); flex-shrink: 0; }
+/* Ranks 4+ read grey by default, and blue specifically for your own row —
+   the podium ranks below override this back to full brightness, since
+   they already stand out via their own medal background. */
+.lb-row.is-me .lb-name, .lb-row.is-me .lb-score { color: #4d9bff; }
+
+/* Gold/silver/bronze medal badges, replacing the plain rank number for the
+   top 3 — a small gradient-filled circle rather than a literal ribbon/star
+   icon, simpler and reads clearly at list-row size. */
+.lb-medal {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: #1a1a1a;
+}
+.lb-medal-gold   { background: linear-gradient(135deg, #f5d76e, #d4a017); }
+.lb-medal-silver { background: linear-gradient(135deg, #e8e8ec, #a8a8b2); }
+.lb-medal-bronze { background: linear-gradient(135deg, #e0965a, #b06a35); }
+
+/* Podium rows (top 3) — tinted background/border matching their medal,
+   text bumped back to full brightness against it, and "slightly wider"
+   via a small negative margin that lets them bleed past the rest of the
+   list's edges (padding bumped by the same amount so the inner content
+   stays aligned instead of just looking cramped). Widest for #1, down to
+   least for #3, so the "podium" reads as a hierarchy at a glance. */
+.lb-row.rank-1, .lb-row.rank-2, .lb-row.rank-3 {
+    position: relative;
+    overflow: hidden;
+}
+.lb-row.rank-1 .lb-name, .lb-row.rank-1 .lb-score,
+.lb-row.rank-2 .lb-name, .lb-row.rank-2 .lb-score,
+.lb-row.rank-3 .lb-name, .lb-row.rank-3 .lb-score { color: var(--text); }
+
+.lb-row.rank-1 { background: rgba(232, 193, 64, 0.16); border-color: #e8c140; margin: 0 -6px; padding-left: 14px; padding-right: 14px; }
+.lb-row.rank-2 { background: rgba(200, 200, 208, 0.14); border-color: #c0c0c8; margin: 0 -4px; padding-left: 12px; padding-right: 12px; }
+.lb-row.rank-3 { background: rgba(205, 127, 50, 0.16); border-color: #cd7f32; margin: 0 -2px; padding-left: 10px; padding-right: 10px; }
+
+/* Cursor-follow glow on hover — same recipe as the Anchor Point grid's own
+   glow (.anchor-grid::before), just re-tinted per medal color and sized
+   down for a small list row instead of a big square grid. --glow-x/--glow-y
+   are driven per-element by _lbInitRowGlow in leaderboard.js. */
+.lb-row.rank-1::before, .lb-row.rank-2::before, .lb-row.rank-3::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    filter: blur(18px);
+    transition: opacity 0.5s ease;
+}
+.lb-row.rank-1:hover::before, .lb-row.rank-2:hover::before, .lb-row.rank-3:hover::before {
+    opacity: 1;
+    transition: opacity 0.12s ease;
+}
+.lb-row.rank-1::before { background: radial-gradient(circle 55px at var(--glow-x, -9999px) var(--glow-y, -9999px), rgba(232, 193, 64, 0.4), transparent 70%); }
+.lb-row.rank-2::before { background: radial-gradient(circle 55px at var(--glow-x, -9999px) var(--glow-y, -9999px), rgba(200, 200, 208, 0.38), transparent 70%); }
+.lb-row.rank-3::before { background: radial-gradient(circle 55px at var(--glow-x, -9999px) var(--glow-y, -9999px), rgba(205, 127, 50, 0.4), transparent 70%); }
+
+/* Full, scrollable leaderboard popup — same .settings-overlay backdrop/
+   .settings-hdr chrome as the activity calendar, own modal class since
+   .settings-modal's 216px width doesn't fit this content either. */
+.lb-full-hidden { display: none !important; }
+/* Capped at ~half the panel's height (unlike the activity calendar's own
+   modal, which uses calc(100vh - 20px) — that one's content is a
+   fixed-size single month grid that never actually reaches that cap in
+   practice, but a 50-row leaderboard genuinely would fill the whole page
+   if allowed to). 50vh keeps this reading as a contained popup regardless
+   of panel size, with .lb-full-body scrolling for anything past that. */
+.lb-full-modal {
+    background: #1e1e1e;
+    border: 1px solid #303030;
+    border-radius: 11px;
+    width: calc(100vw - 20px);
+    max-width: 360px;
+    max-height: 50vh;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.8);
+}
+/* Daily/Weekly/Monthly/All-Time — swaps which Firestore field the ranked
+   list is ordered/scored by (see LB_PERIOD_FIELD in leaderboard.js), not
+   separate collections or queries beyond that field choice. */
+.lb-period-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px 12px 0;
+    flex-shrink: 0;
+}
+.lb-period-tab {
+    flex: 1;
+    background: none;
+    border: 1px solid #323232;
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-family: inherit;
+    padding: 6px 4px;
+    cursor: pointer;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+}
+.lb-period-tab:hover { background: rgba(255,255,255,0.05); border-color: #555555; color: var(--text); }
+.lb-period-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.lb-full-body {
+    padding: 10px 12px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+.lb-full-footer {
+    flex-shrink: 0;
+    border-top: 1px solid #272727;
+    padding: 8px 12px;
+}
+/* The only place a display name can be changed after its one-time initial
+   prompt (see _lbAfterSignIn in leaderboard.js) — a plain text link rather
+   than a button so it doesn't compete visually with the list above it. */
+.lb-edit-name-btn {
+    background: none;
+    border: none;
+    color: var(--text-dimmer);
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 2px 0;
+    transition: color 0.05s linear;
+}
+.lb-edit-name-btn:hover { color: var(--text-dim); }
+
+/* Full-year activity calendar, expanded from the streak card's own small
+   day strip — same .settings-overlay backdrop convention as Settings/
+   Update-confirm, but its own modal class instead of .settings-modal since
+   that one's hardcoded 216px width is far too narrow for a 7-column month
+   grid. Same calc(100vw - 20px)/max-height pattern as the Fill/Stroke edit
+   modal (.shape-edit-modal) elsewhere in this file. */
+.trophy-cal-hidden { display: none !important; }
+.trophy-cal-modal {
+    background: #1e1e1e;
+    border: 1px solid #303030;
+    border-radius: 11px;
+    width: calc(100vw - 20px);
+    max-width: 360px;
+    max-height: calc(100vh - 20px);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.8);
+}
+/* Paginated one month at a time (not a scrolling stack of 12) — Prev/Next
+   step through the same 12-month window _renderTrophyCalendar always
+   covered, just one page at a time instead of all at once. */
+.trophy-cal-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px 0;
+    flex-shrink: 0;
+}
+/* flex:1 + centered content, rather than the row's own justify-content:
+   space-between, so the Prev/Next arrows stay pinned to the edges while
+   the label+Today group grows/shrinks to fill whatever's left between
+   them — space-between alone couldn't fit a 3rd (Today) item in the
+   middle without breaking that edge-pinned symmetry. */
+.trophy-cal-nav-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+.trophy-cal-nav-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.trophy-cal-nav-today-btn {
+    background: var(--bg-btn);
+    border: 1px solid #323232;
+    border-radius: 5px;
+    color: var(--text-dim);
+    font-size: 10px;
+    font-family: inherit;
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear, opacity 0.05s linear;
+}
+.trophy-cal-nav-today-btn:hover { background: var(--bg-btn-h); border-color: var(--border-h); color: var(--text); }
+.trophy-cal-nav-today-btn:disabled { opacity: 0.35; pointer-events: none; }
+.trophy-cal-nav-btn {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-btn);
+    border: 1px solid #323232;
+    border-radius: 6px;
+    color: #d0d0d0;
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.05s linear, border-color 0.05s linear, opacity 0.05s linear;
+}
+.trophy-cal-nav-btn:hover { background: var(--bg-btn-h); border-color: var(--border-h); }
+.trophy-cal-nav-btn:disabled { opacity: 0.3; pointer-events: none; }
+.trophy-cal-nav-btn svg { width: 9px; height: 9px; pointer-events: none; }
+
+.trophy-cal-body {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.trophy-cal-dow-row {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 3px;
+    margin-bottom: 3px;
+}
+.trophy-cal-dow-row span {
+    text-align: center;
+    font-size: 9px;
+    color: var(--text-dimmer);
+    text-transform: uppercase;
+}
+.trophy-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 3px;
+}
+.trophy-cal-day {
+    aspect-ratio: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    background: #232323;
+    border: 1px solid #2c2c2c;
+    border-radius: 5px;
+    color: var(--text-dimmer);
+    font-size: 10px;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+}
+.trophy-cal-day-num { line-height: 1; }
+/* Abridged per-day time preview, always white (icon + text) regardless of
+   the cell's own has-activity/today tint — same "little white clock icon"
+   treatment as the streak strip's own day dots, for one consistent look
+   across both surfaces. */
+.trophy-cal-day-time {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    font-size: 6.5px;
+    line-height: 1;
+    color: #ffffff;
+    white-space: nowrap;
+}
+.trophy-cal-day-time svg { width: 6px; height: 6px; flex-shrink: 0; }
+.trophy-cal-day:hover { border-color: #555555; }
+.trophy-cal-day.has-activity {
+    background: rgba(74, 163, 232, 0.22);
+    border-color: #4aa3e8;
+    color: #8ec8f5;
+}
+.trophy-cal-day.is-today { border-color: var(--accent); color: var(--text); }
+.trophy-cal-day.is-future { opacity: 0.3; pointer-events: none; }
+.trophy-cal-day.is-blank { background: none; border: none; pointer-events: none; }
+.trophy-cal-day.is-selected { box-shadow: 0 0 0 1px #ffffff inset; }
+
+.trophy-cal-detail {
+    flex-shrink: 0;
+    border-top: 1px solid #272727;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.trophy-cal-detail-empty {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: center;
+    padding: 4px 0;
+}
+.trophy-cal-detail-date { font-size: 12px; font-weight: 600; color: var(--text); }
+.trophy-cal-detail-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
+    gap: 6px;
+}
+.trophy-cal-detail-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: #232323;
+    border: 1px solid #2c2c2c;
+    border-radius: 8px;
+    padding: 8px 4px;
+}
+.trophy-cal-detail-stat svg { width: 15px; height: 15px; flex-shrink: 0; }
+.trophy-cal-detail-stat-value { font-size: 13px; font-weight: 700; color: var(--text); }
+.trophy-cal-detail-stat-label {
+    font-size: 8.5px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
 /* ── Settings tab ─────────────────────────────────────────────────────────── */
 /* No margin of its own — .settings-modal-box's own gap (see below) already
    spaces these out; adding both was stacking to a much bigger gap than
@@ -794,7 +1582,7 @@ body.layout-classic .tool-grid {
     width: 100%;
     background: #101010;
     border: 1px solid #262626;
-    border-radius: 12px;
+    border-radius: 18px;
     padding: 10px;
     /* Half of Anchor's own rendered height in px — kept in sync by
        _syncAnchorRowUnit in main.js. This fallback only matters for the
@@ -1326,6 +2114,29 @@ body.layout-classic .tool-grid {
    measured height — which #sec-quick-actions/#sec-favorite then match via
    --home-anchor-unit, so the whole top-group visibly grew with it.
    Shrinking the padding instead avoids that entirely. */
+/* Anchor/Quick Actions/Favorite's own cards (10px, from the generic
+   .tool-box rule every widget uses) read slightly too tight next to
+   #homeTopGroup's own 12px outer radius — bumped to match it here rather
+   than in the shared .tool-box rule, which every other widget in the
+   panel also relies on. */
+#homeTopGroup .tool-box {
+    border-radius: 12px;
+}
+
+/* Quick Actions (the fixed bar up top, not the pinnable Quick Actions 2
+   down in Bottom Layout) drops the standard .tool-box card entirely — its
+   tiles already carry their own background/border, so the box around them
+   just read as a redundant nested frame. Lets the tiles float directly on
+   .home-top-group's own backdrop instead. #id beats the plain .tool-box
+   rule regardless of source order; #homeToolGrid.narrow-stack #sec-quick-
+   actions's own padding override (higher specificity still) keeps its
+   tighter 4px inset in that layout. */
+#sec-quick-actions {
+    background: none;
+    border: none;
+    padding: 0;
+}
+
 .tool-box-anchor {
     align-items: stretch;
     padding-bottom: 8px;
@@ -1333,19 +2144,32 @@ body.layout-classic .tool-grid {
 
 .anchor-mode-line {
     justify-content: flex-start;
-    /* No align-self/flex override here — this needs to keep inheriting
-       .tool-box-anchor's plain align-items:stretch for its WIDTH (filling
-       the square's full column width instead of hugging its own content
-       width) WITHOUT also flexing for HEIGHT. flex:1 here once did exactly
-       that (to fill the leftover height below the grid) and created a
-       genuine runaway loop: _anchorNaturalHeight (main.js) sets Anchor's
-       own height by SUMMING this row's rendered height, so any flex-grow
-       that responds to "available height in Anchor's own box" feeds
-       straight back into the very measurement that height came from —
-       each tick growing a little more, forever. Width doesn't have that
-       problem (it comes from the grid's fixed column track, not a JS
-       measurement of this row), so only that axis gets to stretch. */
+    /* Fills whatever height is left below the grid instead of leaving it
+       as dead space under a taller neighbor sharing this row (Quick
+       Actions/Favorite can end up taller than Anchor's own natural
+       content, which stretches the whole shared grid row — see
+       _anchorNaturalHeight's own comment in main.js). */
+    flex: 1;
     max-width: 100%;
+}
+/* .ctrl-row's own align-items:center (defined later in this file, so it
+   wins the cascade over a plain .anchor-mode-line rule despite equal
+   specificity — the same issue .btn-group.anchor-tools-group below
+   already works around) was quietly overriding this, so
+   .anchor-tools-group was never actually being stretched at all — chaining
+   both classes here is what makes align-items:stretch actually stick.
+   stretch, not center, is what lets .anchor-tools-group (and, through it,
+   the mode button/Ignore Masks/Null themselves — see their own flex:1
+   further down) actually grow into whatever height .anchor-mode-line
+   fills, rather than just floating centered inside it at a fixed size.
+   This is exactly the kind of measurement that used to cause a runaway
+   loop (_anchorNaturalHeight summed this row's own rendered height to set
+   Anchor's height, so growing it fed straight back into the number that
+   grew it) — see _anchorNaturalHeight's own comment in main.js for how it
+   now measures .anchor-tools-group's UNSTRETCHED height instead, closing
+   that loop regardless of how much this actually grows. */
+.ctrl-row.anchor-mode-line {
+    align-items: stretch;
 }
 .anchor-tools-group {
     /* Fills the row's full WIDTH (this box was .anchor-mode-line's only
@@ -1358,6 +2182,20 @@ body.layout-classic .tool-grid {
        inline and only wrapping once too narrow to fit both; that inline
        attempt read as messed up/unpredictable in practice. */
     flex-direction: column;
+    /* Every size below (button height/width, icon size, gaps, border
+       radius) is an em multiple of THIS, not its own separate px value —
+       one number controls the whole toolbar's scale. #homeTopGroup's own
+       ambient zoom (_syncAnchorTiers in main.js) already scales this
+       continuously with the panel's width down to NARROW_STACK_THRESHOLD;
+       the single override below just gives the "wide" end of that range a
+       bigger reference size to scale from, instead of a wide-tier
+       stylesheet's worth of separately-tuned px values for every property
+       (which is what this replaced — see git history if the exact old
+       numbers ever matter). */
+    font-size: 11px;
+}
+#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-tools-group {
+    font-size: 14px;
 }
 /* .btn-group's own align-items:center (defined later in this file, so it
    wins the cascade over a plain .anchor-tools-group rule despite equal
@@ -1366,11 +2204,13 @@ body.layout-classic .tool-grid {
    box's full width instead of sitting centered at its own natural width. */
 .btn-group.anchor-tools-group {
     align-items: stretch;
-    /* .btn-group's own border (same specificity issue as align-items
-       above — chaining both classes to actually win it) — each button
-       inside already has its own visible border, so this outer one was
-       just a second, redundant edge right next to theirs. */
+    gap: 0.35em;
+    /* .btn-group's own border/background (same specificity issue as
+       align-items above — chaining both classes to actually win it) —
+       each button inside already has its own visible border/fill, so
+       this outer box was just a second, redundant layer behind theirs. */
     border: none;
+    background: none;
 }
 /* A visible border/fill at rest, not just on hover (unlike the flat
    .btn-group .icon-btn convention this box otherwise borrows) — sitting
@@ -1381,24 +2221,27 @@ body.layout-classic .tool-grid {
    reads as a dropdown field, not just another button — reinforcing the
    chevron rather than relying on it alone. */
 .anchor-mode-btn {
-    /* flex-basis used to be a width hint for the old inline/wrap layout —
-       .anchor-tools-group is a column now (always 2 rows), so this is
-       just "don't grow/shrink along that column's main axis (height),
-       take your own natural height instead"; width comes from the
-       parent's align-items:stretch. */
-    flex: 0 0 auto;
+    /* flex:1 (not 0 0 auto) plus min-height instead of height — shares
+       whatever extra height .anchor-tools-group has (see .anchor-mode-
+       line's own align-items:stretch) with .anchor-null-cluster below
+       equally, growing past 2.5em when there's room instead of just
+       floating at a fixed size in the middle of it; 2.5em is the floor,
+       not the target. Width still comes from the parent's own
+       align-items:stretch. */
+    flex: 1;
+    min-height: 2.5em;
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 0.55em;
     justify-content: flex-start;
     white-space: nowrap;
-    height: 31px;
-    padding: 0 8px;
+    padding: 0 0.7em;
     background: #1a1a1a;
     border: 1px solid #333333;
-    border-radius: 6px;
+    border-radius: 0.5em;
     color: #b8b8b8;
+    font-size: 1em;
     cursor: pointer;
 }
 .anchor-mode-btn:hover  { background: #242424; border-color: #444444; color: #d0d0d0; }
@@ -1406,8 +2249,8 @@ body.layout-classic .tool-grid {
 .anchor-mode-btn-icon {
     display: flex;
     flex-shrink: 0;
-    width: 14px;
-    height: 14px;
+    width: 1.3em;
+    height: 1.3em;
 }
 .anchor-mode-btn-icon svg { width: 100%; height: 100%; }
 .anchor-mode-btn-lbl {
@@ -1419,8 +2262,8 @@ body.layout-classic .tool-grid {
 }
 .anchor-mode-btn-chevron {
     flex-shrink: 0;
-    width: 9px;
-    height: 9px;
+    width: 0.85em;
+    height: 0.85em;
     opacity: 0.6;
 }
 /* Ignore Masks + Null, always inline with each other (see
@@ -1433,11 +2276,15 @@ body.layout-classic .tool-grid {
    (further up) still gets one, where its own stacked layout benefits from
    a clearer top/bottom seam. */
 .anchor-null-cluster {
-    flex: 0 0 auto;
+    /* Same flex:1/min-height reasoning as .anchor-mode-btn above — shares
+       .anchor-tools-group's extra height with it equally instead of
+       sitting at a fixed 2.2em regardless of how much room there is. */
+    flex: 1;
+    min-height: 2.2em;
     min-width: 0;
     display: flex;
-    align-items: center;
-    gap: 4px;
+    align-items: stretch;
+    gap: 0.35em;
 }
 /* Raised/bordered rather than the dropdown's darker recessed look above
    (see .anchor-mode-btn's own comment) — Ignore Masks and Null are plain
@@ -1445,19 +2292,27 @@ body.layout-classic .tool-grid {
    lighter/pressable instead of sunken. */
 .anchor-ignore-masks-btn {
     flex-shrink: 0;
-    width: 26px;
-    height: 26px;
+    /* Stretches to match .anchor-null-btn's own height:100% instead of a
+       fixed 2.2em (min-height is the floor, same as its sibling), but
+       needs to stay visibly square doing it — height:100% squares up
+       against WIDTH automatically, not height, so width is kept in sync
+       with the real rendered height in JS instead (same reason/same
+       technique as the ease-copy interpolation button's own square-sync
+       — see _anchorIgnoreMasksSquareSync/_initAnchorIgnoreMasksSquare in
+       main.js). */
+    height: 100%;
+    min-height: 2.2em;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
     background: #2a2a2a;
     border: 1px solid #3a3a3a;
-    border-radius: 6px;
+    border-radius: 0.5em;
     color: #a0a0a0;
     cursor: pointer;
 }
-.anchor-ignore-masks-btn svg { width: 14px; height: 14px; pointer-events: none; }
+.anchor-ignore-masks-btn svg { width: 1.3em; height: 1.3em; pointer-events: none; }
 .anchor-ignore-masks-btn:hover { background: #383838; border-color: #4a4a4a; color: #d0d0d0; }
 /* Deliberately not just a hover-adjacent tint — needs to read as clearly
    "on" at a glance since the icon itself can't fully carry that meaning
@@ -1471,51 +2326,20 @@ body.layout-classic .tool-grid {
 .anchor-null-btn {
     flex: 1 1 auto;
     min-width: 0;
-    height: 26px;
-    padding: 0 10px;
+    height: 100%;
+    min-height: 2.2em;
+    padding: 0 0.9em;
     background: #2a2a2a;
     border: 1px solid #3a3a3a;
-    border-radius: 6px;
+    border-radius: 0.5em;
     color: #c0c0c0;
-    font-size: 11px;
+    font-size: 1em;
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
 }
 .anchor-null-btn:hover  { background: #383838; border-color: #4a4a4a; color: #f0f0f0; }
 .anchor-null-btn:active { background: var(--bg-btn-act); border-color: var(--bg-btn-act); color: #fff; }
-
-/* Wide tier only (narrow-stack gets its own height:auto further up, and
-   Classic isn't nested under #homeToolGrid at all) — flexing this
-   subsection to fill Anchor's leftover height turned out to loop forever
-   (see .anchor-mode-line's own comment on _anchorNaturalHeight), so this
-   is a plain fixed size for the base rules above to hit instead — no
-   measurement feedback, just resized. 36/43px are 52/62px scaled down
-   30% (was itself a 26/31px scaled up 100%) — same shape, smaller. */
-#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-null-btn,
-#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-ignore-masks-btn {
-    height: 36px;
-}
-/* ~20% taller than the 36px the other two use — the dropdown row gets its
-   own slightly bigger target rather than matching Null/Ignore Masks. */
-#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-btn {
-    height: 43px;
-}
-#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-ignore-masks-btn {
-    width: 36px;
-}
-#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-ignore-masks-btn svg {
-    width: 18px;
-    height: 18px;
-}
-#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-btn-icon {
-    width: 18px;
-    height: 18px;
-}
-#homeToolGrid:not(.narrow-stack) #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-btn-chevron {
-    width: 11px;
-    height: 11px;
-}
 
 .tool-box-nullcp {
     align-items: center;
@@ -1528,15 +2352,20 @@ body.layout-classic .tool-grid {
     min-height: var(--home-anchor-unit);
 }
 /* Quick Actions/Favorite split that 50/50 default unevenly instead, closer
-   to 1:2 — Favorite's own content (whichever widget is currently docked
+   to 1:1.75 — Favorite's own content (whichever widget is currently docked
    there) tends to want more room than Quick Actions' fixed 3x2 icon grid
-   does. #id selectors here outrank the generic rule above regardless of
-   source order. */
+   does. (Pulling this ratio back toward 50/50 doesn't actually reduce the
+   shared row's overall height on its own — Quick Actions' own min-height
+   just grows to fill whatever Favorite gives up, since both still have to
+   sum to exactly 2x Anchor's own height. Anchor's own natural height is
+   the real lever — see _anchorNaturalHeight in main.js — not this split.)
+   #id selectors here outrank the generic rule above regardless of source
+   order. */
 #sec-quick-actions.tool-box[data-rowspan="1"] {
-    min-height: calc(var(--home-anchor-unit) * 0.6667);
+    min-height: calc(var(--home-anchor-unit) * 0.7273);
 }
 #sec-favorite.tool-box[data-rowspan="1"] {
-    min-height: calc(var(--home-anchor-unit) * 1.3333);
+    min-height: calc(var(--home-anchor-unit) * 1.2727);
 }
 
 /* Organize quick actions — 3x2 grid of icon-only tiles. */
@@ -1640,10 +2469,44 @@ body.layout-classic .tool-grid {
     color: #a0a0a0;
     cursor: pointer;
     text-align: center;
-    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear, transform 0.05s linear;
 }
 .quick-actions-btn:hover  { background: var(--bg-btn-h); color: #F9F9F4; }
 .quick-actions-btn:active { background: var(--bg-btn-act); border-color: var(--accent); color: #fff; }
+
+/* The top Quick Actions bar dropped its own .tool-box card (see #sec-
+   quick-actions above) — its tiles now sit directly on .home-top-group's
+   darker backdrop, so the standard var(--bg-btn) tile color reads too
+   bright next to it. Darkened to match the .tool-box panel color used
+   everywhere else in this bar (Anchor/Favorite's own cards), instead of
+   the brighter generic button gray. Scoped to just this bar — Quick
+   Actions 2 down in Favorite/Bottom Layout still sits inside its own
+   .tool-box card, where the brighter tile color already reads correctly. */
+#sec-quick-actions .quick-actions-btn {
+    background: #181818;
+    border-color: #2c2c2c;
+}
+/* This #id-scoped rule outranks the plain .quick-actions-btn:hover above
+   regardless of pseudo-class, so its own :hover needs restating here too —
+   without it, hovering this bar's tiles would silently keep the darkened
+   base color instead of ever lightening. Lightens a step further than the
+   base darkening, plus a bigger scale bump than the generic icon-only
+   hover elsewhere (.organize-btn) since the whole tile moves here, not
+   just its icon. */
+#sec-quick-actions .quick-actions-btn:hover {
+    background: #333333;
+    border-color: #444444;
+    transform: scale(1.08);
+}
+/* Same specificity problem as above hits :active too — the plain
+   .quick-actions-btn:active rule has no #id in it, so without restating
+   it here the darkened base color would also swallow the press feedback. */
+#sec-quick-actions .quick-actions-btn:active {
+    background: var(--bg-btn-act);
+    border-color: var(--accent);
+    color: #fff;
+    transform: scale(1.08);
+}
 .quick-actions-btn svg {
     width: 18px;
     height: 18px;
@@ -3423,7 +4286,7 @@ input[type="checkbox"]:checked::after {
    in JS (see _easeInterpSquareSync/_initEaseInterpSquare in main.js) —
    more moving parts, but it reads the actual box instead of asking the
    engine to derive it. */
-.ease-interp-btn { display: none; }
+.ease-interp-btn { display: none; position: relative; }
 .tool-box[data-block-id="ease"][data-span="3"] .ease-interp-btn,
 #sec-favorite .tool-body[data-block-id="ease"] .ease-interp-btn {
     display: flex;
@@ -3440,6 +4303,23 @@ input[type="checkbox"]:checked::after {
     transition: background 0.03s linear, color 0.03s linear;
 }
 .ease-interp-btn svg { width: 55%; height: 55%; pointer-events: none; }
+/* Same corner-triangle "has a flyout" affordance as Select Paths/Split
+   Text (.shape-sel-btn/.split-text-btn::after) — background:currentColor
+   means it automatically picks up whichever per-mode color is active
+   (see the [data-mode] rules below) with no extra logic needed. */
+.ease-interp-btn::after {
+    content: '';
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 6px;
+    height: 6px;
+    background: currentColor;
+    border-radius: 1.6px;
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
+    opacity: 0.55;
+    pointer-events: none;
+}
 /* Same scoped compound selector as the base rule above, not just
    .ease-interp-btn:hover — that plain a selector has lower specificity
    than .tool-box[data-block-id="ease"][data-span="3"] .ease-interp-btn's
@@ -3455,6 +4335,10 @@ input[type="checkbox"]:checked::after {
     background: var(--bg-btn-act);
     color: #fff;
 }
+/* Mode no longer changes this button's color (data-mode is still set by
+   _easeInterpRefreshButton and still drives which icon shows — just not
+   a color anymore) — the blue/red halves of this old per-mode scheme now
+   live on Copy/Paste instead (.ease-copy-btn / #easePasteBtn below). */
 .ease-preview-svg {
     display: block;
     width: 100%;
@@ -3760,6 +4644,44 @@ input[type="checkbox"]:checked::after {
 .ease-action-btn:active { background: var(--bg-btn-act); border-color: var(--bg-btn-act); color: #fff; }
 .ease-action-btn:disabled { opacity: 0.28; pointer-events: none; }
 
+/* Copy is always blue (the old interp-button "bezier" blue) — it's a
+   plain read action, nothing to gate it on. */
+.ease-copy-btn {
+    background: rgba(36, 112, 224, 0.18);
+    border-color: #4d9bff;
+    color: #7aaaff;
+}
+.ease-copy-btn:hover {
+    background: #2470e0;
+    border-color: #2470e0;
+    color: #fff;
+}
+.ease-copy-btn:active {
+    background: #1d5ec2;
+    border-color: #1d5ec2;
+    color: #fff;
+}
+
+/* Paste only turns red once it's actually usable (an ease is copied and
+   the button is enabled) — the old interp-button "hold" red, now used as
+   an activated/ready-to-act cue instead of a mode color. Still falls back
+   to the plain .ease-action-btn look while :disabled. */
+#easePasteBtn:not(:disabled) {
+    background: rgba(192, 50, 50, 0.18);
+    border-color: #e07070;
+    color: #e88f8f;
+}
+#easePasteBtn:not(:disabled):hover {
+    background: #b03535;
+    border-color: #b03535;
+    color: #fff;
+}
+#easePasteBtn:not(:disabled):active {
+    background: #8a2a2a;
+    border-color: #8a2a2a;
+    color: #fff;
+}
+
 /* ── Anchor grid ──────────────────────────────────────────────────────────── */
 
 .anchor-row {
@@ -3781,7 +4703,18 @@ input[type="checkbox"]:checked::after {
     gap: 6%;
     width: 100%;
     aspect-ratio: 1 / 1;
-    border-radius: 16px;
+    /* Close to .anchor-btn's own 8px (plus a touch for the padding/gap
+       inset below) rather than the noticeably rounder 16px this used to
+       be — reads as the same corner language as the buttons instead of a
+       mismatched, much curvier frame around them. */
+    border-radius: 10px;
+    /* Actually darker than .tool-box's own #181818 now (this comment used
+       to describe the intent without the box ever having its own
+       background — the buttons' dark #101010 fill was doing all the
+       contrast work instead) — a real frame behind the now-lighter
+       buttons below, not just their own dark fill reading as a box by
+       itself. */
+    background: #0d0d0d;
     /* % of .anchor-row's own width (padding percentages always resolve
        against the containing block's width, on every side, including
        top/bottom) — matches gap above, so this scales with the square
@@ -3790,37 +4723,82 @@ input[type="checkbox"]:checked::after {
        currently is. Smaller than gap so the outer edge reads tighter than
        the spacing between buttons, not wider. */
     padding: 1.5%;
+    /* Grid items stretch to fill their cell by default — .anchor-btn is
+       deliberately sized smaller than that below, so this is what actually
+       centers each button within its cell instead of the button just
+       filling it edge to edge regardless of its own width/height. */
+    align-items: center;
+    justify-items: center;
+    /* Anchor point for the cursor-glow ::before below, and the clip that
+       keeps its filter:blur() (which ignores an element's own bounds
+       entirely, unlike a background) confined to this box instead of
+       bleeding into whatever sits around it — same reasoning as the
+       board-editing drag glow's own .bl-draggable overflow:hidden. */
+    position: relative;
+    overflow: hidden;
+}
+/* Soft blue spotlight that follows the cursor while hovering the grid,
+   same look/feel as the board-editing drag glow (.bl-draggable::before)
+   but scoped to just this one element instead of a whole editable-widget
+   list — no need for that version's multi-target caching/perf work here,
+   just a single mouseenter/mousemove/mouseleave loop (_initAnchorGridGlow
+   in main.js) that only runs while the pointer is actually over the grid.
+   border-radius:inherit confines it to the grid's own rounded shape. */
+.anchor-grid::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(circle 140px at var(--glow-x, -9999px) var(--glow-y, -9999px), rgba(36, 112, 224, 0.22), transparent 70%);
+    filter: blur(40px);
+    pointer-events: none;
+    opacity: 0;
+    /* Slower fade-OUT than fade-in (below) — a transition only runs at the
+       duration declared on the rule for the state being entered, so this
+       one (the base/not-hovered state) governs however long it takes to
+       settle back to invisible once the cursor leaves, letting it linger
+       and dim out gently instead of switching off as abruptly as it
+       switches on. */
+    transition: opacity 0.5s ease;
+}
+.anchor-grid:hover::before {
+    opacity: 1;
+    /* Faster fade-IN — appears almost immediately on hover instead of
+       matching the slow fade-out above. */
+    transition: opacity 0.12s ease;
 }
 
 .anchor-btn {
-    width: 100%;
-    height: 100%;
+    /* Smaller than its own grid cell (was 100%/100%) — breathing room
+       around each button, on top of the grid's own gap between cells, so
+       the icons read as sitting in the darker frame directly instead of
+       on their own tiled surface. */
+    width: 86%;
+    height: 86%;
     display: flex; align-items: center; justify-content: center;
-    background: #101010;
+    background: none;
     border: none;
     border-radius: 8px;
     cursor: pointer;
     padding: 0;
-    color: #868686;
+    color: #999999;
     transition: background 0.05s linear, color 0.05s linear;
 }
-.anchor-btn:hover  { background: #2e2e2e; color: #7aaaff; }
+/* No fill of its own to brighten on hover anymore — a faint light wash
+   instead, just enough to mark which cell the pointer is over. */
+.anchor-btn:hover  { background: rgba(255, 255, 255, 0.08); color: #2470e0; }
 .anchor-btn:active { background: var(--bg-btn-act); color: #fff; }
-.anchor-btn svg    { width: 58%; height: 58%; pointer-events: none; transition: transform 0.12s ease-out; }
+.anchor-btn svg    { width: 70%; height: 70%; pointer-events: none; }
 
-/* Each icon slides toward the edge/corner it represents (grid order maps
-   1:1 to position — see .anchor-grid's fixed 3x3 layout in index.html);
-   the Center icon just scales up in place instead, since it has no edge
-   to slide toward. */
-.anchor-grid .anchor-btn:nth-child(1):hover svg { transform: translate(-4px, -4px); }
-.anchor-grid .anchor-btn:nth-child(2):hover svg { transform: translate(0, -4px); }
-.anchor-grid .anchor-btn:nth-child(3):hover svg { transform: translate(4px, -4px); }
-.anchor-grid .anchor-btn:nth-child(4):hover svg { transform: translate(-4px, 0); }
-.anchor-grid .anchor-btn:nth-child(5):hover svg { transform: scale(1.12); }
-.anchor-grid .anchor-btn:nth-child(6):hover svg { transform: translate(4px, 0); }
-.anchor-grid .anchor-btn:nth-child(7):hover svg { transform: translate(-4px, 4px); }
-.anchor-grid .anchor-btn:nth-child(8):hover svg { transform: translate(0, 4px); }
-.anchor-grid .anchor-btn:nth-child(9):hover svg { transform: translate(4px, 4px); }
+/* The icon's own slide/scale (toward whichever edge/corner it represents
+   on hover, further out to the edge on click) is animated entirely in JS
+   now (_anchorAnimateIconTo/_animateAnchorClick in main.js), not a CSS
+   transition — a click's punch-then-settle needs to be able to smoothly
+   retarget to the resting position if the cursor leaves mid-animation,
+   which means whatever's currently driving the transform has to be able
+   to read (and animate from) its own current live value; a CSS
+   transition reacting to :hover can't do that once a separate JS
+   Animation is also layered on top of the same property. */
 
 /* ── Copy / Paste icon button colour variants ────────────────────────────── */
 
@@ -4446,6 +5424,7 @@ input.gap-inline-input {
 
 .update-banner {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding: 8px 10px;
@@ -4513,6 +5492,38 @@ input.gap-inline-input {
 }
 .update-banner-close:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
 .update-banner-close svg { width: 9px; height: 9px; pointer-events: none; display: block; }
+
+/* full-width row that wraps onto its own line below the icon/text/buttons
+   once the banner starts downloading — .update-banner is flex-wrap so
+   flex-basis:100% is enough to force the break without extra markup */
+.update-banner-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-basis: 100%;
+}
+.update-banner-progress-bar {
+    flex: 1;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.14);
+    overflow: hidden;
+}
+.update-banner-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #6cc0ff;
+    border-radius: 3px;
+    transition: width 0.25s ease;
+}
+.update-banner-progress-pct {
+    font-size: 10px;
+    font-weight: 600;
+    color: #9cc3e0;
+    flex-shrink: 0;
+    min-width: 30px;
+    text-align: right;
+}
 
 /* ── Edit mode bar ────────────────────────────────────────────────────────── */
 
@@ -4805,7 +5816,17 @@ body.layout-classic #quickActionsEditBtn { width: 0; opacity: 0; pointer-events:
     z-index: 1000;
 }
 .settings-hidden { display: none !important; }
+/* "Check for Updates" lives inside the Settings modal, so this needs to
+   stack strictly above it (both share .settings-overlay's base
+   z-index:1000, which alone falls back to DOM order — Settings is later,
+   so it would win and sit on top) — same reasoning/same fix as #cpOverlay
+   above. _showInstallConfirm in update.js also explicitly closes Settings
+   first, but that fade-out takes ~160ms (see closeSettingsPopup in
+   main.js) during which #settingsPopup is still on-screen and still
+   capturing clicks — this is what keeps it from blocking anything even
+   during that window, not just once it's fully gone. */
 .update-confirm-hidden { display: none !important; }
+#updateConfirmOverlay { z-index: 1001; }
 
 .update-confirm-text {
     font-size: 11px;
@@ -4825,9 +5846,23 @@ body.layout-classic #quickActionsEditBtn { width: 0; opacity: 0; pointer-events:
     padding: 2px 2px 4px;
 }
 
+.update-progress-text-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
 .update-progress-text {
     font-size: 11px;
     color: var(--text-dim);
+}
+
+.update-progress-pct {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    flex-shrink: 0;
 }
 
 .update-progress-bar {

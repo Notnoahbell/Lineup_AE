@@ -19,7 +19,7 @@
     </svg>
   </div>
   <span class="update-banner-text" id="updateBannerText">A new version is available</span>
-  <button class="update-banner-btn" onclick="downloadUpdate()">
+  <button class="update-banner-btn" id="updateBannerBtn" onclick="downloadUpdate()">
     <svg class="update-banner-btn-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
       <path d="M6,1.5 V7.8"/>
       <polyline points="3.2,5 6,7.8 8.8,5"/>
@@ -33,6 +33,10 @@
       <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
     </svg>
   </button>
+  <div class="update-banner-progress-row update-progress-hidden" id="updateBannerProgressRow">
+    <div class="update-banner-progress-bar"><div class="update-banner-progress-fill" id="updateBannerProgressFill"></div></div>
+    <span class="update-banner-progress-pct" id="updateBannerProgressPct">0%</span>
+  </div>
 </div>
 
 <!-- ── UPDATE INSTALL CONFIRM (manual "Check for Updates" result) ──────────── -->
@@ -66,7 +70,10 @@
         </button>
       </div>
       <div class="update-progress-wrap update-progress-hidden" id="updateConfirmProgressWrap">
-        <div class="update-progress-text" id="updateConfirmProgressText">Installing update…</div>
+        <div class="update-progress-text-row">
+          <span class="update-progress-text" id="updateConfirmProgressText">Installing update…</span>
+          <span class="update-progress-pct" id="updateConfirmProgressPct">0%</span>
+        </div>
         <div class="update-progress-bar"><div class="update-progress-bar-fill" id="updateConfirmProgressFill"></div></div>
       </div>
     </div>
@@ -87,6 +94,16 @@
       <rect x="11" y="2"  width="7" height="7" rx="2"/>
       <rect x="2"  y="11" width="7" height="7" rx="2"/>
       <rect x="11" y="11" width="7" height="7" rx="2"/>
+    </svg>
+  </button>
+  <button class="tab-btn tab-btn-icon" id="tabBtn-trophy" onclick="switchTab('trophy')" title="Progress">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6,3 H14 V7 A4,4 0 0,1 6,7 Z"/>
+      <path d="M6,4 H3.5 A1.5,1.5 0 0,0 3.5,7 H6"/>
+      <path d="M14,4 H16.5 A1.5,1.5 0 0,1 16.5,7 H14"/>
+      <line x1="10" y1="11" x2="10" y2="13.5"/>
+      <path d="M7.3,13.5 H12.7 L13.2,16.5 H6.8 Z"/>
+      <line x1="6.5" y1="16.5" x2="13.5" y2="16.5"/>
     </svg>
   </button>
 </div>
@@ -144,15 +161,15 @@
         <div class="tool-body" data-block-id="anchor">
           <div class="anchor-row" id="anchorRow">
             <div class="anchor-grid">
-              <button class="anchor-btn" title="Top Left"      onclick="doAnchor(0)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7,15 7,7 15,7"/></svg></button>
-              <button class="anchor-btn" title="Top Center"    onclick="doAnchor(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="8" x2="16" y2="8"/></svg></button>
-              <button class="anchor-btn" title="Top Right"     onclick="doAnchor(2)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17,15 17,7 9,7"/></svg></button>
-              <button class="anchor-btn" title="Middle Left"   onclick="doAnchor(3)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="8" x2="8" y2="16"/></svg></button>
-              <button class="anchor-btn" title="Center" onclick="doAnchor(4)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/></svg></button>
-              <button class="anchor-btn" title="Middle Right"  onclick="doAnchor(5)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="16" y1="8" x2="16" y2="16"/></svg></button>
-              <button class="anchor-btn" title="Bottom Left"   onclick="doAnchor(6)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7,9 7,17 15,17"/></svg></button>
-              <button class="anchor-btn" title="Bottom Center" onclick="doAnchor(7)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="16" x2="16" y2="16"/></svg></button>
-              <button class="anchor-btn" title="Bottom Right"  onclick="doAnchor(8)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17,9 17,17 9,17"/></svg></button>
+              <button class="anchor-btn" title="Top Left"      onclick="doAnchor(0, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7,15 L7,9.5 Q7,7 9.5,7 L15,7"/></svg></button>
+              <button class="anchor-btn" title="Top Center"    onclick="doAnchor(1, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="8" x2="16" y2="8"/></svg></button>
+              <button class="anchor-btn" title="Top Right"     onclick="doAnchor(2, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17,15 L17,9.5 Q17,7 14.5,7 L9,7"/></svg></button>
+              <button class="anchor-btn" title="Middle Left"   onclick="doAnchor(3, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="8" x2="8" y2="16"/></svg></button>
+              <button class="anchor-btn" title="Center" onclick="doAnchor(4, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="7" height="7" rx="1.8"/></svg></button>
+              <button class="anchor-btn" title="Middle Right"  onclick="doAnchor(5, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="16" y1="8" x2="16" y2="16"/></svg></button>
+              <button class="anchor-btn" title="Bottom Left"   onclick="doAnchor(6, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7,9 L7,14.5 Q7,17 9.5,17 L15,17"/></svg></button>
+              <button class="anchor-btn" title="Bottom Center" onclick="doAnchor(7, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="16" x2="16" y2="16"/></svg></button>
+              <button class="anchor-btn" title="Bottom Right"  onclick="doAnchor(8, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17,9 L17,14.5 Q17,17 14.5,17 L9,17"/></svg></button>
             </div>
           </div>
           <!-- "Based on" used to be a native <select> + an "Ignore Masks"
@@ -170,7 +187,7 @@
                their own rows once the box is too narrow for both. -->
           <div class="ctrl-row anchor-mode-line">
             <div class="btn-group anchor-tools-group">
-              <button class="anchor-mode-btn" id="anchorModeBtn" onclick="_openAnchorModeCtx(this)" title="Based on: Object">
+              <button class="anchor-mode-btn" id="anchorModeBtn" onclick="_openAnchorModeCtx(this, event)" title="Based on: Object">
                 <span class="anchor-mode-btn-icon" id="anchorModeBtnIcon"></span>
                 <span class="anchor-mode-btn-lbl" id="anchorModeBtnLbl">Object</span>
                 <svg class="anchor-mode-btn-chevron" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,1 5,5 9,1"/></svg>
@@ -290,7 +307,7 @@
                elsewhere in this panel (see EASE_INTERP_MODES/
                _openEaseInterpCtx in main.js). Only shown alongside the
                graph above. -->
-          <button class="ease-interp-btn" id="easeInterpBtn" title="Bezier" onclick="_easeInterpRunActive(event)" oncontextmenu="event.preventDefault(); _openEaseInterpCtx(this);">
+          <button class="ease-interp-btn" id="easeInterpBtn" data-mode="bezier" title="Bezier" onclick="_easeInterpRunActive(event)" oncontextmenu="event.preventDefault(); _openEaseInterpCtx(this, event);">
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4.37,4.47 Q4,4 4.6,4 L15.4,4 Q16,4 15.63,4.47 L10.16,11.3 Q10,11.5 9.84,11.3 Z M4.6,16 Q4,16 4.37,15.53 L9.84,8.7 Q10,8.5 10.16,8.7 L15.63,15.53 Q16,16 15.4,16 Z"/></svg>
           </button>
           <div class="ease-subpanel">
@@ -952,7 +969,7 @@
                      reflects it — see _shapeSelRefreshButtons in main.js);
                      right-click opens an icon flyout to switch modes, which
                      also runs the newly-picked one immediately. -->
-                <button class="icon-btn-wide shape-sel-btn" title="Select All Paths" onclick="_shapeSelRunActive()" oncontextmenu="event.preventDefault(); _openShapeSelCtx(this);">
+                <button class="icon-btn-wide shape-sel-btn" title="Select All Paths" onclick="_shapeSelRunActive()" oncontextmenu="event.preventDefault(); _openShapeSelCtx(this, event);">
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">
                     <rect x="1.5" y="1.5" width="17" height="17" rx="4" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/>
                     <path d="M3,15 C3,15 6,5 10,10 C14,15 17,5 17,5" stroke-width="1.5"/>
@@ -1446,7 +1463,7 @@
       </button>
 
       <!-- Shape Tools -->
-      <button class="tools-grid-btn shape-sel-btn" data-group="shape" data-tool-id="selectAllPaths" title="Select All Paths" onclick="_shapeSelRunActive()" oncontextmenu="event.preventDefault(); _openShapeSelCtx(this);">
+      <button class="tools-grid-btn shape-sel-btn" data-group="shape" data-tool-id="selectAllPaths" title="Select All Paths" onclick="_shapeSelRunActive()" oncontextmenu="event.preventDefault(); _openShapeSelCtx(this, event);">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">
           <rect x="1.5" y="1.5" width="17" height="17" rx="4" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/>
           <path d="M3,15 C3,15 6,5 10,10 C14,15 17,5 17,5" stroke-width="1.5"/>
@@ -1479,7 +1496,7 @@
         </svg>
         <span>Explode</span>
       </button>
-      <button class="tools-grid-btn split-text-btn" data-group="shape" data-tool-id="splitText" title="Split Text by Word" onclick="_splitTextRunActive(event)" oncontextmenu="event.preventDefault(); _openSplitTextCtx(this);">
+      <button class="tools-grid-btn split-text-btn" data-group="shape" data-tool-id="splitText" title="Split Text by Word" onclick="_splitTextRunActive(event)" oncontextmenu="event.preventDefault(); _openSplitTextCtx(this, event);">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">
           <rect x="3" y="3" width="14" height="3.4" rx="0" fill="currentColor" stroke="none"/>
           <rect x="8.3" y="3" width="3.4" height="6.5" rx="0" fill="currentColor" stroke="none"/>
@@ -1500,6 +1517,223 @@
       </button>
     </div>
 
+  </div>
+</div>
+
+<!-- ── TROPHY TAB (activity tracking / gamification) — see the "Activity
+     tracking" section in main.js for how these values get populated; no
+     tool button lives here, it's a pure readout. -->
+<div id="tab-trophy" class="tab-panel">
+
+  <div id="scoringDisabledNotice" class="trophy-disabled-notice" style="display:none">Scoring is paused — enable it in Settings to resume tracking.</div>
+
+  <div class="trophy-top-row">
+    <div class="trophy-score-card">
+      <svg class="trophy-score-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6,3 H14 V7 A4,4 0 0,1 6,7 Z"/>
+        <path d="M6,4 H3.5 A1.5,1.5 0 0,0 3.5,7 H6"/>
+        <path d="M14,4 H16.5 A1.5,1.5 0 0,1 16.5,7 H14"/>
+        <line x1="10" y1="11" x2="10" y2="13.5"/>
+        <path d="M7.3,13.5 H12.7 L13.2,16.5 H6.8 Z"/>
+        <line x1="6.5" y1="16.5" x2="13.5" y2="16.5"/>
+      </svg>
+      <div class="trophy-score-value" id="trophyScoreValue">0</div>
+      <div class="trophy-score-label">Points Today</div>
+    </div>
+
+    <div class="trophy-timer-card" id="trophyTimerCard">
+      <svg class="trophy-timer-clock-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="10" cy="10" r="7.5"/>
+        <path d="M10,5.5 V10 L13,12"/>
+      </svg>
+      <div class="trophy-timer-value" id="trophyTimerValue">0:00</div>
+      <div class="trophy-timer-status-row">
+        <span class="trophy-timer-status" id="trophyTimerStatus">Active</span>
+        <button class="trophy-timer-btn" onmousedown="event.stopPropagation()" onclick="_timerToggle()" title="Pause/Resume">
+          <svg class="trophy-timer-icon-pause" viewBox="0 0 20 20" fill="currentColor">
+            <rect x="5" y="4" width="3.5" height="12" rx="1"/>
+            <rect x="11.5" y="4" width="3.5" height="12" rx="1"/>
+          </svg>
+          <svg class="trophy-timer-icon-play" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M6,4 L16,10 L6,16 Z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="trophy-streak-card">
+    <div class="trophy-streak-hdr">
+      <svg class="trophy-streak-icon" viewBox="0 0 20 20" fill="currentColor">
+        <path d="M10,4 C13,7.3 15,10 15,12.5 C15,15.3 12.8,17 10,17 C7.2,17 5,15.3 5,12.5 C5,10.5 5.9,9.2 6.4,10 C6.8,10.7 7.6,10.4 7.6,9.6 C7.6,7.6 8.4,5.7 10,4 Z"/>
+      </svg>
+      <div class="trophy-streak-text">
+        <span class="trophy-streak-count" id="trophyStreakCount">0</span>
+        <span class="trophy-streak-lbl">day streak</span>
+      </div>
+      <div class="trophy-streak-best-panel">
+        <span class="trophy-streak-best-lbl">Best</span>
+        <span class="trophy-streak-best-value" id="trophyStreakBest">0</span>
+      </div>
+      <button class="trophy-streak-expand" onclick="_openTrophyCalendar()" title="View full calendar">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="14" height="13" rx="1.5"/>
+          <line x1="3" y1="8" x2="17" y2="8"/>
+          <line x1="6.5" y1="2.5" x2="6.5" y2="5.5"/>
+          <line x1="13.5" y1="2.5" x2="13.5" y2="5.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="trophy-streak-days" id="trophyStreakDays"></div>
+  </div>
+
+  <div class="trophy-stats-grid">
+    <div class="trophy-stat-tile">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10,2 L18,10 L10,18 L2,10 Z"/></svg>
+      <div class="trophy-stat-value" id="trophyStatKeyframes">0</div>
+      <div class="trophy-stat-label">Keyframes</div>
+    </div>
+    <div class="trophy-stat-tile">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="6" width="16" height="9" rx="1.5"/>
+        <line x1="2" y1="10" x2="18" y2="10"/>
+      </svg>
+      <div class="trophy-stat-value" id="trophyStatLayers">0</div>
+      <div class="trophy-stat-label">Layers</div>
+    </div>
+    <div class="trophy-stat-tile">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10,3 V12"/>
+        <polyline points="6.5,8.5 10,12 13.5,8.5"/>
+        <path d="M4,13.5 V15.5 A1.2,1.2 0 0,0 5.2,16.7 H14.8 A1.2,1.2 0 0,0 16,15.5 V13.5"/>
+      </svg>
+      <div class="trophy-stat-value" id="trophyStatExports">0</div>
+      <div class="trophy-stat-label">Exports</div>
+    </div>
+  </div>
+
+  <!-- ── LEADERBOARD — see js/leaderboard.js. Silently shows "not set up"
+       until Firebase is configured there; otherwise asks for a one-time
+       display name, then shows the ranked list (your own row highlighted). -->
+  <div class="trophy-leaderboard-card">
+    <div class="trophy-leaderboard-hdr">
+      <svg class="trophy-leaderboard-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="9" width="4" height="8" rx="1"/>
+        <rect x="8" y="5" width="4" height="12" rx="1"/>
+        <rect x="13" y="12" width="4" height="5" rx="1"/>
+      </svg>
+      <span class="trophy-leaderboard-title">Leaderboard <span class="trophy-leaderboard-period" id="lbPeriodLabel">Today</span></span>
+      <button class="lb-expand-btn" id="lbExpandBtn" onclick="lbOpenFull()" title="View full leaderboard">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="7,2 10,2 10,5"/>
+          <line x1="10" y1="2" x2="6" y2="6"/>
+          <polyline points="5,10 2,10 2,7"/>
+          <line x1="2" y1="10" x2="6" y2="6"/>
+        </svg>
+      </button>
+      <button id="lbSignOutBtn" class="lb-signout-btn" onclick="lbSignOut()" title="Sign out" style="display:none">Sign out</button>
+    </div>
+
+    <div id="lbNotConfigured" class="lb-empty" style="display:none">Leaderboard isn't set up yet.</div>
+
+    <div id="lbAuthForm" class="lb-auth-form" style="display:none">
+      <button class="lb-google-btn" id="lbGoogleBtn" onclick="lbGoogleSignIn()">
+        <svg viewBox="0 0 20 20" width="16" height="16">
+          <path fill="#4285F4" d="M19.6,10.23 C19.6,9.57 19.54,8.93 19.43,8.32 H10 V11.94 H15.38 C15.15,13.19 14.44,14.25 13.38,14.95 V17.34 H16.47 C18.28,15.67 19.6,13.19 19.6,10.23 Z"/>
+          <path fill="#34A853" d="M10,20 C12.7,20 14.96,19.1 16.47,17.34 L13.38,14.95 C12.5,15.54 11.36,15.89 10,15.89 C7.4,15.89 5.19,14.14 4.4,11.77 H1.2 V14.24 C2.71,17.6 6.09,20 10,20 Z"/>
+          <path fill="#FBBC05" d="M4.4,11.77 C4.2,11.18 4.08,10.55 4.08,9.9 C4.08,9.25 4.2,8.62 4.4,8.03 V5.56 H1.2 C0.53,6.89 0.15,8.4 0.15,9.9 C0.15,11.4 0.53,12.91 1.2,14.24 L4.4,11.77 Z"/>
+          <path fill="#EA4335" d="M10,3.91 C11.47,3.91 12.79,4.42 13.83,5.4 L16.54,2.69 C14.96,1.22 12.7,0.3 10,0.3 C6.09,0.3 2.71,2.7 1.2,5.56 L4.4,8.03 C5.19,5.66 7.4,3.91 10,3.91 Z"/>
+        </svg>
+        <span>Sign in with Google</span>
+      </button>
+      <button class="lb-auth-btn-ghost" id="lbCancelBtn" onclick="lbCancelGoogleSignIn()" style="display:none">Cancel</button>
+      <div id="lbAuthError" class="lb-auth-error" style="display:none"></div>
+    </div>
+
+    <div id="lbJoinRow" class="lb-join-row" style="display:none">
+      <input type="text" id="lbNameInput" class="lb-name-input" placeholder="Display name" maxlength="40">
+      <button class="lb-join-btn" onclick="lbJoin()">Save</button>
+    </div>
+
+    <div id="lbListWrap" style="display:none">
+      <div id="lbList" class="lb-list"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── TROPHY ACTIVITY CALENDAR — expanded from the streak card's expand
+     button; see _openTrophyCalendar/_renderTrophyCalendar in main.js. ────── -->
+<div id="trophyCalOverlay" class="settings-overlay trophy-cal-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ _closeTrophyCalendar(); })">
+  <div class="trophy-cal-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="14" height="13" rx="1.5"/>
+        <line x1="3" y1="8" x2="17" y2="8"/>
+        <line x1="6.5" y1="2.5" x2="6.5" y2="5.5"/>
+        <line x1="13.5" y1="2.5" x2="13.5" y2="5.5"/>
+      </svg>
+      <span class="settings-title">Activity Calendar</span>
+      <button class="settings-close" onclick="_closeTrophyCalendar()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="trophy-cal-nav">
+      <button class="trophy-cal-nav-btn" id="trophyCalPrevBtn" onclick="_trophyCalPrevMonth()" title="Previous month">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5,1.5 2.5,5 6.5,8.5"/></svg>
+      </button>
+      <div class="trophy-cal-nav-center">
+        <span class="trophy-cal-nav-label" id="trophyCalMonthLbl">Month Year</span>
+        <button class="trophy-cal-nav-today-btn" id="trophyCalTodayBtn" onclick="_trophyCalGoToToday()" title="Jump to today">Today</button>
+      </div>
+      <button class="trophy-cal-nav-btn" id="trophyCalNextBtn" onclick="_trophyCalNextMonth()" title="Next month">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5,1.5 7.5,5 3.5,8.5"/></svg>
+      </button>
+    </div>
+    <div class="trophy-cal-body" id="trophyCalBody"></div>
+    <div class="trophy-cal-detail" id="trophyCalDetail">
+      <div class="trophy-cal-detail-empty">Select a day to see stats</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── FULL LEADERBOARD — expanded from the leaderboard card's expand
+     button; see lbOpenFull/_lbRenderFullList in js/leaderboard.js. ───────── -->
+<div id="lbFullOverlay" class="settings-overlay lb-full-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ lbCloseFull(); })">
+  <div class="lb-full-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="9" width="4" height="8" rx="1"/>
+        <rect x="8" y="5" width="4" height="12" rx="1"/>
+        <rect x="13" y="12" width="4" height="5" rx="1"/>
+      </svg>
+      <span class="settings-title">Leaderboard</span>
+      <button class="settings-close" onclick="lbCloseFull()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="lb-period-tabs">
+      <button class="lb-period-tab" data-period="daily" onclick="lbSetPeriod('daily')">Daily</button>
+      <button class="lb-period-tab" data-period="weekly" onclick="lbSetPeriod('weekly')">Weekly</button>
+      <button class="lb-period-tab" data-period="monthly" onclick="lbSetPeriod('monthly')">Monthly</button>
+      <button class="lb-period-tab" data-period="allTime" onclick="lbSetPeriod('allTime')">All-Time</button>
+    </div>
+    <div class="lb-full-body">
+      <div id="lbFullList" class="lb-list"></div>
+    </div>
+    <div class="lb-full-footer">
+      <button class="lb-edit-name-btn" id="lbEditNameBtn" onclick="lbShowEditName()">Edit display name</button>
+      <div id="lbEditNameRow" class="lb-join-row" style="display:none">
+        <input type="text" id="lbEditNameInput" class="lb-name-input" maxlength="40">
+        <button class="lb-join-btn" onclick="lbSaveEditedName()">Save</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1558,6 +1792,18 @@
       <span class="toggle-track"></span>
     </label>
   </div>
+  <!-- Default on — off mutes the Trophy tab's activity poll (the one part
+       of that whole feature that costs real evalScript time, see
+       _activityApplyScoringEnabled in main.js) and js/leaderboard.js's own
+       periodic sync, for anyone who'd rather not risk any of it on a heavy
+       comp. -->
+  <div class="settings-tab-row">
+    <span class="lbl">Enable Scoring</span>
+    <label class="settings-toggle">
+      <input type="checkbox" id="scoringEnabledCheck" checked onchange="toggleScoring(this.checked)">
+      <span class="toggle-track"></span>
+    </label>
+  </div>
   <!-- Compact-only: auto-jumps the Favorites bar to Ease Copy the moment
        keyframes get selected, or to Shape Tools the moment a shape layer
        gets selected — predictive (fires on the selection CHANGE, not
@@ -1578,7 +1824,7 @@
     </label>
   </div>
   <div class="settings-popup-ftr">
-    <span class="lbl" id="settingsVersionLbl">Version 1.9.2</span>
+    <span class="lbl" id="settingsVersionLbl">Version 1.9.3</span>
     <button class="btn" onclick="checkForUpdates(true)">Check for Updates</button>
   </div>
  </div>
@@ -1615,7 +1861,7 @@
     <div class="footer-brand">
       <img src="heist_icon_32.png" class="footer-logo" alt="">
       <span class="footer-name">Heist Lineup</span>
-      <span class="footer-version" id="footerVersion">v1.9.2</span>
+      <span class="footer-version" id="footerVersion">v1.9.3</span>
     </div>
     <div class="footer-actions">
     <button class="settings-btn" id="quickActionsEditBtn" onclick="_toggleEditMode()" title="Customize Quick Actions &amp; Rearrange Align / Distribute / Sizing / Auto Crop / Sort">
@@ -2561,5 +2807,6 @@
 <script src="js/spellcheck.js?v=13"></script>
 <script src="js/find.js?v=1"></script>
 <script src="js/update.js?v=9"></script>
+<script src="js/leaderboard.js?v=1"></script>
 </body>
 </html>
