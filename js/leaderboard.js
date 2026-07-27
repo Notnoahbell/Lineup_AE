@@ -247,6 +247,26 @@
 
     var _lbActiveServer = null; // the loopback server currently waiting on a redirect, if any — lets Cancel actually stop it
 
+    // The system browser lands on this page after Google redirects back —
+    // the only screen in this whole flow that isn't Google's own (and thus
+    // the only one we can actually restyle). Matches the panel's own dark
+    // theme/palette rather than looking like a stray unstyled webpage.
+    function _lbCallbackPageHtml(success) {
+        var icon = success
+            ? '<svg width="26" height="26" viewBox="0 0 28 28" fill="none" stroke="#2470e0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="7,14.5 12,19.5 21,8.5"/></svg>'
+            : '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8a8a8a" stroke-width="2.2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
+        var title = success ? 'Signed in' : 'Sign-in cancelled';
+        return '<!doctype html><html><head><meta charset="utf-8"><title>Lineup</title><style>' +
+            'html,body{height:100%;margin:0}' +
+            'body{display:flex;align-items:center;justify-content:center;background:#1c1c1c;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:#F9F9F4}' +
+            '.card{text-align:center;padding:40px 48px;background:#131313;border:1px solid #2e2e2e;border-radius:14px;max-width:340px}' +
+            '.icon{width:56px;height:56px;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:' + (success ? 'rgba(36,112,224,0.15)' : 'rgba(255,255,255,0.06)') + '}' +
+            'h1{font-size:18px;margin:0 0 8px;font-weight:600}' +
+            'p{font-size:13px;color:#8a8a8a;margin:0;line-height:1.5}' +
+            '</style></head><body><div class="card"><div class="icon">' + icon + '</div><h1>' + title + '</h1>' +
+            '<p>You can close this tab and return to After Effects.</p></div></body></html>';
+    }
+
     function _lbSetSigningIn(state) {
         _lbSigningIn = state;
         var googleBtn = document.getElementById('lbGoogleBtn');
@@ -268,10 +288,9 @@
         var server = http.createServer(function (req, res) {
             var parsed = urlLib.parse(req.url, true);
             if (parsed.pathname !== '/callback') { res.writeHead(404); res.end(); return; }
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            res.end('<html><body style="font-family:sans-serif;text-align:center;padding-top:60px;color:#333">' +
-                '<h2>Signed in — you can close this tab and return to After Effects.</h2></body></html>');
             var query = parsed.query;
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(_lbCallbackPageHtml(!query.error));
             server.close();
             _lbActiveServer = null;
             _lbSetSigningIn(false);
@@ -986,6 +1005,7 @@
         var editRow = document.getElementById('lbEditNameRow');
         if (editBtn) editBtn.style.display = '';
         if (editRow) editRow.style.display = 'none';
+        _lbCloseResetRow();
     };
     window.lbCloseFull = function () {
         var overlay = document.getElementById('lbFullOverlay');
@@ -1017,6 +1037,92 @@
         if (btn) btn.style.display = '';
         if (row) row.style.display = 'none';
         _lbFetchLeaderboard(_lbGetPeriod(), function (err, rows) { if (!err) _lbRenderFullList(rows); });
+    };
+
+    function _lbCloseResetRow() {
+        var btn = document.getElementById('lbResetBtn');
+        var row = document.getElementById('lbResetRow');
+        var input = document.getElementById('lbResetInput');
+        var confirmBtn = document.getElementById('lbResetConfirmBtn');
+        if (btn) btn.style.display = '';
+        if (row) row.style.display = 'none';
+        if (input) input.value = '';
+        if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Confirm Reset'; }
+    }
+
+    window.lbShowResetConfirm = function () {
+        if (!_lbLoadAuth()) return; // defensive — only reachable from inside the popup, itself gated on being signed in
+        var btn = document.getElementById('lbResetBtn');
+        var row = document.getElementById('lbResetRow');
+        if (btn) btn.style.display = 'none';
+        if (row) row.style.display = '';
+    };
+    window.lbCancelReset = function () { _lbCloseResetRow(); };
+
+    // Wipes this account's score/streak/history everywhere it's cached:
+    // local `lineup-activity` (main.js's own running totals — see
+    // _activityDefaults there, mirrored here since leaderboard.js can't
+    // import it), the private activityData/{uid} doc (deleted outright —
+    // its rules have no field-shape checks, so delete needs only the auth
+    // match), and the public leaderboard/{uid} doc. That last one can't go
+    // through the normal _lbPushScore path — score/streakBest are pushed as
+    // `maximum` transforms there specifically so a value never regresses,
+    // which is exactly what a reset needs to do, so this sends a plain
+    // overwrite of every field instead (still passes firestore.rules' shape
+    // checks; rules only require the values be valid, non-negative ints,
+    // not that they trend upward).
+    function _lbResetMyProgress(cb) {
+        var authNow = _lbLoadAuth();
+        if (!authNow) { if (cb) cb('not signed in'); return; }
+        _lbEnsureAuth(function (err, auth) {
+            if (err) { if (cb) cb(err); return; }
+            var name = _lbGetName() || '';
+            var docPath = 'projects/' + FIREBASE_CONFIG.projectId + '/databases/(default)/documents/leaderboard/' + auth.uid;
+            var activityPath = 'projects/' + FIREBASE_CONFIG.projectId + '/databases/(default)/documents/activityData/' + auth.uid;
+            var url = 'https://firestore.googleapis.com/v1/projects/' + FIREBASE_CONFIG.projectId + '/databases/(default)/documents:commit';
+            var body = {
+                writes: [
+                    {
+                        update: {
+                            name: docPath,
+                            fields: {
+                                name: { stringValue: name.slice(0, 40) },
+                                score: { integerValue: '0' },
+                                scoreDaily: { integerValue: '0' },
+                                scoreWeekly: { integerValue: '0' },
+                                scoreMonthly: { integerValue: '0' },
+                                streakCurrent: { integerValue: '0' },
+                                streakBest: { integerValue: '0' },
+                                updatedAt: { timestampValue: new Date().toISOString() }
+                            }
+                        },
+                        updateMask: { fieldPaths: ['name', 'score', 'scoreDaily', 'scoreWeekly', 'scoreMonthly', 'streakCurrent', 'streakBest', 'updatedAt'] }
+                    },
+                    { delete: activityPath }
+                ]
+            };
+            _lbXhr('POST', url, { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + auth.idToken }, body, function (err2) {
+                if (err2) { if (cb) cb(err2); return; }
+                var fresh = { totals: { layers: 0, keyframes: 0, fx: 0 }, score: 0, streak: { current: 0, best: 0, lastActiveDate: null }, history: {} };
+                try { localStorage.setItem('lineup-activity', JSON.stringify(fresh)); } catch (e) {}
+                _lbLastPushedPeriods = null;
+                if (typeof window._activityReloadFromCloud === 'function') window._activityReloadFromCloud();
+                if (cb) cb(null);
+            });
+        });
+    }
+
+    window.lbConfirmReset = function () {
+        var input = document.getElementById('lbResetInput');
+        if (!input || input.value !== 'RESET') return;
+        var confirmBtn = document.getElementById('lbResetConfirmBtn');
+        if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Resetting…'; }
+        _lbResetMyProgress(function (err) {
+            _lbCloseResetRow();
+            if (err) { showToast('Reset failed — check your connection and try again.'); return; }
+            showToast('Your progress has been reset.', 'info');
+            _lbFetchLeaderboard(_lbGetPeriod(), function (e, rows) { if (!e) _lbRenderFullList(rows); });
+        });
     };
 
     // Same localStorage key main.js's Settings > Enable Scoring toggle

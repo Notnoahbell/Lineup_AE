@@ -52,6 +52,7 @@ body.high-contrast .anchor-null-btn { background: #000000; border-color: #909090
 body.high-contrast .anchor-mode-btn:hover,
 body.high-contrast .anchor-ignore-masks-btn:hover,
 body.high-contrast .anchor-null-btn:hover { background: #3a3a3a; border-color: #ffffff; color: #ffffff; }
+body.high-contrast .anchor-ignore-masks-btn.active { background: #732316; border-color: #ff5c40; color: #ffffff; }
 body.high-contrast .icon-btn-wide,
 body.high-contrast .organize-btn { color: #e0e0e0; }
 body.high-contrast .organize-btn { border-color: #909090; }
@@ -141,6 +142,9 @@ body.high-contrast .edit-mode-bar-icon-btn:hover { background: #3a3a3a; color: #
 body.high-contrast .quick-actions-btn { color: #e0e0e0; border-color: #909090; }
 body.high-contrast .quick-actions-btn:hover { background: #3a3a3a; color: #ffffff; }
 body.high-contrast .qa-grid-1x6 { border-color: #909090; }
+/* Toolbar Mode tiles — same treatment as Quick Actions tiles above. */
+body.high-contrast .toolbar-btn { color: #e0e0e0; border-color: #909090; }
+body.high-contrast .toolbar-btn:hover { background: #3a3a3a; color: #ffffff; }
 /* The top Quick Actions bar's own #sec-quick-actions .quick-actions-btn
    rule (further down) hardcodes a darkened background/border for that bar
    specifically — an ID selector, which outranks the plain-class override
@@ -351,6 +355,28 @@ html, body {
     padding: 0;
     min-width: 220px;
 }
+/* Toolbar Mode's whole point is a responsive wrap-grid (see .toolbar-page)
+   that can drop to a single column at narrow widths — the 220px floor
+   above (tuned for Compact/Classic's own fixed layouts) was preventing the
+   panel from ever actually shrinking that far. Also needs a REAL flex-fill
+   chain down to .tool-col-toolbar (height/display/overflow below) instead
+   of the plain-block "grow with content, let the whole page scroll" layout
+   Compact/Classic both rely on — see the .tool-grid rule further down for
+   the rest of that chain and why it's needed. */
+body.layout-toolbar .panel {
+    min-width: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+body.layout-toolbar #panel-content {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
 
 /* ── Tab bar (Home / Tools / Settings) ────────────────────────────────────── */
 /* Styled like ordinary buttons rather than an underlined tab strip — only one
@@ -372,18 +398,22 @@ html, body {
     overflow: hidden;
     transition: opacity 0.16s ease, max-height 0.16s ease, padding 0.16s ease;
 }
-body.layout-classic .tab-bar {
+body.layout-classic .tab-bar,
+body.layout-toolbar .tab-bar {
     opacity: 0;
     max-height: 0;
     padding-top: 0;
     pointer-events: none;
 }
-/* Smart Stack jumps the Favorites bar, which is Compact-only — Classic has
-   no Favorites bar for it to do anything to, so this row is hidden there.
-   Enable Scoring stays available in both: Classic can reach the Trophy tab
-   too now, via the footer's classicTrophyBtn (see _toggleClassicTrophyTab
-   in main.js), so scoring is just as relevant there. */
-body.layout-classic #smartStackRow {
+/* Smart Stack jumps the Favorites bar, which is Compact-only — Classic/
+   Toolbar have no Favorites bar for it to do anything to, so this row is
+   hidden in both. Enable Scoring stays available in Classic (it can still
+   reach the Trophy tab via the footer's classicTrophyBtn), but Toolbar has
+   no footer/Trophy access at all (see body.layout-toolbar .footer), so
+   scoring is hidden there too — nothing left for the toggle to affect. */
+body.layout-classic #smartStackRow,
+body.layout-toolbar #smartStackRow,
+body.layout-toolbar #enableScoringRow {
     display: none;
 }
 .tab-btn {
@@ -1338,6 +1368,16 @@ body.layout-classic #smartStackRow {
     transition: color 0.05s linear;
 }
 .lb-edit-name-btn:hover { color: var(--text-dim); }
+/* Destructive, so it's the same low-key text-link treatment as Edit display
+   name above rather than a prominent button — only turns red on hover, not
+   at rest, so it doesn't read as an alarm in the normal footer view. */
+.lb-reset-btn { margin-left: 12px; }
+.lb-reset-btn:hover { color: #e07070; }
+.lb-reset-row { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.lb-reset-warning { font-size: 11px; color: #e07070; line-height: 1.4; margin: 0; }
+.lb-reset-confirm-btn { background: #b03535; border-color: #b03535; }
+.lb-reset-confirm-btn:hover { background: #c53f3f; }
+.lb-reset-confirm-btn:disabled { background: #383838; border-color: #383838; color: var(--text-dimmer); cursor: default; }
 
 /* Full-year activity calendar, expanded from the streak card's own small
    day strip — same .settings-overlay backdrop convention as Settings/
@@ -1518,6 +1558,416 @@ body.layout-classic #smartStackRow {
     letter-spacing: 0.03em;
 }
 
+/* Stagger Keyframes popup — same .settings-overlay backdrop/.settings-hdr
+   chrome as the activity calendar/leaderboard, own modal class since
+   .settings-modal's 216px width doesn't fit a timeline + curve editor. */
+.stagger-hidden { display: none !important; }
+.stagger-modal {
+    background: #1e1e1e;
+    border: 1px solid #303030;
+    border-radius: 11px;
+    width: calc(100vw - 20px);
+    min-width: 250px; /* keeps the ruler's ticks/labels/total from overlapping illegibly on a narrow panel */
+    max-width: 340px;
+    max-height: 80vh;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.8);
+}
+/* Abstracted "layers on a timeline" preview — a fixed demo row count (see
+   STAGGER_DEMO_ROWS in main.js), not the real selected layers, so the mockup
+   stays a clean, readable size regardless of how many layers are actually
+   selected. Zoomed to the stagger's own 0-1 fraction span rather than real
+   comp time, per the same reasoning .ease-preview's own box exists for. */
+.stagger-timeline-wrap {
+    margin: 10px 12px 0;
+    border: 1px solid #2c2c2c;
+    border-radius: 6px;
+    overflow: hidden;
+}
+/* Real comp frames/timecode ruler, directly above the abstracted bars —
+   same relationship AE's own ruler has to its Timeline layers. Ticks/
+   labels are JS-populated (_staggerRenderRuler in main.js); ew-resize signals
+   the drag-to-stretch/compress interaction (_staggerInitRulerDrag) that
+   works from anywhere on the ruler, not just an edge. */
+.stagger-ruler {
+    position: relative;
+    height: 22px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #2c2c2c;
+    cursor: ew-resize;
+    user-select: none;
+}
+.stagger-ruler-ticks {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 10px;
+    right: 10px;
+    pointer-events: none; /* clicks/drags pass through to .stagger-ruler's own handler */
+}
+.stagger-ruler-tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: #383838;
+}
+.stagger-ruler-label {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    font-size: 8.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+/* Purely decorative affordance — dragging already works from anywhere on
+   the ruler (see _staggerInitRulerDrag), these just make that obvious at a
+   glance, like a trim handle. */
+.stagger-ruler-handle {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 14px;
+    border-radius: 2px;
+    background: #7aaaff;
+    pointer-events: none;
+}
+.stagger-ruler-handle-left { left: 3px; }
+.stagger-ruler-handle-right { right: 3px; }
+.stagger-mockup {
+    padding: 8px;
+    background: #131313;
+    overflow: hidden;
+}
+.stagger-mockup-svg {
+    display: block;
+    width: 100%;
+    height: 169px; /* matches the viewBox's 200x135 aspect ratio */
+    overflow: visible;
+    cursor: default;
+}
+/* These are abstract demo rows, not real layers — a flat, uniform fill
+   darker than the mockup's own background (rather than a bright color)
+   reads as a generic "track" without implying it's real per-layer data. A
+   subtle light stroke keeps the bar's own shape/edges legible even though
+   its fill is darker than the backdrop it sits on. */
+.stagger-mockup-bar {
+    fill: #0a0a0a;
+    stroke: rgba(255,255,255,0.08);
+    stroke-width: 1;
+}
+/* A plain static marker, not a control — flat light fill, thin dark
+   outline, no pointer affordance at all, deliberately understated next to
+   .stagger-curve-handle below so the two don't read as the same kind of
+   thing. Rounding comes from stroke-linejoin:round combined with a
+   relatively thick stroke for the shape's size — thin strokes barely show
+   the rounded corner at all. */
+.stagger-mockup-diamond {
+    fill: #d4d4d4;
+    stroke: rgba(0,0,0,0.45);
+    stroke-width: 2.2;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+/* Curve overlay — drawn INTO the same svg as the bars above (transposed:
+   Y follows row/layer order, X follows that row's offset), not a separate
+   box, so dragging a handle visibly tracks against the bars it's shaping. */
+.stagger-curve-path {
+    fill: none;
+    stroke: #7aaaff;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-dasharray: 4 3;
+    vector-effect: non-scaling-stroke;
+}
+.stagger-curve-handle-line {
+    stroke: #7aaaff;
+    stroke-width: 1;
+    opacity: 0.65;
+    vector-effect: non-scaling-stroke;
+}
+/* The actual draggable control — solid accent-blue fill with a light halo
+   stroke, bigger and brighter than the plain-gray keyframe diamonds above,
+   so it unmistakably reads as "grab this" rather than "this is a marker". */
+.stagger-curve-handle {
+    fill: #7aaaff;
+    stroke: #e4edff;
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+    cursor: grab;
+    touch-action: none;
+}
+.stagger-curve-handle:hover { fill: #99bdff; }
+.stagger-curve-handle:active { cursor: grabbing; }
+.stagger-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+}
+.stagger-field-row {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--text-dim);
+}
+/* A bordered "chip" per control (Step, Group, Curve toggle) — all 3 sit
+   inline in the same row, same visual weight. */
+.stagger-field-box {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: #1a1a1a;
+    border: 1px solid #2c2c2c;
+    border-radius: 6px;
+    padding: 5px 8px;
+}
+.stagger-field-lbl { flex-shrink: 0; }
+/* Live total-span readout — plain text, not blue/scrub-styled, since
+   there's nothing to drag or click here (see _staggerRenderRuler, driven
+   by both the ruler drag and the Step scrubs). */
+/* Scrubbable blue-text number control — same drag-to-change/click-to-type
+   interaction and look as Shape Tools' stroke-width scrub (.vectools-fs-
+   width), reused here via the generic _makeStaggerScrub in main.js instead
+   of a plain <input type="number">. */
+.stagger-scrub {
+    display: inline-block;
+    min-width: 40px; /* fixed regardless of the displayed text, so the box doesn't reflow/"pop" while dragging changes the number */
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #4fa8ff;
+    cursor: ew-resize;
+    user-select: none;
+    transition: background 0.05s linear;
+}
+.stagger-scrub:hover { background: rgba(79,168,255,0.14); }
+/* Group Size is always a small 1-2 digit integer — the generic 40px
+   min-width (sized for Step/Total's longer "12.5 f"/"0.400 s" strings)
+   left a lot of dead space around it. */
+#staggerGroupSize { min-width: 20px; }
+.stagger-scrub-edit {
+    width: 44px;
+    background: #1a1a1a;
+    border: 1px solid #4fa8ff;
+    border-radius: 3px;
+    color: #4fa8ff;
+    font-size: 11px;
+    font-family: inherit;
+    padding: 1px 3px;
+}
+.stagger-scrub-edit:focus { outline: none; }
+/* Curve and Random share ONE bordered group (a segmented pair) instead of
+   each having its own separate box — margin-left:auto here (not on the
+   buttons themselves) pushes the whole group to the right edge of
+   .stagger-field-row, same as Step/Total and Group sit at the left. */
+.stagger-toggle-group {
+    margin-left: auto;
+    display: flex;
+    background: #1a1a1a;
+    border: 1px solid #2c2c2c;
+    border-radius: 6px;
+    overflow: hidden; /* clips each button's own corners to the group's radius */
+}
+/* Not a checkbox — clicking either button both flips its own enabled flag
+   AND opens/closes its own sub-panel below (see
+   _staggerToggleCurve/_staggerToggleRandom in main.js) as one action;
+   .is-active is the "on" state, toggled the same way .key-align-mode etc.
+   already are elsewhere. Curve/Random are mutually exclusive, so at most
+   one of the two buttons is ever active. */
+.stagger-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-dim);
+    transition: background 0.05s linear, color 0.05s linear;
+}
+.stagger-toggle-btn + .stagger-toggle-btn { border-left: 1px solid #2c2c2c; }
+.stagger-toggle-btn svg { width: 16px; height: 16px; pointer-events: none; }
+.stagger-toggle-btn:hover { background: #222222; color: var(--text); }
+/* Solid accent fill + white icon when a mode is on — a stronger,
+   unambiguous "this is active" state than a translucent tint. */
+.stagger-toggle-btn.is-active { background: #7aaaff; color: #ffffff; }
+.stagger-toggle-btn.is-active:hover { background: #8fb8ff; }
+.stagger-curve-panel { padding-top: 2px; }
+.stagger-panel-lbl {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 5px;
+}
+.stagger-random-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.stagger-reroll-btn {
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid #323232;
+    border-radius: 6px;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+}
+.stagger-reroll-btn svg { width: 13px; height: 13px; pointer-events: none; }
+.stagger-reroll-btn:hover { background: rgba(255,255,255,0.05); border-color: #555555; color: var(--text); }
+.stagger-preset-list {
+    display: flex;
+    gap: 6px;
+}
+/* Each preset is a small preview of its ACTUAL curve shape (rendered by
+   _staggerRenderPresetList in main.js), not a text label — the small "x"
+   delete overlay only appears on hover so the row doesn't read as
+   cluttered at rest. */
+.stagger-preset-thumb {
+    position: relative;
+    flex: 1; /* evenly fills the row's width alongside its siblings, instead of a fixed size */
+    min-width: 0;
+    height: 30px;
+    background: #131313;
+    border: 1px solid #2c2c2c;
+    border-radius: 6px;
+    padding: 3px;
+    cursor: pointer;
+    transition: background 0.05s linear, border-color 0.05s linear;
+}
+.stagger-preset-thumb:hover { border-color: #555555; background: #1a1a1a; }
+.stagger-preset-thumb-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.stagger-preset-thumb-path {
+    fill: none;
+    stroke: #7aaaff;
+    stroke-width: 2;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+.stagger-preset-del {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #2c2c2c;
+    border: 1px solid #3a3a3a;
+    color: var(--text-dim);
+    font-size: 9px;
+    line-height: 11px;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.1s linear, background 0.05s linear, color 0.05s linear;
+}
+.stagger-preset-thumb:hover .stagger-preset-del { opacity: 1; }
+.stagger-preset-del:hover { background: rgba(192,50,50,0.6); border-color: rgba(224,112,112,0.6); color: #fff; }
+/* Saves the CURRENT curve (whatever's on the mockup right now) as a new
+   preset — hidden entirely once the 5-preset cap is reached rather than
+   shown disabled, since there's nothing left to explain at that point. */
+.stagger-preset-add-btn {
+    flex: 1; /* evenly fills the row's width alongside its siblings, instead of a fixed size */
+    min-width: 0;
+    height: 30px;
+    background: none;
+    border: 1px dashed #3a3a3a;
+    border-radius: 6px;
+    color: var(--text-dimmer);
+    font-size: 15px;
+    line-height: 1;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color 0.05s linear, color 0.05s linear;
+}
+.stagger-preset-add-btn:hover { border-color: #7aaaff; color: #7aaaff; }
+.stagger-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+    border-top: 1px solid #272727;
+    padding: 8px 12px;
+}
+.stagger-cancel-btn, .stagger-apply-btn {
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: inherit;
+    font-weight: 600;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+}
+.stagger-cancel-btn {
+    background: none;
+    border: 1px solid #323232;
+    color: var(--text-dim);
+}
+.stagger-cancel-btn:hover { background: rgba(255,255,255,0.05); border-color: #555555; color: var(--text); }
+.stagger-apply-btn {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #fff;
+}
+.stagger-apply-btn:hover { filter: brightness(1.1); }
+/* Same visual language as .settings-close right next to it, just its own
+   icon — the icon itself rotates 180° on toggle (see .is-reversed) rather
+   than swapping to a different arrow glyph, so flipping direction reads as
+   one small continuous animation. */
+.stagger-direction-btn {
+    width: 22px; height: 22px;
+    background: none;
+    border: none;
+    border-radius: 5px;
+    color: #585858;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    transition: background 0.03s linear, color 0.03s linear;
+}
+.stagger-direction-btn:hover { background: rgba(122,170,255,0.15); color: #7aaaff; }
+.stagger-direction-btn svg {
+    width: 14px; height: 14px;
+    pointer-events: none;
+    transition: transform 0.25s ease;
+}
+.stagger-direction-btn.is-reversed svg { transform: rotate(180deg); }
+body.high-contrast .stagger-modal { background: #000000; border-color: #909090; }
+body.high-contrast .stagger-timeline-wrap { border-color: #909090; }
+body.high-contrast .stagger-ruler { border-bottom-color: #909090; }
+body.high-contrast .stagger-ruler-tick { background: #909090; }
+body.high-contrast .stagger-field-box { border-color: #909090; }
+body.high-contrast .stagger-toggle-group { border-color: #909090; }
+body.high-contrast .stagger-toggle-btn + .stagger-toggle-btn { border-left-color: #909090; }
+body.high-contrast .stagger-preset-thumb { border-color: #909090; }
+body.high-contrast .stagger-preset-del { border-color: #909090; }
+body.high-contrast .stagger-preset-add-btn { border-color: #909090; color: #ffffff; }
+body.high-contrast .stagger-reroll-btn { border-color: #909090; color: #ffffff; }
+body.high-contrast .stagger-cancel-btn { border-color: #909090; color: #ffffff; }
+
+/* Keyframe-mode-only toolbar slot (vsep + Stagger + 2 inert placeholders) —
+   parallel to .pos-align-extra, see index.html for why the button/separator
+   COUNT matches exactly (keeps the row's spacing stable across modes). */
+.key-align-extra { display: none; }
+.tool-body[data-block-id="alignlayers"].key-align-mode .key-align-extra { display: contents; }
+.stagger-dummy-btn { opacity: 0.35; cursor: default; }
+.stagger-dummy-btn:hover { background: transparent !important; color: #808080 !important; }
+
 /* ── Settings tab ─────────────────────────────────────────────────────────── */
 /* No margin of its own — .settings-modal-box's own gap (see below) already
    spaces these out; adding both was stacking to a much bigger gap than
@@ -1543,18 +1993,34 @@ body.layout-classic #smartStackRow {
 }
 .settings-row-icon { width: 14px; height: 14px; flex-shrink: 0; }
 
-/* Compact/Classic — a 2-button segmented control, same neutral (not blue)
-   "selected" treatment as the top tab bar. */
+/* Compact/Classic/Toolbar — a 3-button segmented control, same neutral (not
+   blue) "selected" treatment as the top tab bar. Wraps onto its own full-
+   width row below the "Layout" label (see .settings-tab-row-stack) — a
+   third button no longer fits squeezed beside the label on the 280px-wide
+   settings modal the way the original 2-button version did. */
 .layout-mode-group {
     display: flex;
-    gap: 6px;
+    gap: 4px;
 }
+/* Splits the row's width evenly across however many buttons it holds,
+   instead of each just hugging its own label-width content — needed now
+   that .layout-mode-group sits on its own full-width row. min-width:0 is
+   the actual load-bearing part: a flex item's default min-width is auto
+   (= its content's own min-content size), which silently overrides
+   flex-shrink and was letting all three buttons' combined natural width
+   overflow the 280px-wide settings modal instead of ever actually
+   shrinking. The label span below is the other half of the fix — it's
+   what gives the shrunk button somewhere to truncate TO instead of just
+   clipping mid-icon. */
 .layout-mode-btn {
+    flex: 1;
+    min-width: 0;
+    justify-content: center;
     height: 28px;
-    padding: 0 12px;
+    padding: 0 6px;
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     background: #232323;
     border: 1px solid #333333;
     border-radius: 6px;
@@ -1566,6 +2032,24 @@ body.layout-classic #smartStackRow {
 .layout-mode-btn svg { width: 13px; height: 13px; flex-shrink: 0; pointer-events: none; }
 .layout-mode-btn:hover  { background: #2a2a2a; border-color: #444444; color: #d0d0d0; }
 .layout-mode-btn.active { background: #3c3c3c; border-color: #6a6a6a; color: #F9F9F4; }
+/* Truncates gracefully under real width pressure instead of overflowing —
+   min-width:0 lets this actually shrink past its own text's natural width. */
+.layout-mode-btn-lbl {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* Stacks a settings-tab-row's label above its own content instead of the
+   base rule's side-by-side space-between — used just for the Layout row
+   now that its 3-button group needs the full row width to itself (see
+   .layout-mode-group above). */
+.settings-tab-row-stack {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
 
 /* Classic's section list, inline in the Settings tab — only shown while
    Layout above is set to Classic. No margin of its own for the same reason
@@ -1604,16 +2088,26 @@ body.layout-classic #smartStackRow {
     max-width: 570px;
     margin: 0 auto;
 }
-/* Classic wants its column flush against the actual panel edges (see
-   .tool-col-classic above) — this shared container's own padding/max-width/
-   centering (needed for Compact's bento grid) would otherwise still leave
-   a gap and cap it short of that. Compact's own #homeTopGroup/#homeGrid are
-   both display:none while Classic is active, so nothing else here is
-   affected by lifting them. */
-body.layout-classic .tool-grid {
+/* Classic/Toolbar both want their column flush against the actual panel
+   edges (see .tool-col-classic/.tool-col-toolbar) — this shared container's
+   own padding/max-width/centering (needed for Compact's bento grid) would
+   otherwise still leave a gap and cap it short of that. Compact's own
+   #homeTopGroup/#homeGrid are both display:none while either is active, so
+   nothing else here is affected by lifting them. Toolbar additionally
+   needs flex:1/min-height:0 here — the last link in the flex-fill chain
+   that starts at .panel (see its own comment there) — so this container
+   gets a real, definite height for .tool-col-toolbar's own height:100% to
+   resolve against, instead of the plain-block "grow with content, let the
+   whole page scroll" sizing Classic still uses. */
+body.layout-classic .tool-grid,
+body.layout-toolbar .tool-grid {
     padding: 0;
     max-width: none;
     margin: 0;
+}
+body.layout-toolbar .tool-grid {
+    flex: 1;
+    min-height: 0;
 }
 
 /* Bento grid: a 6-column CSS Grid. Each tool-box's data-span (3 = half
@@ -1739,25 +2233,31 @@ body.layout-classic .tool-grid {
    it and inflate Anchor's own box to fit (safe here specifically because
    _anchorNaturalHeight takes narrow-stack's MAX of this row vs. the grid,
    not a sum, so nothing here ever measures back into its own input). */
-#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-btn,
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-cluster,
 #homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-null-cluster {
     flex: 1 1 0;
     min-height: 0;
     min-width: 0;
     height: auto;
 }
-/* The seam between the two rows (see .anchor-null-cluster's own base-rule
-   border-left comment) flips to a top border once they're stacked instead
-   of side by side. */
-#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-null-cluster {
-    border-left: none;
-    border-top: 1px solid #2e2e2e;
-    padding-left: 0;
-    padding-top: 3px;
-}
 #homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-null-btn {
     height: auto;
     padding: 4px 6px;
+}
+/* Collapses the mode button to a plain icon-only shuffle button in this
+   tier (see _anchorModeBtnClick/_anchorModeCycle in main.js) — the label
+   and chevron just go display:none rather than being removed from the DOM,
+   so the same button/markup serves both tiers. A wide icon+word+chevron
+   button's own width getting squeezed toward nothing next to Ignore
+   Masks' fixed square here was the actual "not filling the row" complaint
+   this tier used to have. */
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-btn {
+    justify-content: center;
+    padding: 0;
+}
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-btn-lbl,
+#homeToolGrid.narrow-stack #homeTopGroup .tool-body[data-block-id="anchor"] .anchor-mode-btn-chevron {
+    display: none;
 }
 /* Favorited widgets: half-width by default (matching the Favorite slot's
    actual half-width real estate the rest of the time), reverted back to
@@ -1818,6 +2318,55 @@ body.layout-classic .tool-grid {
     height: 32px;
     min-height: 0;
     max-height: 32px;
+}
+/* Shape Tools: reverts its own half-line-by-default treatment (see
+   .vectortools-title-compact-only/.btn-group-wide/.vectortools-grp/
+   .icon-btn-wide/.vectools-fs-* further down this file) the same way
+   Sizing/Auto Crop/Sort do above — undoing each one back to its full-line
+   value instead of leaving it stuck stacked/shrunk once narrow-stack
+   forces the Favorite slot itself full width. */
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-title-compact-only {
+    display: inline;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .btn-group-wide {
+    flex-direction: row;
+    gap: 4px;
+    height: auto;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .btn-group-wide .vsep {
+    display: block;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-grp {
+    width: auto;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-grp-2 {
+    flex: 2 1 0;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-grp-3 {
+    flex: 3 1 0;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .icon-btn-wide {
+    height: 32px;
+    min-height: 0;
+    max-height: 32px;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-item {
+    padding: 3px 4px;
+    gap: 4px;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-swatch {
+    width: 20px;
+    height: 15px;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-width {
+    font-size: 11px;
+    max-width: 40px;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-lbl {
+    display: inline-block;
+}
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-props-btn {
+    display: none;
 }
 
 /* Favorite slot — see _favApplyLayout in main.js. Reads as true empty
@@ -2014,6 +2563,339 @@ body.layout-classic .tool-grid {
        from shrinking into illegibility on very narrow panels. */
     zoom: clamp(0.6, calc(((100vw - 20px) / 360px) * 0.75), 1.05);
 }
+
+/* ── Toolbar layout (user-assembled grid of single-action buttons) ────────── */
+/* Hidden unless Settings > Layout is set to Toolbar (see setLayoutMode in
+   main.js). Unlike Classic, this hosts no relocated .tool-body content at
+   all — its tiles are fresh clones off the Tools-tab catalog (see
+   _toolbarBuildTile), so there's no equivalent to Classic's "revert each
+   module's look" overrides below needed here. */
+.tool-col-toolbar {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    /* Fills whatever's left of the real flex chain above (.panel ->
+       #panel-content -> .tool-grid, all scoped to body.layout-toolbar) —
+       that chain is what's actually anchored to 100vh; this only needs
+       100% of ITS immediate parent, not the viewport directly, so it never
+       adds extra height on top of wherever it happens to sit. Gives
+       pagination (see _toolbarPageCapacity) a real, exact ceiling instead
+       of an approximate vh-minus-some-px guess. */
+    height: 100%;
+    min-height: 0;
+    padding: 10px;
+    box-sizing: border-box;
+    overflow: hidden; /* belt-and-suspenders — this never scrolls */
+}
+
+/* Empty-state prompt — the whole panel is otherwise blank in this mode, so
+   (unlike Favorites' own .fav-empty-hint, only shown while board-editing)
+   this stays visible any time the list is empty and NOT editing, to avoid
+   Toolbar Mode ever reading as simply broken. See _toolbarRender in main.js. */
+.toolbar-empty-hint {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #666666;
+    font-size: 12px;
+    text-align: center;
+    cursor: pointer;
+    border: 1.5px dashed #383838;
+    border-radius: 14px;
+    transition: border-color 0.1s linear, color 0.1s linear;
+}
+.toolbar-empty-hint:hover { border-color: var(--accent); color: var(--accent); }
+.toolbar-empty-hint svg { width: 22px; height: 22px; }
+.tool-col-toolbar.toolbar-empty .toolbar-empty-hint { display: flex; }
+.tool-col-toolbar.toolbar-empty .toolbar-pages,
+.tool-col-toolbar.toolbar-empty .toolbar-dots { display: none; }
+
+/* Sliding page carousel — same mechanics as the Favorites slot's own
+   .fav-pages/.fav-pages-track/.fav-page (see main.js's _favGoToPage and
+   its own comment), just with a grid of tiles per page instead of one
+   relocated widget, and a page count that's recomputed from both button
+   count and live size (see _toolbarPageCapacity) rather than a static cap. */
+.toolbar-pages {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+}
+.toolbar-pages-track {
+    display: flex;
+    height: 100%;
+    transition: transform 0.175s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.toolbar-page {
+    position: relative;
+    flex: 0 0 100%;
+    width: 100%;
+    min-width: 100%;
+    display: grid;
+    /* Fixed square tile, never resizes. grid-template-columns is set
+       inline per page by _toolbarRender/_toolbarComputeGrid in main.js,
+       not CSS auto-fill — auto-fill can only ever show whole tracks, but
+       the last column/row here is deliberately allowed to render fully
+       (and overflow past the edge, clipped by overflow:hidden below) as
+       soon as at least half a tile's worth of space is available, rather
+       than waiting for a full extra tile+gap to fit first (see
+       _toolbarCountAxis's own comment). TOOLBAR_TILE_SIZE/GAP in main.js
+       must match grid-auto-rows/gap here exactly — 45px/6px = 64px/8px
+       scaled down ~30%. */
+    grid-auto-rows: 45px;
+    gap: 6px;
+    justify-content: start;
+    align-content: start;
+    overflow: hidden; /* belt-and-suspenders — this never scrolls */
+}
+/* Softens the hard clip on whichever edge a half-cut-off tile (see
+   _toolbarCountAxis) actually lands on, into a progressive fade toward the
+   panel's own background instead. A single ::after with two full-size
+   layered gradients — not two separate ::before/::after elements — since
+   ::before paints UNDER the real tile buttons appended after it, which
+   would leave the bottom fade hidden behind them; ::after alone is
+   guaranteed to paint on top of every real child. Ordinary alpha
+   compositing between the two layers already gives the right OR-of-both-
+   edges result on its own (each gradient is transparent everywhere except
+   its own edge strip), so no mask-image/mask-composite trickery is needed
+   — and var(--bg) keeps this correct under High Contrast Mode too, since
+   that only re-points the variable, not this rule. */
+.toolbar-page::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(to right, transparent calc(100% - 14px), var(--bg) 100%),
+        linear-gradient(to bottom, transparent calc(100% - 14px), var(--bg) 100%);
+}
+.toolbar-dots {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    padding-top: 6px;
+}
+.toolbar-dots-hidden { display: none; }
+/* Identical to .fav-dot (see its own comment on the padding/background-clip
+   trick further down) — copied rather than shared since the two features'
+   markup/JS are otherwise fully independent. */
+.toolbar-dot {
+    width: 6.5px;
+    height: 6.5px;
+    box-sizing: content-box;
+    padding: 6px;
+    background-color: #555555;
+    background-clip: content-box;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background-color 0.1s linear;
+}
+.toolbar-dot:hover { background-color: #888888; }
+.toolbar-dot.active { background-color: #F9F9F4; }
+
+/* Toolbar tile — same visual language as .quick-actions-btn, but a genuine
+   fixed 45x45 square (never resizes, ~30% smaller than the original 64x64)
+   instead of a 1fr grid cell. No animation on the base rule — every tile
+   is rebuilt fresh on every _toolbarRender call (add, remove, drag-reorder,
+   resize repagination all just clear and rebuild the whole page), so
+   animating every one of them every time read as the grid replaying itself
+   on a plain resize. Only the ONE tile _toolbarRender was told to single
+   out (see _toolbarRenderAnimHint) gets .toolbar-anim-bounce-in or
+   .toolbar-anim-drop-land added — everything else stays put with no
+   animation at all. */
+.toolbar-btn {
+    position: relative;
+    width: 45px;
+    height: 45px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-btn);
+    border: 1px solid #323232;
+    border-radius: 8px;
+    color: #a0a0a0;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear, transform 0.05s linear;
+}
+.toolbar-btn:hover  { background: var(--bg-btn-h); color: #F9F9F4; }
+.toolbar-btn:active { background: var(--bg-btn-act); border-color: var(--accent); color: #fff; }
+.toolbar-btn svg { width: 18px; height: 18px; pointer-events: none; }
+
+/* A single newly-added tile (see _toolbarAdd) — identical keyframe to
+   Quick Actions' own .qa-anim-bounce-in/@keyframes qa-tile-bounce-in
+   (falls in from oversized, overshoots slightly past final size, settles)
+   — copied rather than shared across features, same precedent as
+   .toolbar-dot/.fav-dot etc. */
+@keyframes toolbar-tile-bounce-in {
+    0%   { opacity: 0; transform: scale(1.2); }
+    35%  { opacity: 1; transform: scale(0.94); }
+    65%  { transform: scale(1.02); }
+    100% { transform: scale(1); }
+}
+.toolbar-anim-bounce-in {
+    animation: toolbar-tile-bounce-in 0.22s ease-out;
+}
+
+/* The tile that was just dragged to a new spot (see _toolbarDragEnd) —
+   identical keyframe to Bottom Layout's own .bl-drop-land/@keyframes
+   bl-drop-land (starts larger, dips below final size, eases back up). Any
+   OTHER tiles that shifted as a side effect of an insert don't get their
+   own landing animation, matching bl-drop-land's own scope (the dropped
+   box itself, not every box its drop happened to shift). */
+@keyframes toolbar-drop-land {
+    0%   { transform: scale(1.1); }
+    60%  { transform: scale(0.96); }
+    100% { transform: scale(1); }
+}
+.toolbar-anim-drop-land {
+    animation: toolbar-drop-land 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* The little x-circle badge — only shown (and only clickable) while
+   editing; identical to .quick-actions-remove, just scaled down to match
+   .toolbar-btn's own ~30% smaller size. */
+.toolbar-remove {
+    display: none;
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 11px;
+    height: 11px;
+    color: #a0a0a0;
+    cursor: pointer;
+}
+.toolbar-remove:hover { color: #e05555; }
+.toolbar-remove svg { width: 100%; height: 100%; pointer-events: none; }
+
+/* Trailing add-tile — only rendered while editing (see _toolbarRender),
+   always the last tile of the last page. Identical to
+   .quick-actions-add-tile but fixed 45x45 to match .toolbar-btn. */
+.toolbar-add-tile {
+    width: 45px;
+    height: 45px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 1.5px dashed #444444;
+    border-radius: 8px;
+    color: #666666;
+    cursor: pointer;
+    transition: border-color 0.05s linear, color 0.05s linear;
+}
+.toolbar-add-tile:hover { border-color: var(--accent); color: var(--accent); }
+.toolbar-add-tile svg { width: 13px; height: 13px; pointer-events: none; }
+
+/* Board-editing (the same _editMode/pencil that drives Quick Actions/Bottom
+   Layout — see _toggleEditMode) dashes every tile's border, exactly like
+   #homeToolGrid.board-editing .quick-actions-btn does — works here for free
+   since #homeToolbar nests inside #homeToolGrid (see index.html), so this
+   selector already applies. Unlike that Quick Actions rule, pointer-events
+   stays enabled (not none) — Toolbar tiles support drag-to-reorder while
+   editing (see _toolbarDragStart in main.js), which needs real mouse
+   events to reach them; the tile's own underlying action is suppressed a
+   different way instead (a capture-phase click listener — see
+   _initToolbarDragSuppression), and hover/active are reset back to the
+   idle look below so a tile mid-drag doesn't also look "clickable". */
+#homeToolGrid.board-editing .toolbar-btn {
+    border-width: 1px;
+    border-style: dashed;
+    border-color: #555555;
+    cursor: grab;
+}
+#homeToolGrid.board-editing .toolbar-btn:hover,
+#homeToolGrid.board-editing .toolbar-btn:active {
+    background: var(--bg-btn);
+    border-color: #555555;
+    color: #a0a0a0;
+}
+#homeToolGrid.board-editing .toolbar-remove {
+    display: flex;
+    pointer-events: auto;
+}
+
+/* The tile actively being dragged stays in place but fades out — its
+   .toolbar-drag-ghost clone (below) is what actually follows the cursor.
+   Same opacity/easing as Bottom Layout's own .bl-dragging-source. */
+.toolbar-drag-source {
+    opacity: 0.3;
+    pointer-events: none;
+    transition: opacity 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* Styled to match Bottom Layout's own .bl-drag-ghost (opacity/shadow) as
+   closely as a plain square tile can be — BL's own "inertia" actually
+   comes from a continuous per-frame 3D tilt driven by drag velocity (see
+   _blTiltTick in main.js), which is a separate, more involved physics
+   system this doesn't attempt to reproduce. A plain `transform:
+   scale(1.08)` here wouldn't actually animate on its own, though — the
+   ghost is a brand-new element inserted already AT that scale, so there's
+   no prior state for a transition to animate FROM. A keyframe animation
+   plays regardless of prior state, so it's what actually gives the
+   pickup its little "lift" instead of just appearing already-scaled-up.
+   animation-fill-mode: forwards (the trailing "forwards" in the
+   shorthand) holds the scaled-up end state for the rest of the drag once
+   the animation finishes. */
+@keyframes toolbar-ghost-lift {
+    from { transform: scale(1); }
+    to   { transform: scale(1.08); }
+}
+.toolbar-drag-ghost {
+    position: fixed;
+    z-index: 3000;
+    pointer-events: none;
+    cursor: grabbing;
+    opacity: 0.78;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    animation: toolbar-ghost-lift 0.1s ease forwards;
+}
+/* Cursor reads "grabbing" everywhere while a drag is in progress, not just
+   over the ghost itself (which has pointer-events:none anyway, so the
+   cursor over IT would otherwise fall back to whatever's beneath). */
+body.toolbar-dragging-active, body.toolbar-dragging-active * {
+    cursor: grabbing !important;
+}
+
+/* Hovering the CENTER ~50% of another tile — outlines the whole tile blue
+   to signal "drop here to swap places with it" (see _toolbarDragMove). */
+.toolbar-drop-target-swap {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    border-radius: 8px;
+}
+/* Hovering the outer ~25% on either side of a tile — a thin vertical bar
+   signals "drop here to insert before/after it" instead of swapping (see
+   _toolbarShowDragIndicator). Always centered on the actual gap MIDPOINT
+   between the two tiles, not a fixed offset from either one's own edge —
+   that's what makes hovering tile A's right 25% and tile B's (A's
+   neighbor) left 25% land on the exact same spot instead of two visibly
+   different ones. width here must match the indicatorWidth constant in
+   _toolbarShowDragIndicator. Positioned via fixed top/left/height set
+   directly in JS, not CSS, since it has to track whichever tile/edge is
+   currently hovered. */
+.toolbar-drag-indicator {
+    display: none;
+    position: fixed;
+    width: 4px;
+    background: var(--accent);
+    border-radius: 2px;
+    z-index: 2999;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.08s ease;
+}
+.toolbar-drag-indicator.visible { display: block; opacity: 1; }
 
 /* Compact and Classic share the exact same DOM nodes for each tool's actual
    controls (see .tool-body in main.js's _applyLayoutMode) — everything
@@ -2291,12 +3173,29 @@ body.layout-classic .tool-grid {
    until the mouse found them. Slightly darker/recessed than the plain
    buttons below (rather than raised like them) so this one specifically
    reads as a dropdown field, not just another button — reinforcing the
-   chevron rather than relying on it alone. */
+   chevron rather than relying on it alone. Wide tier only — narrow-stack
+   turns it into a plain icon-only shuffle button instead (see its own
+   override further down), where "a dropdown field" isn't the right
+   read anymore. */
+/* Mode dropdown (wide) / shuffle button (narrow-stack) + Ignore Masks,
+   always inline with each other — this is the first of
+   .anchor-tools-group's always-two rows, full-width above Null (see
+   .anchor-null-cluster below). Same flex:1/min-height reasoning as
+   .anchor-null-cluster below — shares .anchor-tools-group's extra height
+   with it equally instead of sitting at a fixed 2.5em regardless of how
+   much room there is. */
+.anchor-mode-cluster {
+    flex: 1;
+    min-height: 2.5em;
+    min-width: 0;
+    display: flex;
+    align-items: stretch;
+    gap: 0.35em;
+}
 .anchor-mode-btn {
     /* flex:1 (not 0 0 auto) plus min-height instead of height — shares
-       whatever extra height .anchor-tools-group has (see .anchor-mode-
-       line's own align-items:stretch) with .anchor-null-cluster below
-       equally, growing past 2.5em when there's room instead of just
+       whatever extra height .anchor-mode-cluster has with Ignore Masks
+       beside it, growing past 2.5em when there's room instead of just
        floating at a fixed size in the middle of it; 2.5em is the floor,
        not the target. Width still comes from the parent's own
        align-items:stretch. */
@@ -2338,18 +3237,16 @@ body.layout-classic .tool-grid {
     height: 0.85em;
     opacity: 0.6;
 }
-/* Ignore Masks + Null, always inline with each other (see
-   doToggleIgnoreMasks in main.js) — this is the second of
-   .anchor-tools-group's always-two rows, full-width below the mode
-   button. No divider of its own here — now that each button has its own
-   visible border (see .anchor-ignore-masks-btn/.anchor-null-btn), a
-   second line this close to the mode button's own border just doubled
-   up; .anchor-tools-group's own gap is separation enough. Narrow-stack
-   (further up) still gets one, where its own stacked layout benefits from
-   a clearer top/bottom seam. */
+/* Null on its own — this is the second of .anchor-tools-group's
+   always-two rows, full-width below the mode cluster (see
+   .anchor-mode-cluster above; Ignore Masks used to live in this row
+   instead of that one). No divider of its own here — now that each button
+   has its own visible border (see .anchor-ignore-masks-btn/.anchor-null-
+   btn), a second line this close to the mode row's own border just
+   doubled up; .anchor-tools-group's own gap is separation enough. */
 .anchor-null-cluster {
-    /* Same flex:1/min-height reasoning as .anchor-mode-btn above — shares
-       .anchor-tools-group's extra height with it equally instead of
+    /* Same flex:1/min-height reasoning as .anchor-mode-cluster above —
+       shares .anchor-tools-group's extra height with it equally instead of
        sitting at a fixed 2.2em regardless of how much room there is. */
     flex: 1;
     min-height: 2.2em;
@@ -2364,8 +3261,9 @@ body.layout-classic .tool-grid {
    lighter/pressable instead of sunken. */
 .anchor-ignore-masks-btn {
     flex-shrink: 0;
-    /* Stretches to match .anchor-null-btn's own height:100% instead of a
-       fixed 2.2em (min-height is the floor, same as its sibling), but
+    /* Stretches via .anchor-mode-cluster's align-items:stretch, same as
+       .anchor-mode-btn beside it, instead of a fixed 2.2em (min-height is
+       the floor, same as its sibling), but
        needs to stay visibly square doing it — height:100% squares up
        against WIDTH automatically, not height, so width is kept in sync
        with the real rendered height in JS instead (same reason/same
@@ -2391,9 +3289,9 @@ body.layout-classic .tool-grid {
    (the tooltip fills in the rest). Same active-highlight language as
    .settings-btn.active. */
 .anchor-ignore-masks-btn.active {
-    background: rgba(36, 112, 224, 0.18);
-    border-color: #4d9bff;
-    color: #7aaaff;
+    background: rgba(224, 54, 36, 0.18);
+    border-color: #ff5c40;
+    color: #ff9080;
 }
 .anchor-null-btn {
     flex: 1 1 auto;
@@ -2503,17 +3401,35 @@ body.layout-classic .tool-grid {
     min-height: 96px;
 }
 
-/* Every place a Quick Actions bar goes 6-wide/one-row (quickactions2 docked
-   full-width, either bar under narrow-stack) shares this same shorter
-   floor instead of each keeping the 2-3-row min-height above — one row of
-   6 needs a lot less height, and matching it everywhere keeps tiles close
-   to square instead of tall rectangles, and both bars the same height as
-   each other whenever they're both showing this shape. */
+/* Every place quickactions2 specifically goes 6-wide/one-row (docked
+   full-width in Bottom Layout, or in the Favorite slot under narrow-stack)
+   shares this same shorter floor instead of keeping the 2-3-row min-height
+   above — one row of 6 needs a lot less height, and matching it wherever
+   quickactions2 shows this shape keeps its tiles close to square instead
+   of tall rectangles. */
 .tool-box[data-span="6"] .quick-actions-grid,
-#homeToolGrid.narrow-stack #sec-quick-actions .quick-actions-grid,
 #homeToolGrid.narrow-stack #sec-favorite .fav-page[data-fav-id="quickactions2"] .quick-actions-grid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
     min-height: 40px;
+}
+/* The 'main' bar up top also goes 6-wide/one-row under narrow-stack (see
+   _qaGridShape's own comment in main.js), but never adopts the
+   quickactions2-style connected-bar chrome above (no .qa-grid-1x6 here —
+   see _qaSyncAddTiles) — every tile stays its own bordered square, same as
+   the 3-wide shape, just arranged one row instead of two. Trimmed about
+   40% shorter than a plain content-driven tile would sit (see the padding
+   override below, which is what actually gets it down this far — this
+   min-height alone is already below that natural floor). */
+#homeToolGrid.narrow-stack #sec-quick-actions .quick-actions-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    min-height: 40px;
+}
+/* Trims the tile's own vertical padding to match the shorter floor above —
+   the base .quick-actions-btn padding (6px 2px) was tuned for the 3-wide
+   shape's taller squares, and left this row noticeably taller than the
+   ~40%-shorter target on its own. */
+#homeToolGrid.narrow-stack #sec-quick-actions .quick-actions-btn {
+    padding: 3px 2px;
 }
 /* Quick Actions 2 inside the Favorite slot matches whatever shape it'd have
    if simply docked at that same width in Bottom Layout: the slot itself is
@@ -3663,6 +4579,16 @@ body.bl-drag-active {
 .tool-body[data-block-id="alignlayers"].key-align-mode .key-align-default-icon  { opacity: 0; }
 .tool-body[data-block-id="alignlayers"].key-align-mode .key-align-keyframe-icon { opacity: 1; }
 
+/* Top/Center Vertical/Bottom (.pos-align-extra) have no keyframe-mode
+   meaning — a time axis has no "vertical" — so keyframe mode swaps them for
+   .key-align-extra (Stagger + 2 placeholder buttons, see that class further
+   down) instead of giving them their own keyframe icon variants like Left/
+   Center/Right above. display:contents keeps .pos-align-extra's children
+   (the vsep + 3 buttons) as direct flex items of .btn-group in the default
+   state, so the row's layout is identical to before this existed. */
+.pos-align-extra { display: contents; }
+.tool-body[data-block-id="alignlayers"].key-align-mode .pos-align-extra { display: none; }
+
 /* Every block is 2 tiles tall regardless of width, but a button row only
    needs its own content height — grow the wrapper and center within it so
    it fills the tile instead of leaving dead space below. Organize/Ease
@@ -4432,13 +5358,27 @@ input[type="checkbox"]:checked::after {
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
 }
+/* Bezier handle lines/dots — thinner and more transparent than the curve
+   and keyframe markers so they read as a secondary detail rather than
+   competing with either; colored per-dimension inline (same convention as
+   the value path/keyframe markers) via style.stroke/style.fill rather than
+   here, since the CSS class alone can't know which dimension it belongs
+   to. Skipped entirely for hold/linear segments — see
+   _easeSegmentIsBezier in main.js. */
+.ease-preview-handle-line {
+    stroke-width: 1;
+    stroke-linecap: round;
+    opacity: 0.55;
+    vector-effect: non-scaling-stroke;
+}
+.ease-preview-handle-dot { opacity: 0.55; }
 /* Keyframe markers — always a diamond (a <polygon>, its vertices computed
    in main.js to counteract the SVG's own non-uniform stretch so it renders
    as a true symmetric diamond rather than a squished rhombus — see
    _easePreviewRender) regardless of the keyframe's real interpolation
    type. Bigger/higher-contrast than plain circular dots would be — a light
    fill plus a visible stroke reads as a clear point rather than a faint
-   ring. No bezier handle lines are drawn. */
+   ring. */
 .ease-preview-points polygon {
     fill: #1c2733;
     stroke: #8fb4ff;
@@ -4479,14 +5419,20 @@ input[type="checkbox"]:checked::after {
     font-size: 18px;
     line-height: 1;
     color: var(--text-dim);
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.75);
     border: 1px solid #2c2c2c;
     border-radius: 6px;
     padding: 6px 10px;
     pointer-events: none;
     z-index: 1;
+    opacity: 1;
+    transition: opacity 0.15s ease;
 }
 .ease-sel-indicator.visible { display: block; }
+/* Fades out of the way on hover rather than sitting fixed over the
+   top-left corner of the graph, which is exactly where a curve's own
+   early keyframes/lines tend to sit. */
+.ease-preview:hover .ease-sel-indicator { opacity: 0; }
 
 /* Clear button, bottom-right of the graph — used to be its own icon
    button competing with Copy/Paste for space in the row below (see that
@@ -5607,6 +6553,15 @@ input.gap-inline-input {
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
 }
 .edit-mode-bar.edit-mode-bar-hidden { display: none; }
+/* Toolbar Mode has no header at all while editing — Undo/Redo/Restore/
+   Cancel/Save all disappear along with it (see the right-click context
+   menu's "Edit Toolbar"/"Done Editing" toggle in main.js, which is what
+   exits edit mode here instead — every add/remove/reorder already saves
+   live as it happens, so there's nothing a Save button would still need to
+   commit). Higher specificity than the plain .edit-mode-bar-hidden toggle
+   above (extra body/class), so this wins even while _editMode is on and
+   JS has removed that class. */
+body.layout-toolbar .edit-mode-bar { display: none; }
 
 /* Same width ceiling/centering as .tool-grid (see its own max-width
    comment) so "Editing Layout" and the widgets below always share the
@@ -5714,6 +6669,14 @@ input.gap-inline-input {
     border-top: 1px solid var(--divider);
     margin-top: 2px;
 }
+/* Toolbar Mode has no footer at all — Settings and the edit/customize
+   pencil are both reachable there instead via a right-click context menu
+   anywhere on the grid (see #toolbarCtx/_openToolbarCtx in main.js), so the
+   footer (and everything in it — scoring/Trophy included) just isn't
+   relevant to show. */
+body.layout-toolbar .footer {
+    display: none;
+}
 
 .footer-actions { display: flex; align-items: center; gap: 2px; }
 
@@ -5770,7 +6733,9 @@ input.gap-inline-input {
    the Settings gear beside it (#settingsGearBtn) stays put in both modes. */
 body.layout-classic #quickActionsEditBtn { width: 0; opacity: 0; pointer-events: none; }
 /* Inverse of the edit pencil above — hidden in Compact (the real tab bar
-   already has a Trophy button there), shown only in Classic. */
+   already has a Trophy button there), shown only in Classic. Toolbar has no
+   footer at all (see body.layout-toolbar .footer above), so Trophy simply
+   isn't reachable from there — nothing to swap in for it. */
 .classic-trophy-btn { width: 0; opacity: 0; pointer-events: none; }
 body.layout-classic .classic-trophy-btn { width: 28px; opacity: 1; pointer-events: auto; }
 
@@ -7468,8 +8433,8 @@ input[type="range"].scale-slider::-webkit-slider-thumb:hover {
     pointer-events: auto;
 }
 
-/* ── Shape selection mode (Path/Fill/Stroke) and Split Text — AE-native-
-   toolbar style ─────────────────────────────────────────────────────────── */
+/* ── Shape selection mode (Path/Fill/Stroke), Split Text, and Smart
+   Select/Link/Merge — AE-native-toolbar style ────────────────────────────── */
 /* Small corner triangle — the same "this button has more options via a
    flyout" affordance AE's own grouped tools (Rectangle/Ellipse/Polygon,
    etc.) use, so this reads as the same kind of control rather than a
@@ -7479,8 +8444,8 @@ input[type="range"].scale-slider::-webkit-slider-thumb:hover {
    border-radius to round). Shared by both flyout buttons in the Shape
    Tools widget, and by their clones in the Tools tab and Quick Actions
    (same classes carried over, so this one rule covers every instance). */
-.shape-sel-btn, .split-text-btn { position: relative; }
-.shape-sel-btn::after, .split-text-btn::after {
+.shape-sel-btn, .split-text-btn, .smart-btn { position: relative; }
+.shape-sel-btn::after, .split-text-btn::after, .smart-btn::after {
     content: '';
     position: absolute;
     right: 4px;

@@ -108,11 +108,7 @@
   </button>
 </div>
 
-<!-- ── EDIT MODE BAR — shown while the pencil/board-editing is active (see
-     _toggleEditMode in main.js). Every edit already saves live as you make
-     it (Quick Actions x2, Bottom Layout, Favorites), so Cancel/Restore
-     don't undo individual steps — they swap localStorage for a snapshot/
-     defaults and re-render. -->
+<!-- Edits save live; Cancel/Restore swap localStorage for a snapshot/defaults rather than undoing individual steps (see _toggleEditMode in main.js). -->
 <div id="editModeBar" class="edit-mode-bar edit-mode-bar-hidden">
   <div class="edit-mode-bar-inner">
     <span class="edit-mode-bar-text">Editing Layout</span>
@@ -145,12 +141,7 @@
 
       <!-- ── ANCHOR POINT ──────────────────────────────────────────────────── -->
       <div class="tool-box tool-box-anchor" id="sec-anchor" data-block-id="anchor" data-span="3" data-rowspan="2">
-        <!-- Anchor has no visible header/icon in Compact normally — this
-             exists only so it has something to collapse to during Quick
-             Actions editing, matching every other section's .sec-icon. Must
-             be a direct child of .tool-box (sibling of .tool-body, not
-             nested inside it) so it doesn't inherit .tool-body's
-             visibility:hidden while collapsed. -->
+        <!-- Exists only so Anchor has something to collapse to in Quick Actions editing; must stay a sibling of .tool-body, not nested, or it inherits its hidden visibility. -->
         <svg class="qa-collapse-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" style="color:#4ec9aa">
           <circle cx="7" cy="7" r="2"/>
           <line x1="7" y1="1.5" x2="7" y2="5"/>
@@ -172,53 +163,40 @@
               <button class="anchor-btn" title="Bottom Right"  onclick="doAnchor(8, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17,9 L17,14.5 Q17,17 14.5,17 L9,17"/></svg></button>
             </div>
           </div>
-          <!-- "Based on" used to be a native <select> + an "Ignore Masks"
-               checkbox; Compact now uses a custom icon+word button opening
-               a small flyout (see _openAnchorModeCtx/ANCHOR_MODE_OPTIONS in
-               main.js) — a <select> can't show a custom icon in its own
-               closed state. Ignore Masks is a small square toggle there
-               (see doToggleIgnoreMasks/_ignoreMasks in main.js) instead of
-               a checkbox, sitting inline with Null rather than the mode
-               dropdown. All three share one small bordered .btn-group
-               "toolbar" box (replacing the old full-width divider + stretched
-               buttons) that hugs its own content instead of stretching the
-               whole row — see .anchor-mode-line/.anchor-tools-group in
-               style.css. Mode button and the Null cluster still wrap onto
-               their own rows once the box is too narrow for both.
-               Compact-only now — this whole row is hidden in Classic (see
-               #homeClassic .anchor-mode-line in style.css), which gets its
-               own separate original-style row instead, just below. -->
+          <!-- Compact-only (hidden in Classic, see #homeClassic .anchor-mode-line): wide tier shows an icon+word+flyout button, narrow-stack collapses it to an icon-only shuffle button, dispatched by _anchorModeBtnClick based on live _narrowStack (see ANCHOR_MODE_OPTIONS in main.js). -->
           <div class="ctrl-row anchor-mode-line">
             <div class="btn-group anchor-tools-group">
-              <button class="anchor-mode-btn" id="anchorModeBtn" onclick="_openAnchorModeCtx(this, event)" title="Based on: Object">
-                <span class="anchor-mode-btn-icon" id="anchorModeBtnIcon"></span>
-                <span class="anchor-mode-btn-lbl" id="anchorModeBtnLbl">Object</span>
-                <svg class="anchor-mode-btn-chevron" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,1 5,5 9,1"/></svg>
-              </button>
-              <div class="anchor-null-cluster">
+              <div class="anchor-mode-cluster">
+                <button class="anchor-mode-btn" id="anchorModeBtn" onclick="_anchorModeBtnClick(this, event)" title="Based on: Object">
+                  <span class="anchor-mode-btn-icon" id="anchorModeBtnIcon"></span>
+                  <span class="anchor-mode-btn-lbl" id="anchorModeBtnLbl">Object</span>
+                  <svg class="anchor-mode-btn-chevron" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,1 5,5 9,1"/></svg>
+                </button>
                 <button class="anchor-ignore-masks-btn" id="ignoreMasksBtn" onclick="doToggleIgnoreMasks()" title="Ignore Masks: Off">
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="3" width="14" height="14" rx="2.4" stroke-dasharray="2.2,2"/>
-                    <line x1="2.5" y1="17.5" x2="17.5" y2="2.5"/>
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                    <defs>
+                      <clipPath id="ignoreMasksSquircleClip">
+                        <rect x="2" y="2" width="16" height="16" rx="3.5"/>
+                      </clipPath>
+                      <mask id="ignoreMasksStarKnockout" maskUnits="userSpaceOnUse" x="0" y="0" width="20" height="20">
+                        <rect x="0" y="0" width="20" height="20" fill="#fff"/>
+                        <path d="M10,3.5 L11.53,7.9 L16.18,7.99 L12.47,10.8 L13.82,15.26 L10,12.6 L6.18,15.26 L7.53,10.8 L3.82,7.99 L8.47,7.9 Z" fill="#000" stroke="#000" stroke-width="2.4" stroke-linejoin="round"/>
+                      </mask>
+                    </defs>
+                    <rect x="2" y="2" width="16" height="16" rx="3.5" stroke-width="1.3"/>
+                    <g clip-path="url(#ignoreMasksSquircleClip)">
+                      <path fill="currentColor" mask="url(#ignoreMasksStarKnockout)" d="M2,2 L10,2 L10,10 L2,10 Z M10,10 L18,10 L18,18 L10,18 Z"/>
+                    </g>
+                    <path fill="currentColor" stroke="none" d="M10,3.5 L11.53,7.9 L16.18,7.99 L12.47,10.8 L13.82,15.26 L10,12.6 L6.18,15.26 L7.53,10.8 L3.82,7.99 L8.47,7.9 Z"/>
                   </svg>
                 </button>
+              </div>
+              <div class="anchor-null-cluster">
                 <button class="anchor-null-btn" onclick="doCreateNull()" title="Create a null at the anchor point">Null</button>
               </div>
             </div>
           </div>
-          <!-- Classic-only equivalent of the row above — the ORIGINAL
-               native <select> + checkbox instead of Compact's icon+flyout
-               button/square toggle, which read wrong once Classic's own
-               redesign-time relocation carried it over unchanged (that's
-               the "messed up" bit this replaces). Same shared state
-               (_anchorMode/_ignoreMasks in main.js) as the row above —
-               _anchorModeRefreshButton/_ignoreMasksRefreshButton keep both
-               in sync regardless of which one last changed it, so
-               switching layout modes mid-session never shows stale values.
-               No Null here at all — Classic already has its own dedicated
-               Null/Copy-Paste panel docked beside the grid (see
-               _applyLayoutMode in main.js), so a second Null button here
-               would just be redundant. -->
+          <!-- Classic's native <select>+checkbox equivalent of the row above, kept in sync via _anchorModeRefreshButton/_ignoreMasksRefreshButton; no Null here since Classic has its own dedicated Null/Copy-Paste panel (see _applyLayoutMode in main.js). -->
           <div class="ctrl-row anchor-mode-line-classic">
             <span class="lbl">Based on</span>
             <select id="anchorModeSelectClassic" onchange="_anchorModeSet(parseInt(this.value, 10))">
@@ -233,26 +211,14 @@
         </div>
       </div>
 
-      <!-- ── QUICK ACTIONS — Compact-only, freely customizable (add/remove any
-           tool from the Tools tab, capped at 3x3). Fully independent of
-           Classic's Organize section below; the two share no markup at all.
-           Edit toggle lives in the footer next to Help, not on this box
-           itself — see _renderQuickActions/_toggleEditMode in main.js. -->
+      <!-- Compact-only, customizable (max 3x3), independent of Classic's Organize; edit toggle lives in the footer, not on this box (see _renderQuickActions/_toggleEditMode in main.js). -->
       <div class="tool-box tool-box-quick-actions" id="sec-quick-actions" data-span="3" data-rowspan="1">
           <div class="tool-body">
             <div class="quick-actions-grid" id="quickActionsGrid"></div>
           </div>
       </div>
 
-      <!-- ── FAVORITE — one fixed half-width slot holding a sliding stack of
-           up to 3 catalog widgets (Align/Distribute/Sizing/AutoCrop/Sort/
-           Quick Actions 2/Spell Check/Ease Copy) you've starred in edit
-           mode, one per page, physically relocating each real .tool-body
-           the same way Compact/Classic already share one — see
-           _favApplyLayout in main.js. Defaults to a single Ease Copy page;
-           each page's own X returns it to Bottom Layout as a full-line
-           widget instead of just delisting it. Dots at the bottom page
-           between them when there's more than one. -->
+      <!-- One slot holding a sliding stack of up to 3 starred widgets, one per page, physically relocating each real .tool-body (see _favApplyLayout in main.js); each page's X returns it to Bottom Layout rather than just delisting it. -->
       <div class="tool-box tool-box-favorite fav-empty" id="sec-favorite" data-span="3" data-rowspan="1">
         <div class="fav-empty-hint">
           <svg viewBox="0 0 14 14" fill="currentColor"><polygon points="7,1.3 8.7,4.9 12.6,5.4 9.8,8 10.5,11.9 7,10 3.5,11.9 4.2,8 1.4,5.4 5.3,4.9"/></svg>
@@ -268,10 +234,7 @@
 
     <div id="sec-ease-original" class="sec-hidden">
       <div class="tool-body" data-block-id="ease">
-        <!-- Compact-only title bar — Classic already shows this same
-             icon/name as its own section header (#cls-ease), so this copy
-             is hidden there to avoid duplicating it (see #homeClassic
-             .ease-title-row). -->
+        <!-- Compact-only title bar; hidden in Classic since #cls-ease already shows the same header (see #homeClassic .ease-title-row). -->
         <div class="ctrl-row ease-title-row" style="padding-left:2px">
           <svg class="sec-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="color:#e05555">
             <path d="M12,5 L12,3.5 Q12,2 10.5,2 L3.5,2 Q2,2 2,3.5 L2,10.5 Q2,12 3.5,12 L5,12"/>
@@ -279,30 +242,15 @@
           </svg>
           <span class="lbl">Ease Copy</span>
         </div>
-        <!-- Value-over-time curve of the *copied* ease (the same clipboard
-             Copy/Paste below use — see _pollEaseGraph in main.js and
-             lineup_easeGetClipboard in host.jsx), normalized to the copied
-             keyframes' relative timing. Only shown at half width or in the
-             Favorite slot (see the CSS) — full width has plenty of room
-             for Copy/Paste alone. Keyframes always render as diamonds; no
-             bezier handle lines are drawn, just the curve and the markers.
-             The small corner badge just mirrors #easeDisplay's own count/
-             symbol text (see _easeSelIndicatorRender in main.js) — the
-             same copied-keyframe count, not the live Timeline selection. -->
+        <!-- Live preview of the copied ease clipboard (see _pollEaseGraph in main.js, lineup_easeGetClipboard in host.jsx); multi-dim properties get one line+color per dimension rather than one misleading line (see _easePreviewRender/EASE_DIM_COLORS). -->
         <div class="ease-preview" id="easePreview">
           <svg class="ease-preview-svg" id="easePreviewSvg" viewBox="0 0 200 100" preserveAspectRatio="none">
-            <path class="ease-preview-value-path" id="easePreviewValuePath" d=""/>
+            <g class="ease-preview-value-paths" id="easePreviewValuePaths"></g>
             <g class="ease-preview-handles" id="easePreviewHandles"></g>
             <g class="ease-preview-points" id="easePreviewPoints"></g>
           </svg>
           <div class="ease-sel-indicator" id="easeSelIndicator"></div>
-          <!-- Clear button, bottom-right — only shown once there's actually
-               something copied to clear (hidden via .is-empty, same class
-               _easePreviewRender already toggles for the empty-state
-               message above). Used to sit as its own icon button in the
-               Copy row below, competing with Copy/Paste for that same
-               narrow space; overlaying it on the graph instead means
-               Copy/Paste can flex into the width it used to take. -->
+          <!-- Only shown once something's copied (.is-empty, same class toggled for the empty-state message); overlaid on the graph instead of the Copy row so Copy/Paste can use the full width. -->
           <button class="icon-btn small filled btn-trash ease-preview-clear-btn" title="Clear ease clipboard" onclick="doEaseClear()">
             <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
               <polyline points="3,5 4.5,12 9.5,12 11,5"/>
@@ -321,19 +269,7 @@
           </div>
         </div>
         <div class="ease-panels-row">
-          <!-- Quick-swap keyframe interpolation — acts on whatever's selected
-               in the Timeline right now (see doSetKeyInterpolation/
-               lineup_setKeyframeInterpolation), same scope as an AE
-               interpolation shortcut. One square button rather than 3 small
-               ones (they read too cramped in this tight a row) — left-click
-               applies whichever mode is currently active (defaults to
-               Continuous Bezier, the actual reason this control exists —
-               see doSetKeyInterpolation's own comment), right-click opens a
-               flyout to pick Linear/Bezier/Hold instead, same left-click-
-               runs/right-click-swaps convention as Select Paths/Split Text
-               elsewhere in this panel (see EASE_INTERP_MODES/
-               _openEaseInterpCtx in main.js). Only shown alongside the
-               graph above. -->
+          <!-- Left-click applies the active interpolation mode (default Continuous Bezier); right-click opens a flyout to pick another (see EASE_INTERP_MODES/_openEaseInterpCtx in main.js). Shown only alongside the graph above. -->
           <button class="ease-interp-btn" id="easeInterpBtn" data-mode="bezier" title="Bezier" onclick="_easeInterpRunActive(event)" oncontextmenu="event.preventDefault(); _openEaseInterpCtx(this, event);">
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4.37,4.47 Q4,4 4.6,4 L15.4,4 Q16,4 15.63,4.47 L10.16,11.3 Q10,11.5 9.84,11.3 Z M4.6,16 Q4,16 4.37,15.53 L9.84,8.7 Q10,8.5 10.16,8.7 L15.63,15.53 Q16,16 15.4,16 Z"/></svg>
           </button>
@@ -365,9 +301,7 @@
 
     <div class="tool-col" id="homeGrid">
 
-      <!-- Organize's original controls — never shown in Compact (Quick
-           Actions replaces it there); relocated into Classic's Organize
-           section when Classic is active, same as every other block. -->
+      <!-- Never shown in Compact (Quick Actions replaces it); relocated into Classic's Organize section when active, same as every other block. -->
       <div id="sec-organize-original" class="sec-hidden">
         <div class="tool-body" data-block-id="organize">
           <div class="organize-grid">
@@ -380,12 +314,12 @@
             </button>
             <!-- Consolidate Project -->
             <button class="organize-btn" style="--icon-hover:#5b9cf6" title="Consolidate Project" onclick="doConsolidateProject()">
-              <svg viewBox="0 0 20 20" fill="currentColor">
-                <rect x="2.5" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/>
-                <rect x="11" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/>
-                <line x1="5.75" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/>
-                <line x1="14.25" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/>
-                <rect x="6.5" y="12.5" width="7" height="5.5" rx="1.4"/>
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2.5" y="3" width="6.5" height="6" rx="1.4"/>
+                <rect x="11" y="3" width="6.5" height="6" rx="1.4"/>
+                <line x1="5.75" y1="9" x2="10" y2="12.5"/>
+                <line x1="14.25" y1="9" x2="10" y2="12.5"/>
+                <rect x="5.5" y="12.5" width="9" height="6" rx="1.4" fill="currentColor" stroke="none"/>
               </svg>
             </button>
             <!-- Configure Project Structure -->
@@ -399,18 +333,10 @@
             <button class="organize-btn" style="--icon-hover:#e0639c" title="Batch Comp Settings" onclick="openBatchCompSettings()">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
                 <rect x="2" y="2" width="16" height="16" rx="3.5"/>
-                <circle cx="10" cy="10" r="3" stroke-width="1.3"/>
-                <g fill="currentColor">
-                  <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4"/>
-                  <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(45 10 10)"/>
-                  <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(90 10 10)"/>
-                  <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(135 10 10)"/>
-                  <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(180 10 10)"/>
-                  <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(225 10 10)"/>
-                  <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(270 10 10)"/>
-                  <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(315 10 10)"/>
+                <g stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35">
+                  <circle cx="10" cy="10" r="1.78"/>
+                  <path d="M10,4.735 L10.5265,5.869 A3.97,3.97 0 0,1 11.539,6.3955 L12.673,5.788 L13.645,6.76 L13.0375,7.894 A3.97,3.97 0 0,1 13.564,8.9065 L14.698,9.433 L14.698,10.567 L13.564,11.0935 A3.97,3.97 0 0,1 13.0375,12.106 L13.645,13.24 L12.673,14.212 L11.539,13.6045 A3.97,3.97 0 0,1 10.5265,14.131 L10,15.265 L9.4735,14.131 A3.97,3.97 0 0,1 8.461,13.6045 L7.327,14.212 L6.355,13.24 L6.9625,12.106 A3.97,3.97 0 0,1 6.436,11.0935 L5.302,10.567 L5.302,9.433 L6.436,8.9065 A3.97,3.97 0 0,1 6.9625,7.894 L6.355,6.76 L7.327,5.788 L8.461,6.3955 A3.97,3.97 0 0,1 9.4735,5.869 Z"/>
                 </g>
-                <circle cx="10" cy="10" r="1" fill="currentColor" stroke="none"/>
               </svg>
             </button>
             <!-- Batch Rename -->
@@ -435,10 +361,7 @@
         </div>
       </div>
 
-      <!-- ── NULL / COPY / PASTE ── permanently hidden in Compact (not widely
-           used there); in Classic it docks beside the Anchor grid instead,
-           matching the original layout — see .anchor-row/nullcp relocation
-           in _applyLayoutMode (main.js). -->
+      <!-- Permanently hidden in Compact; in Classic it docks beside the Anchor grid instead (see .anchor-row/nullcp relocation in _applyLayoutMode, main.js). -->
       <div class="tool-box tool-box-nullcp sec-hidden" id="sec-nullcp">
         <div class="cp-panel" data-block-id="nullcp">
           <div class="cp-box">
@@ -469,22 +392,6 @@
               Null
             </button>
           </div>
-          <div class="cp-box">
-            <div class="ctrl-row" style="gap:14px">
-              <button class="icon-btn small" style="width:48px" title="Link Property to Controller Null" onclick="doLinkPropertyToController()">
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="2" y="2" width="16" height="16" rx="3.5"/>
-                  <path d="M7,14 L7,6.3 Q7,5 8.6,5.3"/>
-                  <line x1="5.6" y1="9.7" x2="8.6" y2="9.7"/>
-                  <line x1="10.6" y1="6.3" x2="14.2" y2="13.7"/>
-                  <line x1="14.2" y1="6.3" x2="10.6" y2="13.7"/>
-                </svg>
-              </button>
-              <label class="check-label" style="flex:1" title="Keep each layer's original value by baking the difference into its expression, instead of snapping every layer to the same value">
-                <input type="checkbox" id="linkOffsetCheck"> Offset
-              </label>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -507,13 +414,7 @@
               <option value="0">Selection</option>
               <option value="1" selected>Composition</option>
             </select>
-            <!-- Only ever visible while keyframes are selected (see
-                 _pollKeyAlignMode in main.js, which fades it in/out via
-                 .key-align-toggle-visible) — defaults to checked every time
-                 it (re)appears. Left/Center/Right's own keyframe-vs-position
-                 behavior follows this, not just their icons (see
-                 doAlign/_applyKeyAlignMode) — unchecking it forces normal
-                 position alignment even with keyframes still selected. -->
+            <!-- Only visible while keyframes are selected (see _pollKeyAlignMode/.key-align-toggle-visible); defaults checked, and unchecking forces normal position alignment (see doAlign/_applyKeyAlignMode). -->
             <label class="keyframe-toggle key-align-toggle" id="keyAlignToggle" title="Align Keyframes — checked (the default whenever keyframes are selected), Align Left/Center/Right retime the selected keyframes instead of moving layer position. Uncheck to align position normally even with keyframes selected.">
               <input type="checkbox" id="keyAlignCheck" checked onchange="toggleKeyAlignOverride()">
               <span class="keyframe-toggle-hourglass">
@@ -568,31 +469,49 @@
                   <path d="M4,15 L14,15 L9,10 Z"/>
                 </svg>
               </button>
-              <span class="vsep"></span>
-              <!-- Align Top -->
-              <button class="icon-btn-wide" title="Align Top" onclick="doAlign(3)">
-                <svg viewBox="0 0 20 20" fill="currentColor">
-                  <line x1="2" y1="3.5" x2="18" y2="3.5" stroke="currentColor" stroke-width="2" opacity="0.6"/>
-                  <rect x="4.5" y="4.5" width="4" height="11" rx="1.2"/>
-                  <rect x="11.5" y="4.5" width="4" height="7" rx="1.2" opacity="0.7"/>
-                </svg>
-              </button>
-              <!-- Center Vertical -->
-              <button class="icon-btn-wide" title="Center Vertical" onclick="doAlign(4)">
-                <svg viewBox="0 0 20 20" fill="currentColor">
-                  <line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="2" opacity="0.6"/>
-                  <rect x="4.5" y="4" width="4" height="12" rx="1.2"/>
-                  <rect x="11.5" y="6" width="4" height="8" rx="1.2" opacity="0.7"/>
-                </svg>
-              </button>
-              <!-- Align Bottom -->
-              <button class="icon-btn-wide" title="Align Bottom" onclick="doAlign(5)">
-                <svg viewBox="0 0 20 20" fill="currentColor">
-                  <line x1="2" y1="16.5" x2="18" y2="16.5" stroke="currentColor" stroke-width="2" opacity="0.6"/>
-                  <rect x="4.5" y="4.5" width="4" height="12" rx="1.2" opacity="0.7"/>
-                  <rect x="11.5" y="9" width="4" height="7" rx="1.2"/>
-                </svg>
-              </button>
+              <!-- No keyframe-mode equivalent exists (a time axis has no "vertical"), so this group swaps for .key-align-extra below instead of getting icon variants like Left/Center/Right (see .key-align-mode in css). -->
+              <span class="pos-align-extra">
+                <span class="vsep"></span>
+                <!-- Align Top -->
+                <button class="icon-btn-wide" title="Align Top" onclick="doAlign(3)">
+                  <svg viewBox="0 0 20 20" fill="currentColor">
+                    <line x1="2" y1="3.5" x2="18" y2="3.5" stroke="currentColor" stroke-width="2" opacity="0.6"/>
+                    <rect x="4.5" y="4.5" width="4" height="11" rx="1.2"/>
+                    <rect x="11.5" y="4.5" width="4" height="7" rx="1.2" opacity="0.7"/>
+                  </svg>
+                </button>
+                <!-- Center Vertical -->
+                <button class="icon-btn-wide" title="Center Vertical" onclick="doAlign(4)">
+                  <svg viewBox="0 0 20 20" fill="currentColor">
+                    <line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="2" opacity="0.6"/>
+                    <rect x="4.5" y="4" width="4" height="12" rx="1.2"/>
+                    <rect x="11.5" y="6" width="4" height="8" rx="1.2" opacity="0.7"/>
+                  </svg>
+                </button>
+                <!-- Align Bottom -->
+                <button class="icon-btn-wide" title="Align Bottom" onclick="doAlign(5)">
+                  <svg viewBox="0 0 20 20" fill="currentColor">
+                    <line x1="2" y1="16.5" x2="18" y2="16.5" stroke="currentColor" stroke-width="2" opacity="0.6"/>
+                    <rect x="4.5" y="4.5" width="4" height="12" rx="1.2" opacity="0.7"/>
+                    <rect x="11.5" y="9" width="4" height="7" rx="1.2"/>
+                  </svg>
+                </button>
+              </span>
+              <!-- Same 3-button+separator count as .pos-align-extra above so row width doesn't shift on swap; the 2 flanking buttons are inert placeholders for future tools. -->
+              <span class="key-align-extra">
+                <span class="vsep"></span>
+                <button class="icon-btn-wide stagger-dummy-btn" disabled title="Coming soon"></button>
+                <!-- Stagger — opens #staggerOverlay (openStaggerPopup in main.js). -->
+                <button class="icon-btn-wide" id="staggerBtn" title="Stagger Keyframes" onclick="openStaggerPopup()">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+                    <line x1="2" y1="5" x2="6" y2="5"/>
+                    <line x1="2" y1="10" x2="10" y2="10"/>
+                    <line x1="2" y1="15" x2="17" y2="15"/>
+                    <polygon points="16,1.5 19.5,5 16,8.5 12.5,5" fill="currentColor" stroke="none"/>
+                  </svg>
+                </button>
+                <button class="icon-btn-wide stagger-dummy-btn" disabled title="Coming soon"></button>
+              </span>
             </div>
           </div>
           <!-- Margin: gear button removed, still used by the align logic -->
@@ -697,9 +616,7 @@
               </button>
             </div>
           </div>
-          <!-- Everything below is hidden state for the right-click menus on Z, Path,
-               Radial, and Grid above. Horizontal/Vertical/Z/Radial in Key Layer mode
-               always line layers up back to back (spacing hardcoded to 0). -->
+          <!-- Hidden state for the right-click menus on Z, Path, Radial, and Grid above. -->
           <input type="text" id="radialInput" value="500" style="display:none">
           <input type="checkbox" id="rotateCheck" style="display:none">
           <input type="text" id="gridColsInput" class="num-input" value="3" style="display:none">
@@ -789,12 +706,7 @@
               <polyline points="3.69,1.48 3.69,10.32 12.53,10.32"/>
               <polyline points="1.48,3.69 10.32,3.69 10.32,12.53"/>
             </svg>
-            <!-- ac-title-compact-only: unlike Sizing's/Align's own header
-                 label (a distinct functional label alongside a dropdown),
-                 this one is just the plain section title with nothing
-                 else — Classic already shows "Auto Crop" as its own
-                 collapsible header, so this copy is hidden there instead
-                 of appearing twice; see #homeClassic .ac-title-compact-only. -->
+            <!-- Plain section title (not a functional label like Sizing's/Align's); hidden in Classic since it already shows "Auto Crop" as its own header (see #homeClassic .ac-title-compact-only). -->
             <span class="lbl ac-title-compact-only">Auto Crop</span>
             <span class="lbl ac-controls-start">Pad</span>
             <input type="text" id="autoCropPad" value="0" style="width:36px">
@@ -868,8 +780,7 @@
           </div>
           <div class="btn-row-wide">
             <div class="btn-group btn-group-wide">
-              <!-- Bars-growing-up + up arrow — same bars/arrow language as
-                   the section's own icon, mirrored with Descending below. -->
+              <!-- Same bars/arrow language as the section's own icon, mirrored with Descending below. -->
               <button class="icon-btn-wide" onclick="doSort(0)" title="Sort Ascending">
                 <svg viewBox="0 0 16 16" fill="currentColor" stroke="none">
                   <rect x="1.5" y="3"  width="4"   height="1.8" rx="0.5" opacity="0.5"/>
@@ -898,11 +809,7 @@
         </div>
       </div>
 
-      <!-- ── VECTOR TOOLS (rebuilt from scratch as a fresh widget, replacing
-           the old "shapetools" one, whose id had somehow ended up carrying
-           stale/broken pinned or favorited state — see main.js's
-           BL_CATALOG/CLASSIC_BLOCK_IDS. Starts unpinned, like Quick Actions
-           2/Spell Check/Ease Copy below (see BL_DEFAULT_ROWS in main.js). -->
+      <!-- Rebuilt from scratch replacing the old "shapetools" id, which carried stale pinned/favorited state (see BL_CATALOG/CLASSIC_BLOCK_IDS in main.js). Starts unpinned like the other widgets below. -->
       <div class="tool-box bl-unpinned" id="sec-vectortools" data-block-id="vectortools" data-span="3" data-rowspan="2">
         <svg class="qa-collapse-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="color:#f0954a">
           <rect x="2.14" y="1.29" width="3.61" height="3.61" rx="0.77"/>
@@ -917,16 +824,7 @@
               <path d="M7,5.65 L4.48,10.03 L9.53,10.03 Z"/>
             </svg>
             <span class="lbl vectortools-title-compact-only">Shape Tools</span>
-            <!-- Live Fill/Stroke summary for the selected shape layers (or
-                 the whole comp if none are selected) — see
-                 _pollShapeColorHud/lineup_getShapeColorHud. "Mix" when the
-                 scope has differing values; click Fill:/Stroke: to edit
-                 every instance individually, click the swatch to set all
-                 of them at once, drag/click the stroke width to scrub/type
-                 it. Shares the header row instead of its own line —
-                 "Shape Tools" always drops at half width/in the Favorite
-                 slot, and at full width once the panel itself gets narrow
-                 enough (see _syncVectortoolsTitle in main.js). -->
+            <!-- Live Fill/Stroke summary (see _pollShapeColorHud/lineup_getShapeColorHud); click labels to edit individually, swatch to set all, drag/click width to scrub/type; shares the header row per _syncVectortoolsTitle. -->
             <div class="vectools-fillstroke">
               <div class="vectools-fs-item">
                 <button class="lbl vectools-fs-lbl" id="vectoolsFillBtn" title="Edit fills individually" onclick="_openFillPopup()">Fill:</button>
@@ -937,10 +835,7 @@
                 <button type="button" class="vectools-fs-swatch vectools-fs-swatch-stroke" id="vectoolsStrokeSwatch" title="Set all strokes" onclick="_pickStrokeColor()"></button>
                 <span class="vectools-fs-width" id="vectoolsStrokeWidth" title="Drag to scrub, click to type">0 px</span>
               </div>
-              <!-- Always-visible entry point into the Fill/Stroke modal —
-                   the Fill:/Stroke: labels above do the same thing, but
-                   they're hidden at smaller widths (see style.css), so this
-                   is the one that always works regardless of breakpoint. -->
+              <!-- Always-visible entry point into the Fill/Stroke modal; the labels above do the same but hide at smaller widths (see style.css). -->
               <button type="button" class="vectools-fs-props-btn" id="vectoolsPropsBtn" title="Fill &amp; Stroke properties" onclick="_openFillPopup()">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
                   <line x1="2" y1="4" x2="14" y2="4"/>
@@ -953,22 +848,11 @@
               </button>
             </div>
           </div>
-          <!-- One unified toolbar (same pattern as Align/Distribute's
-               single .btn-group-wide with a vsep between logical groups) at
-               full width — Merge/Explode on the left, a divider, then the
-               per-shape-property tools. Each logical group is its own
-               .vectortools-grp wrapper (flex-grow matching its own button
-               count, so per-button width still comes out even across the
-               whole row) rather than 5 flat siblings, so half width can
-               reflow into two independently-even rows instead of a grid
-               that would mix the two groups together (see style.css). -->
+          <!-- Each logical group is its own .vectortools-grp wrapper (flex-grow matching its button count) rather than 5 flat siblings, so half width can reflow into two independently-even rows (see style.css). -->
           <div class="btn-row-wide">
             <div class="btn-group btn-group-wide">
               <div class="vectortools-grp vectortools-grp-2">
-                <!-- Merges every selected shape layer into the first one
-                     selected, preserving each one's comp-space position/
-                     rotation/scale (current values only — see
-                     lineup_mergeShapes in host.jsx). -->
+                <!-- Merges every selected shape layer into the first, preserving comp-space position/rotation/scale (see lineup_mergeShapes in host.jsx). -->
                 <button class="icon-btn-wide" title="Merge Shapes" onclick="doMergeShapes(event)">
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
                     <path d="M3,5 L4,5 C6,7.5 8,10 11.5,10 L13,10"/>
@@ -976,10 +860,7 @@
                     <path d="M13,5.5 L20,10 L13,14.5 Z" fill="currentColor" stroke="none"/>
                   </svg>
                 </button>
-                <!-- Splits each selected shape layer's top-level Contents
-                     items out into their own new layers, each preserving
-                     the original's comp-space appearance (see
-                     lineup_explodeShapes in host.jsx). -->
+                <!-- Splits each selected shape layer's top-level Contents into their own new layers, preserving comp-space appearance (see lineup_explodeShapes in host.jsx). -->
                 <button class="icon-btn-wide" title="Explode Shapes" onclick="doExplodeShapes(event)">
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
                     <path d="M1,10 L3,10 C7,10 9,7 11,5 L14,5"/>
@@ -991,11 +872,7 @@
               </div>
               <span class="vsep"></span>
               <div class="vectortools-grp vectortools-grp-3">
-                <!-- AE-native-toolbar style: left-click always runs whichever
-                     of Path/Fill/Stroke selection was picked last (icon
-                     reflects it — see _shapeSelRefreshButtons in main.js);
-                     right-click opens an icon flyout to switch modes, which
-                     also runs the newly-picked one immediately. -->
+                <!-- Left-click runs whichever of Path/Fill/Stroke was picked last (see _shapeSelRefreshButtons); right-click opens a flyout to switch modes and runs the new pick immediately. -->
                 <button class="icon-btn-wide shape-sel-btn" title="Select All Paths" onclick="_shapeSelRunActive()" oncontextmenu="event.preventDefault(); _openShapeSelCtx(this, event);">
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">
                     <rect x="1.5" y="1.5" width="17" height="17" rx="4" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/>
@@ -1005,18 +882,13 @@
                     <rect x="15.8" y="3.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
                   </svg>
                 </button>
-                <!-- Cycles cap+join together; hold Alt to cycle just the cap
-                     (see doChangeStrokeType/lineup_changeStrokeType). -->
+                <!-- Cycles cap+join together; hold Alt to cycle just the cap (see doChangeStrokeType/lineup_changeStrokeType). -->
                 <button class="icon-btn-wide" title="Change Stroke Type (hold Alt: cap only)" onclick="doChangeStrokeType(event)">
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2.4,2.2">
                     <path d="M11.07,5.06 L16.09,14.75 A1.2,1.2 0 0 1 15.03,16.5 L4.97,16.5 A1.2,1.2 0 0 1 3.91,14.75 L8.93,5.06 A1.2,1.2 0 0 1 11.07,5.06 Z"/>
                   </svg>
                 </button>
-                <!-- Consolidates every solid (non-gradient) color found on
-                     the selected layers (or every layer, if none are
-                     selected) into one "Color Controller" null at the top
-                     of the stack, one Color Control effect per unique
-                     color — see lineup_manageColors in host.jsx. -->
+                <!-- Consolidates every solid color on the selected (or all) layers into one "Color Controller" null, one Color Control effect per unique color (see lineup_manageColors in host.jsx). -->
                 <button class="icon-btn-wide" title="Color Management" onclick="doManageColors()">
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <defs>
@@ -1032,10 +904,7 @@
         </div>
       </div>
 
-      <!-- ── QUICK ACTIONS 2 — a second, independently-customizable icon-
-           shortcut bar, addable/removable like any other Bottom Layout
-           widget (see BL_CATALOG in main.js). Starts unpinned; shares no
-           storage with the original bar up top — see QA_INSTANCES. -->
+      <!-- A second, independently-customizable icon bar (see BL_CATALOG in main.js); shares no storage with the original bar up top (see QA_INSTANCES). -->
       <div class="tool-box tool-box-quick-actions bl-unpinned" id="sec-quick-actions-2" data-block-id="quickactions2" data-span="3" data-rowspan="2">
         <svg class="qa-collapse-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color:#7aaaff">
           <rect x="2" y="2" width="5" height="5" rx="1"/>
@@ -1043,12 +912,7 @@
           <rect x="2" y="9" width="5" height="5" rx="1"/>
           <rect x="9" y="9" width="5" height="5" rx="1"/>
         </svg>
-        <!-- Unlike the other Bottom Layout widgets (which collapse to
-             icon-only and inert while editing, so the whole box can be the
-             drag surface), this one stays fully interactive — its tiles
-             still need to be clickable/editable. So dragging only starts
-             from this handle instead of anywhere on the box; see the
-             .tool-box-quick-actions special case in _blInitControls. -->
+        <!-- Unlike other Bottom Layout widgets, this one stays interactive while editing, so dragging only starts from this handle, not the whole box (see .tool-box-quick-actions case in _blInitControls). -->
         <span class="bl-drag-handle" title="Drag to reorder">
           <svg viewBox="0 0 8 12" fill="currentColor"><circle cx="2" cy="1.5" r="1"/><circle cx="6" cy="1.5" r="1"/><circle cx="2" cy="6" r="1"/><circle cx="6" cy="6" r="1"/><circle cx="2" cy="10.5" r="1"/><circle cx="6" cy="10.5" r="1"/></svg>
         </span>
@@ -1057,9 +921,7 @@
         </div>
       </div>
 
-      <!-- ── SPELL CHECK — a simple Bottom Layout widget wrapping the
-           existing Tools-tab spell-check/find-replace modals, addable/
-           removable like any other catalog entry. Starts unpinned. -->
+      <!-- Bottom Layout widget wrapping the existing Tools-tab spell-check/find-replace modals. -->
       <div class="tool-box bl-unpinned" id="sec-spellcheck" data-block-id="spellcheck" data-span="3" data-rowspan="2">
         <svg class="qa-collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" overflow="visible" style="color:#e0639c">
           <defs>
@@ -1131,14 +993,7 @@
         </div>
       </div>
 
-      <!-- ── EASE COPY (Bottom Layout entry) — the exact same tool as
-           #sec-ease-original/Classic's Ease section, just given a home
-           here so it can be starred as the Favorite slot's default and
-           swapped out like any other catalog widget. Its real .tool-body
-           lives wherever _applyLayoutMode/_favApplyLayout last put it
-           (Classic's section-body, this box, or the Favorite slot) — this
-           box itself only ever holds the collapse icon. Starts unpinned;
-           normally sits in the Favorite slot instead. -->
+      <!-- Same tool as #sec-ease-original/Classic's Ease section; this box only ever holds the collapse icon, its real .tool-body lives wherever _applyLayoutMode/_favApplyLayout last put it. -->
       <div class="tool-box bl-unpinned" id="sec-ease" data-block-id="ease" data-span="6" data-rowspan="2">
         <svg class="qa-collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="color:#e05555">
           <path d="M12,5 L12,3.5 Q12,2 10.5,2 L3.5,2 Q2,2 2,3.5 L2,10.5 Q2,12 3.5,12 L5,12"/>
@@ -1148,13 +1003,7 @@
 
     </div><!-- /.tool-col -->
 
-    <!-- ── CLASSIC LAYOUT (collapsible sections, original pre-bespoke style) ──
-         Hidden unless Settings > Layout is set to Classic. Each section body
-         starts empty — its actual controls are the exact same DOM nodes used
-         by the Compact boxes above (each one's .tool-body[data-block-id]),
-         physically relocated in here by _applyLayoutMode() when Classic is
-         selected. That's what lets both layouts drive identical state
-         through identical ids/onclicks with zero duplication. -->
+    <!-- Hidden unless Settings > Layout is Classic; each section body starts empty and gets the same .tool-body[data-block-id] DOM nodes relocated in by _applyLayoutMode(), so both layouts share identical state with zero duplication. -->
     <div class="tool-col-classic" id="homeClassic" style="display:none">
 
       <div class="section" id="cls-anchor" data-block-id="anchor">
@@ -1279,6 +1128,20 @@
       </div>
 
     </div><!-- /.tool-col-classic -->
+
+    <!-- Auto-paginated grid drawing from the same catalog as Quick Actions (see _qaCatalog/_toolbarBuildTile); no footer in this mode, so Settings/customize are reached via right-click (see _openToolbarCtx in main.js). -->
+    <div class="tool-col-toolbar" id="homeToolbar" style="display:none" oncontextmenu="event.preventDefault(); _openToolbarCtx(event);">
+      <div class="toolbar-empty-hint" id="toolbarEmptyHint" onclick="_toolbarEmptyHintClick(event)">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/>
+        </svg>
+        <span>Add buttons to your toolbar</span>
+      </div>
+      <div class="toolbar-pages" id="toolbarPages">
+        <div class="toolbar-pages-track" id="toolbarPagesTrack"></div>
+      </div>
+      <div class="toolbar-dots" id="toolbarDots"></div>
+    </div><!-- /.tool-col-toolbar -->
   </div><!-- /.tool-grid -->
 
 
@@ -1355,12 +1218,12 @@
         <span>Duplicate</span>
       </button>
       <button class="tools-grid-btn" data-group="organize" data-tool-id="consolidateProject" title="Consolidate Project" onclick="doConsolidateProject()">
-        <svg viewBox="0 0 20 20" fill="currentColor">
-          <rect x="2.5" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/>
-          <rect x="11" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/>
-          <line x1="5.75" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/>
-          <line x1="14.25" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/>
-          <rect x="6.5" y="12.5" width="7" height="5.5" rx="1.4"/>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2.5" y="3" width="6.5" height="6" rx="1.4"/>
+          <rect x="11" y="3" width="6.5" height="6" rx="1.4"/>
+          <line x1="5.75" y1="9" x2="10" y2="12.5"/>
+          <line x1="14.25" y1="9" x2="10" y2="12.5"/>
+          <rect x="5.5" y="12.5" width="9" height="6" rx="1.4" fill="currentColor" stroke="none"/>
         </svg>
         <span>Consolidate</span>
       </button>
@@ -1372,20 +1235,11 @@
       </button>
       <button class="tools-grid-btn" data-group="organize" data-tool-id="decompose" title="Decompose" onclick="doDecompose()">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-          <!-- image-placeholder frame (rounded rect 2,2-18,18 rx2, as a
-               path instead of <rect> so it can skip the top-right corner
-               — top-edge gap start shifted +1 (12,2 -> 13,2) to match the
-               x's own +1 shift, closing the now-unneeded extra space on
-               the left; right-edge side (18,8) unchanged. Dashed instead
-               of solid. -->
+          <!-- Image-placeholder frame as a path (not <rect>) so it can skip the top-right corner where the "broken" x sits. -->
           <path d="M18,8 L18,16 A2,2 0 0,1 16,18 L4,18 A2,2 0 0,1 2,16 L2,4 A2,2 0 0,1 4,2 L13,2" stroke-dasharray="2,1.5"/>
-          <!-- circle, center 8,7 r=3 — drawn whole now, simply overlapping
-               the triangle (no gap between them anymore). -->
+          <!-- Circle drawn whole, overlapping the triangle. -->
           <circle cx="8" cy="7" r="3"/>
-          <!-- one equilateral triangle, scaled down ~20% around its own
-               centroid from the original (apex 10,6.3 / base 5,15-15,15),
-               then shifted +1 right net (was +2, now -1) — same shape,
-               just smaller and shifted. -->
+          <!-- Triangle scaled ~20% down from the original, shifted +1 right net. -->
           <path d="M11,7.5 L7,14.4 L15,14.4 Z"/>
           <!-- "broken" x, top right — 20% smaller, shifted +2 right total to center on the corner -->
           <path d="M15.6,1.6 L20.4,6.4 M20.4,1.6 L15.6,6.4"/>
@@ -1395,18 +1249,10 @@
       <button class="tools-grid-btn" data-group="organize" data-tool-id="batchCompSettings" title="Batch Comp Settings" onclick="openBatchCompSettings()">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
           <rect x="2" y="2" width="16" height="16" rx="3.5"/>
-          <circle cx="10" cy="10" r="3" stroke-width="1.3"/>
-          <g fill="currentColor">
-            <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4"/>
-            <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(45 10 10)"/>
-            <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(90 10 10)"/>
-            <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(135 10 10)"/>
-            <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(180 10 10)"/>
-            <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(225 10 10)"/>
-            <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(270 10 10)"/>
-            <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(315 10 10)"/>
+          <g stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35">
+            <circle cx="10" cy="10" r="1.78"/>
+            <path d="M10,4.735 L10.5265,5.869 A3.97,3.97 0 0,1 11.539,6.3955 L12.673,5.788 L13.645,6.76 L13.0375,7.894 A3.97,3.97 0 0,1 13.564,8.9065 L14.698,9.433 L14.698,10.567 L13.564,11.0935 A3.97,3.97 0 0,1 13.0375,12.106 L13.645,13.24 L12.673,14.212 L11.539,13.6045 A3.97,3.97 0 0,1 10.5265,14.131 L10,15.265 L9.4735,14.131 A3.97,3.97 0 0,1 8.461,13.6045 L7.327,14.212 L6.355,13.24 L6.9625,12.106 A3.97,3.97 0 0,1 6.436,11.0935 L5.302,10.567 L5.302,9.433 L6.436,8.9065 A3.97,3.97 0 0,1 6.9625,7.894 L6.355,6.76 L7.327,5.788 L8.461,6.3955 A3.97,3.97 0 0,1 9.4735,5.869 Z"/>
           </g>
-          <circle cx="10" cy="10" r="1" fill="currentColor" stroke="none"/>
         </svg>
         <span>Settings</span>
       </button>
@@ -1418,6 +1264,16 @@
           <polyline points="7.05,12 9.75,14.7 12.45,12"/>
         </svg>
         <span>Export</span>
+      </button>
+
+      <!-- Standalone counterpart to Align's Stagger Keyframes; cascades layer start times instead (see openLayerStaggerPopup in main.js). -->
+      <button class="tools-grid-btn" data-group="organize" data-tool-id="layerStagger" title="Layer Stagger" onclick="openLayerStaggerPopup()">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+          <line x1="2" y1="5" x2="6" y2="5"/>
+          <line x1="2" y1="10" x2="10" y2="10"/>
+          <line x1="2" y1="15" x2="17" y2="15"/>
+        </svg>
+        <span>Layer Stagger</span>
       </button>
 
       <!-- Auto Crop -->
@@ -1477,16 +1333,20 @@
         <span>Find</span>
       </button>
 
-      <!-- FX Link -->
-      <button class="tools-grid-btn" data-group="fx" data-tool-id="fxLink" title="Link Property to Controller Null" onclick="doLinkPropertyToController()">
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="2" width="16" height="16" rx="3.5"/>
-          <path d="M7,14 L7,6.3 Q7,5 8.6,5.3"/>
-          <line x1="5.6" y1="9.7" x2="8.6" y2="9.7"/>
-          <line x1="10.6" y1="6.3" x2="14.2" y2="13.7"/>
-          <line x1="14.2" y1="6.3" x2="10.6" y2="13.7"/>
+      <!-- Smart Select/Link/Merge merged into one button; left-click reruns the last-picked mode, right-click switches (see SMART_MODES/_smartRunActive/_openSmartCtx in main.js). -->
+      <button class="tools-grid-btn smart-btn" data-group="fx" data-tool-id="smart" title="Smart Select" onclick="_smartRunActive()" oncontextmenu="event.preventDefault(); _openSmartCtx(this, event);">
+        <svg viewBox="-11.6 -11.6 42.7 42.7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <defs>
+            <mask id="smartSelectCursorMask" maskUnits="userSpaceOnUse" x="-13" y="-13" width="46" height="46">
+              <rect x="-13" y="-13" width="46" height="46" fill="#fff" stroke="none"/>
+              <path d="M11,11 L16.92,25.3 L20.65,19.78 L26.59,16.27 Z" fill="#000" stroke="#000" stroke-width="7.85" stroke-linejoin="round"/>
+            </mask>
+          </defs>
+          <rect x="-5.96" y="-5.96" width="30.35" height="30.35" rx="7.14" stroke-width="2.78" stroke-dasharray="3.93,3.57" opacity="0.55" mask="url(#smartSelectCursorMask)"/>
+          <path d="M-2.21,-11.49 Q0.089,-4.507 7.07,-2.21 Q0.089,0.089 -2.21,7.07 Q-4.507,0.089 -11.49,-2.21 Q-4.507,-4.507 -2.21,-11.49 Z" fill="currentColor" stroke="none"/>
+          <path d="M11,11 L16.92,25.3 L20.65,19.78 L26.59,16.27 Z" fill="currentColor" stroke="currentColor" stroke-width="3.21" stroke-linejoin="round"/>
         </svg>
-        <span>FX Link</span>
+        <span class="smart-label">Smart Select</span>
       </button>
 
       <!-- Shape Tools -->
@@ -1512,7 +1372,7 @@
           <path d="M3,15 L4,15 C6,12.5 8,10 11.5,10 L13,10" stroke-dasharray="2.2,2"/>
           <path d="M13,5.5 L20,10 L13,14.5 Z" fill="currentColor" stroke="none"/>
         </svg>
-        <span>Merge</span>
+        <span>Merge Shapes</span>
       </button>
       <button class="tools-grid-btn" data-group="shape" data-tool-id="explodeShapes" title="Explode Shapes" onclick="doExplodeShapes(event)">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
@@ -1521,7 +1381,7 @@
           <path d="M14,1.4 L19.6,5 L14,8.6 Z" fill="currentColor" stroke="none"/>
           <path d="M14,11.4 L19.6,15 L14,18.6 Z" fill="currentColor" stroke="none"/>
         </svg>
-        <span>Explode</span>
+        <span>Explode Shapes</span>
       </button>
       <button class="tools-grid-btn split-text-btn" data-group="shape" data-tool-id="splitText" title="Split Text by Word" onclick="_splitTextRunActive(event)" oncontextmenu="event.preventDefault(); _openSplitTextCtx(this, event);">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">
@@ -1547,9 +1407,7 @@
   </div>
 </div>
 
-<!-- ── TROPHY TAB (activity tracking / gamification) — see the "Activity
-     tracking" section in main.js for how these values get populated; no
-     tool button lives here, it's a pure readout. -->
+<!-- Pure readout, no tool buttons — see the "Activity tracking" section in main.js for how these values get populated. -->
 <div id="tab-trophy" class="tab-panel">
 
   <div class="trophy-top-row">
@@ -1633,9 +1491,7 @@
     </div>
   </div>
 
-  <!-- ── LEADERBOARD — see js/leaderboard.js. Silently shows "not set up"
-       until Firebase is configured there; otherwise asks for a one-time
-       display name, then shows the ranked list (your own row highlighted). -->
+  <!-- See js/leaderboard.js; shows "not set up" until Firebase is configured, then asks for a one-time display name before showing the ranked list. -->
   <div class="trophy-leaderboard-card">
     <div class="trophy-leaderboard-hdr">
       <svg class="trophy-leaderboard-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -1683,8 +1539,7 @@
 
 </div>
 
-<!-- ── TROPHY ACTIVITY CALENDAR — expanded from the streak card's expand
-     button; see _openTrophyCalendar/_renderTrophyCalendar in main.js. ────── -->
+<!-- Expanded from the streak card's expand button; see _openTrophyCalendar/_renderTrophyCalendar in main.js. -->
 <div id="trophyCalOverlay" class="settings-overlay trophy-cal-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ _closeTrophyCalendar(); })">
   <div class="trophy-cal-modal" onclick="event.stopPropagation()">
     <div class="settings-hdr">
@@ -1721,8 +1576,7 @@
   </div>
 </div>
 
-<!-- ── FULL LEADERBOARD — expanded from the leaderboard card's expand
-     button; see lbOpenFull/_lbRenderFullList in js/leaderboard.js. ───────── -->
+<!-- Expanded from the leaderboard card's expand button; see lbOpenFull/_lbRenderFullList in js/leaderboard.js. -->
 <div id="lbFullOverlay" class="settings-overlay lb-full-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ lbCloseFull(); })">
   <div class="lb-full-modal" onclick="event.stopPropagation()">
     <div class="settings-hdr">
@@ -1754,14 +1608,234 @@
         <input type="text" id="lbEditNameInput" class="lb-name-input" maxlength="40">
         <button class="lb-join-btn" onclick="lbSaveEditedName()">Save</button>
       </div>
+      <button class="lb-edit-name-btn lb-reset-btn" id="lbResetBtn" onclick="lbShowResetConfirm()">Reset my progress</button>
+      <div id="lbResetRow" class="lb-reset-row" style="display:none">
+        <p class="lb-reset-warning">This permanently erases your score, streak, and activity history on this device and in the cloud. It cannot be undone. Type RESET to confirm.</p>
+        <div class="lb-join-row">
+          <input type="text" id="lbResetInput" class="lb-name-input" placeholder="RESET" maxlength="10" oninput="document.getElementById('lbResetConfirmBtn').disabled = (this.value !== 'RESET')">
+          <button class="lb-join-btn lb-reset-confirm-btn" id="lbResetConfirmBtn" onclick="lbConfirmReset()" disabled>Confirm Reset</button>
+          <button class="lb-auth-btn-ghost" onclick="lbCancelReset()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Cascades the selected keyframes of multiple layers so each layer's block starts a bit later/earlier (see openStaggerPopup/applyStaggerFromPopup in main.js). -->
+<div id="staggerOverlay" class="settings-overlay stagger-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ closeStaggerPopup(); })">
+  <div class="stagger-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3" y1="5" x2="10" y2="5"/>
+        <line x1="3" y1="10" x2="14" y2="10"/>
+        <line x1="3" y1="15" x2="17" y2="15"/>
+      </svg>
+      <span class="settings-title">Stagger Keyframes</span>
+      <!-- Reverses which end of the layer stack starts the cascade; the arrow flips 180° on toggle rather than swapping icons (see .stagger-direction-btn.is-reversed). -->
+      <button class="stagger-direction-btn" id="staggerDirectionBtn" onclick="_staggerToggleDirection()" title="Reverse Direction">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="10" y1="4" x2="10" y2="16"/>
+          <polyline points="6,12 10,16 14,12"/>
+        </svg>
+      </button>
+      <button class="settings-close" onclick="closeStaggerPopup()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <!-- Real comp frames/timecode ruler (see _staggerRenderRuler); dragging anywhere on it stretches/compresses the total span, updating Step accordingly (see _staggerInitRulerDrag). -->
+    <div class="stagger-timeline-wrap">
+      <div class="stagger-ruler" id="staggerRuler" title="Total Duration">
+        <!-- Kept in its own sub-container so re-rendering ticks (_staggerRenderRuler) doesn't wipe the edge handles below. -->
+        <div class="stagger-ruler-ticks" id="staggerRulerTicks"></div>
+        <!-- Purely a visual affordance — dragging already works anywhere on the ruler. -->
+        <div class="stagger-ruler-handle stagger-ruler-handle-left"></div>
+        <div class="stagger-ruler-handle stagger-ruler-handle-right"></div>
+      </div>
+      <!-- Generic demo "layer" bars (not the real selection; see STAGGER_DEMO_ROWS), zoomed to the stagger's own span so a tiny real step still reads as a clear cascade; the curve toggle draws directly into this same svg, transposed to overlay the bars. -->
+      <div class="stagger-mockup">
+        <svg class="stagger-mockup-svg" id="staggerMockupSvg" viewBox="0 0 200 135" preserveAspectRatio="none">
+          <g id="staggerMockupBars"></g>
+          <line class="stagger-curve-handle-line" id="staggerCurveHandleLine1" style="display:none"/>
+          <line class="stagger-curve-handle-line" id="staggerCurveHandleLine2" style="display:none"/>
+          <path class="stagger-curve-path" id="staggerCurvePath" d="" style="display:none"/>
+          <!-- Ellipse not circle: rx/ry set separately in JS to counter the svg's non-uniform stretch (preserveAspectRatio="none"), same fix _easePreviewRender uses. -->
+          <ellipse class="stagger-curve-handle" id="staggerCurveHandle1" style="display:none"/>
+          <ellipse class="stagger-curve-handle" id="staggerCurveHandle2" style="display:none"/>
+        </svg>
+      </div>
+    </div>
+    <div class="stagger-controls">
+      <div class="stagger-field-row">
+        <!-- Step and Total share one frames/seconds mode — ctrl/cmd+click flips both at once (see shared _staggerUnitMode in main.js). -->
+        <div class="stagger-field-box" title="Step / Total">
+          <span class="stagger-field-lbl">Step</span>
+          <span class="stagger-scrub" id="staggerStepFrames" title="Step">2 f</span>
+          <span class="stagger-field-lbl">Total</span>
+          <span class="stagger-scrub" id="staggerTotalReadout" title="Total"></span>
+        </div>
+        <div class="stagger-field-box" title="Group Size">
+          <span class="stagger-field-lbl">Group</span>
+          <span class="stagger-scrub" id="staggerGroupSize" title="Group Size">1</span>
+        </div>
+        <!-- Curve and Random share one bordered segmented group but toggle independently; mutually exclusive, only one active at a time (see _staggerToggleCurve/_staggerToggleRandom). -->
+        <div class="stagger-toggle-group">
+          <button class="stagger-toggle-btn" id="staggerCurveToggleBtn" onclick="_staggerToggleCurve()" title="Curve Distribution">
+            <!-- Exaggerated S-curve (handles at ~80% influence, not 50%) so it reads as "opens a curve editor" rather than a generic wave. -->
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+              <path d="M2,17 C15,17 5,3 18,3"/>
+              <line x1="2" y1="17" x2="15" y2="17" stroke-width="1.4" opacity="0.55"/>
+              <line x1="18" y1="3" x2="5" y2="3" stroke-width="1.4" opacity="0.55"/>
+              <circle cx="15" cy="17" r="1.8" fill="currentColor" stroke="none"/>
+              <circle cx="5" cy="3" r="1.8" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+          <button class="stagger-toggle-btn" id="staggerRandomToggleBtn" onclick="_staggerToggleRandom()" title="Random Distribution">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="14" height="14" rx="3"/>
+              <circle cx="7" cy="7" r="1.1" fill="currentColor" stroke="none"/>
+              <circle cx="13" cy="7" r="1.1" fill="currentColor" stroke="none"/>
+              <circle cx="10" cy="10" r="1.1" fill="currentColor" stroke="none"/>
+              <circle cx="7" cy="13" r="1.1" fill="currentColor" stroke="none"/>
+              <circle cx="13" cy="13" r="1.1" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <!-- JS-populated: one .stagger-preset-thumb per saved curve plus a trailing "add" button (see _staggerRenderPresetList in main.js). -->
+      <!-- Always visible — clicking a preset enables Curve mode automatically rather than requiring it already on (see _staggerApplyPresetAt). -->
+      <div class="stagger-curve-panel" id="staggerCurvePanel">
+        <div class="stagger-preset-list" id="staggerPresetList"></div>
+      </div>
+      <!-- Deterministic — same seed always produces the same arrangement; reroll just picks a new one via Math.random(). -->
+      <div class="stagger-curve-panel" id="staggerRandomPanel" style="display:none">
+        <div class="stagger-panel-lbl">Random Settings</div>
+        <div class="stagger-random-row">
+          <div class="stagger-field-box" title="Seed">
+            <span class="stagger-field-lbl">Seed</span>
+            <span class="stagger-scrub" id="staggerRandomSeed" title="Seed">1</span>
+          </div>
+          <button class="stagger-reroll-btn" id="staggerRerollBtn" onclick="_staggerRerollSeed()" title="New Seed">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12,7 A5,5 0 1 1 10.3,3.3"/>
+              <path d="M12,2.2 L12,5.2 L9,5.2"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="stagger-footer">
+      <button class="stagger-cancel-btn" onclick="closeStaggerPopup()">Cancel</button>
+      <button class="stagger-apply-btn" onclick="applyStaggerFromPopup()">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- Standalone counterpart to Stagger Keyframes above; cascades each layer's own start time instead of retiming keyframes, so it works with no keyframes at all. Reuses the same .stagger-* CSS, layerStagger*-prefixed ids. -->
+<div id="layerStaggerOverlay" class="settings-overlay stagger-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ closeLayerStaggerPopup(); })">
+  <div class="stagger-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <line x1="2" y1="5" x2="6" y2="5"/>
+        <line x1="2" y1="10" x2="10" y2="10"/>
+        <line x1="2" y1="15" x2="17" y2="15"/>
+      </svg>
+      <span class="settings-title">Layer Stagger</span>
+      <button class="stagger-direction-btn" id="layerStaggerDirectionBtn" onclick="_layerStaggerToggleDirection()" title="Reverse Direction">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="10" y1="4" x2="10" y2="16"/>
+          <polyline points="6,12 10,16 14,12"/>
+        </svg>
+      </button>
+      <button class="settings-close" onclick="closeLayerStaggerPopup()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="stagger-timeline-wrap">
+      <div class="stagger-ruler" id="layerStaggerRuler" title="Total Duration">
+        <div class="stagger-ruler-ticks" id="layerStaggerRulerTicks"></div>
+        <div class="stagger-ruler-handle stagger-ruler-handle-left"></div>
+        <div class="stagger-ruler-handle stagger-ruler-handle-right"></div>
+      </div>
+      <!-- Generic demo bars (see LAYERSTAGGER_DEMO_ROWS) whose left edge shifts to visualize layer start times cascading; no keyframe diamond here, unlike Stagger Keyframes' mockup. -->
+      <div class="stagger-mockup">
+        <svg class="stagger-mockup-svg" id="layerStaggerMockupSvg" viewBox="0 0 200 135" preserveAspectRatio="none">
+          <g id="layerStaggerMockupBars"></g>
+          <line class="stagger-curve-handle-line" id="layerStaggerCurveHandleLine1" style="display:none"/>
+          <line class="stagger-curve-handle-line" id="layerStaggerCurveHandleLine2" style="display:none"/>
+          <path class="stagger-curve-path" id="layerStaggerCurvePath" d="" style="display:none"/>
+          <ellipse class="stagger-curve-handle" id="layerStaggerCurveHandle1" style="display:none"/>
+          <ellipse class="stagger-curve-handle" id="layerStaggerCurveHandle2" style="display:none"/>
+        </svg>
+      </div>
+    </div>
+    <div class="stagger-controls">
+      <div class="stagger-field-row">
+        <div class="stagger-field-box" title="Step / Total">
+          <span class="stagger-field-lbl">Step</span>
+          <span class="stagger-scrub" id="layerStaggerStepFrames" title="Step">2 f</span>
+          <span class="stagger-field-lbl">Total</span>
+          <span class="stagger-scrub" id="layerStaggerTotalReadout" title="Total"></span>
+        </div>
+        <div class="stagger-field-box" title="Group Size">
+          <span class="stagger-field-lbl">Group</span>
+          <span class="stagger-scrub" id="layerStaggerGroupSize" title="Group Size">1</span>
+        </div>
+        <div class="stagger-toggle-group">
+          <button class="stagger-toggle-btn" id="layerStaggerCurveToggleBtn" onclick="_layerStaggerToggleCurve()" title="Curve Distribution">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+              <path d="M2,17 C15,17 5,3 18,3"/>
+              <line x1="2" y1="17" x2="15" y2="17" stroke-width="1.4" opacity="0.55"/>
+              <line x1="18" y1="3" x2="5" y2="3" stroke-width="1.4" opacity="0.55"/>
+              <circle cx="15" cy="17" r="1.8" fill="currentColor" stroke="none"/>
+              <circle cx="5" cy="3" r="1.8" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+          <button class="stagger-toggle-btn" id="layerStaggerRandomToggleBtn" onclick="_layerStaggerToggleRandom()" title="Random Distribution">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="14" height="14" rx="3"/>
+              <circle cx="7" cy="7" r="1.1" fill="currentColor" stroke="none"/>
+              <circle cx="13" cy="7" r="1.1" fill="currentColor" stroke="none"/>
+              <circle cx="10" cy="10" r="1.1" fill="currentColor" stroke="none"/>
+              <circle cx="7" cy="13" r="1.1" fill="currentColor" stroke="none"/>
+              <circle cx="13" cy="13" r="1.1" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="stagger-curve-panel" id="layerStaggerCurvePanel">
+        <div class="stagger-preset-list" id="layerStaggerPresetList"></div>
+      </div>
+      <div class="stagger-curve-panel" id="layerStaggerRandomPanel" style="display:none">
+        <div class="stagger-panel-lbl">Random Settings</div>
+        <div class="stagger-random-row">
+          <div class="stagger-field-box" title="Seed">
+            <span class="stagger-field-lbl">Seed</span>
+            <span class="stagger-scrub" id="layerStaggerRandomSeed" title="Seed">1</span>
+          </div>
+          <button class="stagger-reroll-btn" id="layerStaggerRerollBtn" onclick="_layerStaggerRerollSeed()" title="New Seed">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12,7 A5,5 0 1 1 10.3,3.3"/>
+              <path d="M12,2.2 L12,5.2 L9,5.2"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="stagger-footer">
+      <button class="stagger-cancel-btn" onclick="closeLayerStaggerPopup()">Cancel</button>
+      <button class="stagger-apply-btn" onclick="applyLayerStaggerFromPopup()">Apply</button>
     </div>
   </div>
 </div>
 
 <!-- ── SETTINGS POPUP ───────────────────────────────────────────────────────── -->
-<!-- Opened via the gear button in the footer (openSettingsPopup in main.js) —
-     no tab of its own; .settings-as-popup is what actually shows it (see
-     style.css), toggled there rather than through switchTab. -->
+<!-- No tab of its own; .settings-as-popup toggles visibility (see style.css) rather than switchTab (see openSettingsPopup in main.js). -->
 <div id="settingsPopup" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ closeSettingsPopup(); })">
  <div class="settings-modal-box" onclick="event.stopPropagation()">
   <div class="settings-popup-hdr">
@@ -1777,17 +1851,17 @@
       </svg>
     </button>
   </div>
-  <div class="settings-tab-row">
+  <div class="settings-tab-row settings-tab-row-stack">
     <span class="lbl">Layout</span>
     <div class="layout-mode-group">
       <button class="layout-mode-btn" data-mode="compact" onclick="setLayoutMode('compact')">
         <svg viewBox="0 0 20 20" fill="currentColor">
-          <rect x="2"  y="2"  width="7" height="7" rx="2"/>
-          <rect x="11" y="2"  width="7" height="7" rx="2"/>
-          <rect x="2"  y="11" width="7" height="7" rx="2"/>
+          <!-- Bento shape (matches Compact's #homeGrid data-span/data-rowspan tiles), not a uniform grid. -->
+          <rect x="2"  y="2" width="7" height="16" rx="2"/>
+          <rect x="11" y="2" width="7" height="7"  rx="2"/>
           <rect x="11" y="11" width="7" height="7" rx="2"/>
         </svg>
-        Compact
+        <span class="layout-mode-btn-lbl">Compact</span>
       </button>
       <button class="layout-mode-btn" data-mode="classic" onclick="setLayoutMode('classic')">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
@@ -1795,13 +1869,21 @@
           <line x1="2" y1="10" x2="18" y2="10"/>
           <line x1="2" y1="15.5" x2="18" y2="15.5"/>
         </svg>
-        Classic
+        <span class="layout-mode-btn-lbl">Classic</span>
+      </button>
+      <button class="layout-mode-btn" data-mode="toolbar" onclick="setLayoutMode('toolbar')">
+        <svg viewBox="0 0 20 20" fill="currentColor">
+          <!-- Compact's old icon, moved here since a uniform grid reads more like user-placed buttons than Compact's own bento layout. -->
+          <rect x="2"  y="2"  width="7" height="7" rx="2"/>
+          <rect x="11" y="2"  width="7" height="7" rx="2"/>
+          <rect x="2"  y="11" width="7" height="7" rx="2"/>
+          <rect x="11" y="11" width="7" height="7" rx="2"/>
+        </svg>
+        <span class="layout-mode-btn-lbl">Toolbar</span>
       </button>
     </div>
   </div>
-  <!-- Classic's own section list — reorder/show/hide each tool, the same
-       mechanism the original pre-bespoke settings page used. Only relevant
-       (and only shown) while Layout above is set to Classic. -->
+  <!-- Classic's own section list (reorder/show/hide); only shown while Layout above is set to Classic. -->
   <div class="classic-sections-block" id="classicSettingsBlock">
     <p class="settings-section-lbl">Sections</p>
     <div id="settingsSectionList" class="settings-section-list"></div>
@@ -1813,13 +1895,7 @@
       <span class="toggle-track"></span>
     </label>
   </div>
-  <!-- Default on — off mutes the Trophy tab's activity poll (the one part
-       of that whole feature that costs real evalScript time, see
-       _activityApplyScoringEnabled in main.js) and js/leaderboard.js's own
-       periodic sync, for anyone who'd rather not risk any of it on a heavy
-       comp. Shown in both layout modes — Classic can reach the Trophy tab
-       too, via the footer's classicTrophyBtn (see _toggleClassicTrophyTab
-       in main.js), so this toggle is just as relevant there. -->
+  <!-- Default on; off mutes the Trophy activity poll (real evalScript cost, see _activityApplyScoringEnabled) and leaderboard sync — relevant in both layout modes since Classic reaches Trophy via classicTrophyBtn. -->
   <div class="settings-tab-row" id="enableScoringRow">
     <span class="lbl">Enable Scoring</span>
     <label class="settings-toggle">
@@ -1827,13 +1903,7 @@
       <span class="toggle-track"></span>
     </label>
   </div>
-  <!-- Compact-only: auto-jumps the Favorites bar to Ease Copy the moment
-       keyframes get selected, or to Shape Tools the moment a shape layer
-       gets selected — predictive (fires on the selection CHANGE, not
-       continuously while it's true), so it never fights a manual swipe
-       away. See _pollFavSmartStack in main.js. Classic has no Favorites
-       bar for this to jump around, so this row is hidden there
-       (body.layout-classic #smartStackRow, see style.css). -->
+  <!-- Compact-only: auto-jumps Favorites to Ease Copy/Shape Tools on selection change (not continuously), so it never fights a manual swipe (see _pollFavSmartStack); hidden in Classic, which has no Favorites bar. -->
   <div class="settings-tab-row" id="smartStackRow">
     <span class="lbl settings-row-lbl">
       <svg class="settings-row-icon" viewBox="0 0 16 16" fill="currentColor">
@@ -1849,16 +1919,14 @@
     </label>
   </div>
   <div class="settings-popup-ftr">
-    <span class="lbl" id="settingsVersionLbl">Version 1.9.4</span>
+    <span class="lbl" id="settingsVersionLbl">Version 1.9.5</span>
     <button class="btn" onclick="checkForUpdates(true)">Check for Updates</button>
   </div>
  </div>
 </div>
 
 <!-- ── WHAT'S NEW POPUP ─────────────────────────────────────────────────────── -->
-<!-- Shown once per upgrade, only for versions that flag something significant
-     in WHATS_NEW (main.js) — see _maybeShowWhatsNew, called from update.js's
-     checkForUpdates once the installed manifest version is known. -->
+<!-- Shown once per upgrade, only for versions flagged in WHATS_NEW (main.js); see _maybeShowWhatsNew, called from update.js's checkForUpdates. -->
 <div id="whatsNewPopup" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ closeWhatsNewPopup(); })">
  <div class="settings-modal-box whatsnew-modal-box" onclick="event.stopPropagation()">
   <div class="settings-popup-hdr">
@@ -1886,16 +1954,10 @@
     <div class="footer-brand">
       <img src="heist_icon_32.png" class="footer-logo" alt="">
       <span class="footer-name">Heist Lineup</span>
-      <span class="footer-version" id="footerVersion">v1.9.4</span>
+      <span class="footer-version" id="footerVersion">v1.9.5</span>
     </div>
     <div class="footer-actions">
-    <!-- Classic hides the tab bar entirely (see body.layout-classic
-         .tab-bar in style.css), so Trophy has no tab button to reach it
-         through there — this toggles straight to/from it instead, same
-         crossfade-into-the-edit-pencil's-spot treatment as that button
-         gets in Compact (both sized off the shared .settings-btn base,
-         see the classic-trophy-btn rule below). See
-         _toggleClassicTrophyTab in main.js. -->
+    <!-- Classic hides the tab bar entirely (see body.layout-classic .tab-bar), so this toggles straight to/from Trophy instead (see _toggleClassicTrophyTab in main.js). -->
     <button class="settings-btn classic-trophy-btn" id="classicTrophyBtn" onclick="_toggleClassicTrophyTab()" title="Progress">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
         <path d="M6,3 H14 V7 A4,4 0 0,1 6,7 Z"/>
@@ -1912,9 +1974,7 @@
         <line x1="9.3" y1="4.2" x2="11.8" y2="6.7"/>
       </svg>
     </button>
-    <!-- Settings has no tab of its own anymore — always opened as a popup
-         from here instead (see openSettingsPopup/.settings-as-popup in
-         main.js/style.css). -->
+    <!-- Settings has no tab of its own; always opened as a popup (see openSettingsPopup/.settings-as-popup). -->
     <button class="settings-btn" id="settingsGearBtn" onclick="openSettingsPopup()" title="Settings">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="8" cy="8" r="2.2"/>
@@ -1952,9 +2012,7 @@
     </div>
     <div class="help-body">
 
-      <!-- PAGE 1: search + grid of every widget group. Clicking a tile (or
-           a search result) opens that group's own detail page instead —
-           see _openHelpGroup/_helpSearch in main.js. -->
+      <!-- PAGE 1: search + grid of every widget group; clicking a tile or result opens its detail page (see _openHelpGroup/_helpSearch in main.js). -->
       <div class="help-page help-page-grid help-page-active" id="helpPageGrid">
         <div class="help-search-row">
           <svg class="help-search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><line x1="11" y1="11" x2="14.5" y2="14.5"/></svg>
@@ -2001,10 +2059,7 @@
         <div class="help-search-results" id="helpSearchResults"></div>
       </div>
 
-      <!-- PAGE 2+: one detail page per group, only one shown at a time
-           (see _openHelpGroup/_closeHelpGroup) — same content each group
-           always had, just no longer collapsed/accordioned since only one
-           is ever visible now. -->
+      <!-- PAGE 2+: one detail page per group, only one shown at a time (see _openHelpGroup/_closeHelpGroup). -->
 
       <!-- ALIGN -->
       <div class="help-page help-page-detail" data-help-group="align">
@@ -2034,7 +2089,7 @@
           <div class="help-sec-group">
             <div class="help-item sec"><span class="help-key">Align to</span><span class="help-desc"><em>Selection</em> aligns to combined layer bounds; <em>Composition</em> to comp edges and center.</span></div>
             <div class="help-item sec"><span class="help-key">Properties button</span><span class="help-desc">The sliders icon at the end of the button row opens Margin (extra offset, px or %) and Offset Keys (keyframes move with the layer during alignment). The checkmark in its top-right corner just closes it — edits save immediately.</span></div>
-            <div class="help-item sec"><span class="help-key">Keyframe mode</span><span class="help-desc">Select keyframes in the Timeline and Left/Center/Right shift them as a group instead of moving layer position (hourglass badge marks the edge buttons; Center swaps to a playhead glyph). Multiple keyframes on the same property move together as one rigid block — aligned to the earliest/playhead/latest keyframe in the selection (<em>Selection</em>), or the playhead/comp center/comp end (<em>Composition</em>). Top/Center-V/Bottom don't apply to keyframes.</span></div>
+            <div class="help-item sec"><span class="help-key">Keyframe mode</span><span class="help-desc">Select keyframes in the Timeline and Left/Center/Right shift them as a group instead of moving layer position (hourglass badge marks the edge buttons; Center swaps to a playhead glyph). Multiple keyframes on the same property move together as one rigid block — always relative to the playhead, ignoring the Align to dropdown: Left moves the group's earliest keyframe to the playhead, Right moves its latest keyframe there, Center moves the block's midpoint there. Top/Center-V/Bottom don't apply to keyframes.</span></div>
           </div>
         </div>
       </div>
@@ -2134,13 +2189,6 @@
               <span class="help-desc">Empties the anchor clipboard.</span>
             </div>
             <div class="help-item sec"><span class="help-key">Null</span><span class="help-desc">Creates a null layer at the layer's current anchor position.</span></div>
-            <div class="help-item sec">
-              <div class="help-key-row">
-                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="16" height="16" rx="3.5"/><path d="M7,14 L7,6.3 Q7,5 8.6,5.3"/><line x1="5.6" y1="9.7" x2="8.6" y2="9.7"/><line x1="10.6" y1="6.3" x2="14.2" y2="13.7"/><line x1="14.2" y1="6.3" x2="10.6" y2="13.7"/></svg>
-                <span class="help-key">Link Property to Controller</span>
-              </div>
-              <span class="help-desc">Select the same property (Rotation, Opacity, Position, or an effect's Color/Angle/Point/Slider) on 2+ layers, then click to create a null with a matching controller effect (Angle/Point/Color/Slider Control) and link every layer to it via expression. Without Offset, all layers snap to the first layer's value; with Offset, each keeps its own value and the controller shifts them together.</span>
-            </div>
           </div>
         </div>
       </div>
@@ -2281,9 +2329,9 @@
               <span class="help-icon-strip">
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1.4" opacity="0.5"/><rect x="6" y="9" width="12" height="8" rx="1.4"/></svg>
                 <svg viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="2" width="16" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.2"/><rect x="4" y="4" width="12" height="3" rx="1"/><rect x="4" y="8.5" width="12" height="3" rx="1" opacity="0.65"/><rect x="4" y="13" width="12" height="3" rx="1" opacity="0.35"/></svg>
-                <svg viewBox="0 0 20 20" fill="currentColor"><rect x="2.5" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/><rect x="11" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/><line x1="5.75" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><line x1="14.25" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><rect x="6.5" y="12.5" width="7" height="5.5" rx="1.4"/></svg>
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="6.5" height="6" rx="1.4"/><rect x="11" y="3" width="6.5" height="6" rx="1.4"/><line x1="5.75" y1="9" x2="10" y2="12.5"/><line x1="14.25" y1="9" x2="10" y2="12.5"/><rect x="5.5" y="12.5" width="9" height="6" rx="1.4" fill="currentColor" stroke="none"/></svg>
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2,5.5 a1,1 0 0,1 1,-1 H7 L8.5,6 H17 a1,1 0 0,1 1,1 V15 a1,1 0 0,1 -1,1 H3 a1,1 0 0,1 -1,-1 Z"/><line x1="10" y1="9" x2="10" y2="13.2"/><polyline points="7.8,11.1 10,13.2 12.2,11.1"/></svg>
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="16" height="16" rx="3.5"/><circle cx="10" cy="10" r="3" stroke-width="1.3"/><g fill="currentColor"><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(45 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(90 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(135 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(180 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(225 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(270 10 10)"/><rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(315 10 10)"/></g><circle cx="10" cy="10" r="1" fill="currentColor" stroke="none"/></svg>
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="16" height="16" rx="3.5"/><g stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35"><circle cx="10" cy="10" r="1.78"/><path d="M10,4.735 L10.5265,5.869 A3.97,3.97 0 0,1 11.539,6.3955 L12.673,5.788 L13.645,6.76 L13.0375,7.894 A3.97,3.97 0 0,1 13.564,8.9065 L14.698,9.433 L14.698,10.567 L13.564,11.0935 A3.97,3.97 0 0,1 13.0375,12.106 L13.645,13.24 L12.673,14.212 L11.539,13.6045 A3.97,3.97 0 0,1 10.5265,14.131 L10,15.265 L9.4735,14.131 A3.97,3.97 0 0,1 8.461,13.6045 L7.327,14.212 L6.355,13.24 L6.9625,12.106 A3.97,3.97 0 0,1 6.436,11.0935 L5.302,10.567 L5.302,9.433 L6.436,8.9065 A3.97,3.97 0 0,1 6.9625,7.894 L6.355,6.76 L7.327,5.788 L8.461,6.3955 A3.97,3.97 0 0,1 9.4735,5.869 Z"/></g></svg>
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="16" height="16" rx="3.5"/><line x1="5.3" y1="8" x2="14.7" y2="8" stroke-linecap="round"/><line x1="5.3" y1="12" x2="11" y2="12" stroke-linecap="round"/></svg>
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5,2.5 H12 L15.5,6 V17 a1,1 0 0,1 -1,1 H5 a1,1 0 0,1 -1,-1 V3.5 a1,1 0 0,1 1,-1 Z"/><path d="M12,2.5 V6 H15.5"/><line x1="9.75" y1="9.5" x2="9.75" y2="14.5"/><polyline points="7.05,12 9.75,14.7 12.45,12"/></svg>
               </span>
@@ -2307,7 +2355,7 @@
             </div>
             <div class="help-item sec">
               <div class="help-key-row">
-                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="currentColor"><rect x="2.5" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/><rect x="11" y="3" width="6.5" height="6" rx="1.4" opacity="0.7"/><line x1="5.75" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><line x1="14.25" y1="9" x2="10" y2="12.2" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><rect x="6.5" y="12.5" width="7" height="5.5" rx="1.4"/></svg>
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="6.5" height="6" rx="1.4"/><rect x="11" y="3" width="6.5" height="6" rx="1.4"/><line x1="5.75" y1="9" x2="10" y2="12.5"/><line x1="14.25" y1="9" x2="10" y2="12.5"/><rect x="5.5" y="12.5" width="9" height="6" rx="1.4" fill="currentColor" stroke="none"/></svg>
                 <span class="help-key">Consolidate Project</span>
               </div>
               <span class="help-desc">Merges exact duplicate comps (same name, size, frame rate, layers, keyframes) project-wide, updating every usage — plus duplicate footage and identical solids.</span>
@@ -2323,18 +2371,10 @@
               <div class="help-key-row">
                 <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
                   <rect x="2" y="2" width="16" height="16" rx="3.5"/>
-                  <circle cx="10" cy="10" r="3" stroke-width="1.3"/>
-                  <g fill="currentColor">
-                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4"/>
-                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(45 10 10)"/>
-                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(90 10 10)"/>
-                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(135 10 10)"/>
-                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(180 10 10)"/>
-                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(225 10 10)"/>
-                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(270 10 10)"/>
-                    <rect x="9.3" y="4.7" width="1.4" height="2.1" rx="0.4" transform="rotate(315 10 10)"/>
+                  <g stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35">
+                    <circle cx="10" cy="10" r="1.78"/>
+                    <path d="M10,4.735 L10.5265,5.869 A3.97,3.97 0 0,1 11.539,6.3955 L12.673,5.788 L13.645,6.76 L13.0375,7.894 A3.97,3.97 0 0,1 13.564,8.9065 L14.698,9.433 L14.698,10.567 L13.564,11.0935 A3.97,3.97 0 0,1 13.0375,12.106 L13.645,13.24 L12.673,14.212 L11.539,13.6045 A3.97,3.97 0 0,1 10.5265,14.131 L10,15.265 L9.4735,14.131 A3.97,3.97 0 0,1 8.461,13.6045 L7.327,14.212 L6.355,13.24 L6.9625,12.106 A3.97,3.97 0 0,1 6.436,11.0935 L5.302,10.567 L5.302,9.433 L6.436,8.9065 A3.97,3.97 0 0,1 6.9625,7.894 L6.355,6.76 L7.327,5.788 L8.461,6.3955 A3.97,3.97 0 0,1 9.4735,5.869 Z"/>
                   </g>
-                  <circle cx="10" cy="10" r="1" fill="currentColor" stroke="none"/>
                 </svg>
                 <span class="help-key">Batch Comp Settings</span>
               </div>
@@ -2431,18 +2471,10 @@
     <div class="settings-hdr">
       <svg class="settings-hdr-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.1" style="color:#b07ef0">
         <rect x="1.3" y="1.3" width="11.4" height="11.4" rx="2.4"/>
-        <circle cx="7" cy="7" r="2.1" stroke-width="1"/>
-        <g fill="currentColor">
-          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28"/>
-          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(45 7 7)"/>
-          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(90 7 7)"/>
-          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(135 7 7)"/>
-          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(180 7 7)"/>
-          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(225 7 7)"/>
-          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(270 7 7)"/>
-          <rect x="6.51" y="3.29" width="0.98" height="1.47" rx="0.28" transform="rotate(315 7 7)"/>
+        <g stroke-linecap="round" stroke-linejoin="round" stroke-width="0.95">
+          <circle cx="7" cy="7" r="1.25"/>
+          <path d="M7,3.315 L7.369,4.108 A2.78,2.78 0 0,1 8.077,4.477 L8.871,4.052 L9.552,4.732 L9.126,5.526 A2.78,2.78 0 0,1 9.495,6.235 L10.289,6.603 L10.289,7.397 L9.495,7.765 A2.78,2.78 0 0,1 9.126,8.474 L9.552,9.268 L8.871,9.948 L8.077,9.523 A2.78,2.78 0 0,1 7.369,9.892 L7,10.686 L6.631,9.892 A2.78,2.78 0 0,1 5.923,9.523 L5.129,9.948 L4.449,9.268 L4.874,8.474 A2.78,2.78 0 0,1 4.505,7.765 L3.711,7.397 L3.711,6.603 L4.505,6.235 A2.78,2.78 0 0,1 4.874,5.526 L4.449,4.732 L5.129,4.052 L5.923,4.477 A2.78,2.78 0 0,1 6.631,4.108 Z"/>
         </g>
-        <circle cx="7" cy="7" r="0.7" fill="currentColor" stroke="none"/>
       </svg>
       <span class="settings-title">Batch Comp Settings</span>
       <button class="settings-close" onclick="closeBatchCompSettings()">
@@ -2574,11 +2606,7 @@
   </div>
 </div>
 
-<!-- Color Picker Modal — <input type="color"> never opens inside AE's CEP
-     host, and $.colorPicker() only opens the OS-level panel, not AE's own
-     "Shape Fill/Stroke Color" dialog (which isn't scriptable at all) — so
-     this is a from-scratch HSB picker living in-panel, opened by
-     _openColorPicker in main.js. -->
+<!-- From-scratch in-panel HSB picker: <input type="color"> never opens inside AE's CEP host, and $.colorPicker() can't reach AE's own Fill/Stroke dialog (see _openColorPicker in main.js). -->
 <div id="cpOverlay" class="settings-overlay cp-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ _closeColorPicker(false); })">
   <div class="settings-modal cp-modal" onclick="event.stopPropagation()">
     <div class="settings-hdr">
@@ -2631,10 +2659,7 @@
   </div>
 </div>
 
-<!-- Shape Fill/Stroke Edit Modal — a full popup (like Settings/Color Picker)
-     rather than a small anchored popup, since it holds two tabs (Fill/
-     Stroke), a Solid/No Fill(Stroke) toggle, and a scrollable per-shape
-     list — see _openShapeEditPopup/_renderShapeEditPopup in main.js. -->
+<!-- A full popup rather than a small anchored one since it holds two tabs, a Solid/No Fill toggle, and a scrollable per-shape list (see _openShapeEditPopup/_renderShapeEditPopup). -->
 <div id="shapeEditOverlay" class="settings-overlay shape-edit-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ _closeShapeEditPopup(); })">
   <div class="settings-modal shape-edit-modal" onclick="event.stopPropagation()">
     <div class="settings-hdr">

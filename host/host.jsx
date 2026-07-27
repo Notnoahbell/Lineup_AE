@@ -1,6 +1,4 @@
-// Lineup CEP — Host Script
-// All ExtendScript logic. Called via CSInterface.evalScript() from the HTML panel.
-// #include paths are relative to this file (host/).
+// Lineup CEP — Host Script. All ExtendScript logic, called via CSInterface.evalScript().
 
 #include "LST.js"
 
@@ -8,6 +6,8 @@
 var _anchorClipboard = null;   // { anchor: [x, y] }
 var _easeClipboard   = null;   // array of { inType, outType, inEase, outEase }
 var _easeClipboardType = null;
+// Whether the copied layer is 3D — value/ease array LENGTH alone can't tell (a 2D layer's Scale can carry a vestigial Z entry).
+var _easeClipboardIs3D = null;
 
 // ── Position helpers ──────────────────────────────────────────────────────────
 
@@ -151,13 +151,8 @@ function fromComp(layer, compPoint) {
     return [rx / (scale[0] / 100) + anchor[0], ry / (scale[1] / 100) + anchor[1]];
 }
 
-// The exact inverse of fromComp above — a point in `layer`'s own local
-// space, walked back UP through its own transform and then its parent
-// chain, into true comp space. (AE's ExtendScript Layer object has no
-// toComp/fromComp of its own — those only exist inside expressions — and
-// LST.toComp's offset param (see LST.js) does `offset -= value` on plain
-// arrays, which silently NaNs instead of subtracting componentwise, so
-// this stays independent of it rather than risk the same bug.)
+// Inverse of fromComp — walks a local point up through the layer's transform and parent chain into comp space.
+// Kept independent of LST.toComp since its offset param silently NaNs on plain arrays instead of subtracting componentwise.
 function toComp(layer, localPoint) {
     var pos = layer.position.value;
     var anchor = layer.anchorPoint.value;
@@ -171,11 +166,7 @@ function toComp(layer, localPoint) {
     return layer.parent ? toComp(layer.parent, parentPoint) : parentPoint;
 }
 
-// Linear (rotation+scale) part of what fromComp applies at one ancestor level —
-// converts a delta expressed in `ancestor`'s PARENT space into a delta expressed
-// in `ancestor`'s OWN local space. For a delta (as opposed to a point), the
-// position/anchor terms in fromComp's per-level math cancel out, leaving just
-// the rotate+scale part.
+// Converts a delta from `ancestor`'s parent space into its own local space (rotate+scale only — position/anchor terms cancel for deltas).
 function oneLevelDelta(ancestor, dx, dy) {
     var scale = ancestor.scale.value;
     var rotation = ancestor.rotation.value * (Math.PI / 180);
@@ -184,16 +175,8 @@ function oneLevelDelta(ancestor, dx, dy) {
     return [rx / (scale[0]/100), ry / (scale[1]/100)];
 }
 
-// Converts a delta in true comp space into the delta that should be added to
-// layer.position (which lives in layer.parent's local space, or comp space with
-// no parent) to move the layer by that much on screen — the position-delta
-// counterpart of fromComp's point conversion. This is what makes Align correct
-// under a scaled/rotated parent (a null, a rig, ...): a comp-space pixel delta
-// only equals a position-unit delta when there's no parent, or an unscaled/
-// unrotated one. Walks the ancestor chain top-down, applying each ancestor's own
-// rotation/scale in turn — same recursion order as fromComp, but starting one
-// level up (at layer.parent), since position is unaffected by the layer's OWN
-// rotation/scale/anchor.
+// Converts a comp-space delta into a layer.position delta, walking the ancestor chain top-down.
+// Needed because a comp-space pixel delta only equals a position-unit delta with no scaled/rotated parent (e.g. a rig null).
 function compDeltaToPositionDelta(layer, dCompX, dCompY) {
     var chain = [];
     for (var p = layer.parent; p; p = p.parent) chain.push(p);
@@ -212,8 +195,7 @@ function applyAnchorShift(layer, newAnchor) {
     var oldA = layer.anchorPoint.value;
     var dAx = newAnchor[0] - oldA[0];
     var dAy = newAnchor[1] - oldA[1];
-    // Delta must be in parent space — use only this layer's own rotation/scale
-    // (not the full parent chain) to convert from local to parent space.
+    // Delta must be in parent space — use only this layer's own rotation/scale, not the full parent chain.
     var rot = layer.rotation.value * (Math.PI / 180);
     var sx  = layer.scale.value[0] / 100;
     var sy  = layer.scale.value[1] / 100;
@@ -235,8 +217,7 @@ function pasteAnchor(layer, newAnchor) {
         var oldAnchorLocal = layer.anchorPoint.value;
         var dAx = newAnchorLocal[0] - oldAnchorLocal[0];
         var dAy = newAnchorLocal[1] - oldAnchorLocal[1];
-        // Delta must be in parent space — use only this layer's own rotation/scale
-        // (not the full parent chain) to convert from local to parent space.
+        // Delta must be in parent space — use only this layer's own rotation/scale, not the full parent chain.
         var rot = layer.rotation.value * (Math.PI / 180);
         var sx  = layer.scale.value[0] / 100;
         var sy  = layer.scale.value[1] / 100;
@@ -258,10 +239,25 @@ function pasteAnchor(layer, newAnchor) {
 }
 
 // ── KEYFRAME ALIGN ────────────────────────────────────────────────────────────
-// Horizontal align (left/centerX/right) redirects here whenever keyframes are
-// selected on a selected layer's properties, instead of moving layer position —
-// there's no sensible "vertical align" for a 1D time axis, so top/centerY/bottom
-// always fall through to the normal position-align path below.
+// Horizontal align redirects here when keyframes are selected; vertical align has no 1D-time equivalent so it never does.
+
+// Collects every selected keyframe on ONE layer, grouped by property — {prop, indices}[].
+// Factored out so the Stagger tool can reuse the same per-layer walk.
+function lineup_collectLayerKeyGroups(layer) {
+    var groups = [];
+    var sel = layer.selectedProperties;
+    if (!sel) return groups;
+    for (var j = 0; j < sel.length; j++) {
+        var prop = sel[j];
+        if (!(prop instanceof Property) || prop.numKeys < 1) continue;
+        var indices = [];
+        for (var k = 1; k <= prop.numKeys; k++) {
+            if (prop.keySelected(k)) indices.push(k);
+        }
+        if (indices.length > 0) groups.push({ prop: prop, indices: indices });
+    }
+    return groups;
+}
 
 // Collects every selected keyframe, grouped by property, across all selected
 // layers — {prop, indices}[]. Shared by the align action and the lightweight
@@ -270,17 +266,7 @@ function lineup_collectSelectedKeyGroups(comp) {
     var groups = [];
     var layers = comp.selectedLayers;
     for (var i = 0; i < layers.length; i++) {
-        var sel = layers[i].selectedProperties;
-        if (!sel) continue;
-        for (var j = 0; j < sel.length; j++) {
-            var prop = sel[j];
-            if (!(prop instanceof Property) || prop.numKeys < 1) continue;
-            var indices = [];
-            for (var k = 1; k <= prop.numKeys; k++) {
-                if (prop.keySelected(k)) indices.push(k);
-            }
-            if (indices.length > 0) groups.push({ prop: prop, indices: indices });
-        }
+        groups = groups.concat(lineup_collectLayerKeyGroups(layers[i]));
     }
     return groups;
 }
@@ -296,12 +282,8 @@ function lineup_hasSelectedKeyframes() {
     }
 }
 
-// Cheap poll target for the Favorites bar's smart-stack switch: "1" as soon
-// as the selection includes a shape layer. Unlike lineup_shapeColorHudTargetLayers
-// (which falls back to every shape layer in the comp when nothing's
-// selected, for the HUD's own display purposes), this only ever looks at
-// the actual selection — an empty selection is "0", not "there happen to
-// be shape layers in this comp."
+// Cheap poll target for the Favorites bar's smart-stack switch: "1" if the actual selection includes a shape layer.
+// Unlike lineup_shapeColorHudTargetLayers, this never falls back to "any shape layer in the comp".
 function lineup_hasSelectedShapeLayer() {
     try {
         var comp = app.project.activeItem;
@@ -316,28 +298,22 @@ function lineup_hasSelectedShapeLayer() {
     }
 }
 
-// Moves one keyframe to newTime, preserving value/interpolation/ease/spatial
-// tangents as best it can. AE has no "move this keyframe's time" call, so this
-// removes and re-adds it — best-effort restoration is wrapped per-field so a
-// failure to restore a cosmetic (ease/tangent) detail doesn't lose the move.
-function lineup_retimeKey(prop, keyIndex, newTime) {
-    if (prop.keyTime(keyIndex) === newTime) return;
-    try { if (prop.keyRoving(keyIndex)) return; } catch (e) {}
-
+// Captures a keyframe's value/interpolation/ease/spatial-tangent state before it's removed and recreated at a new time.
+// Must run for EVERY keyframe in a batch BEFORE any are retimed — recreating one keyframe can silently flip an
+// adjacent keyframe's interpolation as an AE-internal side effect, corrupting state read mid-loop.
+function lineup_snapshotKey(prop, keyIndex) {
     var value   = prop.keyValue(keyIndex);
     var inType  = prop.keyInInterpolationType(keyIndex);
     var outType = prop.keyOutInterpolationType(keyIndex);
-    // Ease/auto-bezier/continuous only mean anything (and are only readable
-    // as meaningful) when BOTH sides are Bezier — restoring them on a
-    // Linear/Hold key is what was silently flipping it back to Bezier, since
-    // setTemporalEaseAtKey only makes sense for — and forces — a Bezier key.
-    var bothBezier = (inType === KeyframeInterpolationType.BEZIER && outType === KeyframeInterpolationType.BEZIER);
+    // Ease is captured per side independently (not gated on both sides being Bezier) to handle mixed-interpolation keyframes correctly.
+    var inIsBezier  = (inType  === KeyframeInterpolationType.BEZIER);
+    var outIsBezier = (outType === KeyframeInterpolationType.BEZIER);
     var inEase = null, outEase = null, wasAutoBezier = false, wasContinuous = false;
     var inTan = null, outTan = null, isSpatial = false, wasSpatialContinuous = false, wasSpatialAutoBezier = false;
 
-    if (bothBezier) {
-        try { inEase  = prop.keyInTemporalEase(keyIndex); }  catch (e) {}
-        try { outEase = prop.keyOutTemporalEase(keyIndex); } catch (e) {}
+    if (inIsBezier)  { try { inEase  = prop.keyInTemporalEase(keyIndex); }  catch (e) {} }
+    if (outIsBezier) { try { outEase = prop.keyOutTemporalEase(keyIndex); } catch (e) {} }
+    if (inIsBezier && outIsBezier) {
         try { wasAutoBezier = prop.keyTemporalAutoBezier(keyIndex); } catch (e) {}
         try { wasContinuous = prop.keyTemporalContinuous(keyIndex); }  catch (e) {}
     }
@@ -351,52 +327,157 @@ function lineup_retimeKey(prop, keyIndex, newTime) {
         }
     } catch (e) { isSpatial = false; }
 
+    var roving = false;
+    try { roving = prop.keyRoving(keyIndex); } catch (e) {}
+
+    return {
+        value: value, inType: inType, outType: outType,
+        inIsBezier: inIsBezier, outIsBezier: outIsBezier,
+        inEase: inEase, outEase: outEase,
+        wasAutoBezier: wasAutoBezier, wasContinuous: wasContinuous,
+        inTan: inTan, outTan: outTan, isSpatial: isSpatial,
+        wasSpatialContinuous: wasSpatialContinuous, wasSpatialAutoBezier: wasSpatialAutoBezier,
+        roving: roving
+    };
+}
+
+// Applies a snapshot's interpolation/ease/spatial-tangent data to an
+// EXISTING keyframe at keyIndex, without moving it or touching its value.
+// Called from lineup_alignKeyframes' own final restore pass — run only
+// after EVERY keyframe on a property has already been moved (see
+// lineup_moveKeyOnly's comment) — both for keys that were themselves moved
+// and for unmoved neighbors of a moved key (removeKey/setValueAtTime on ONE
+// keyframe can silently flip the interpolation type of the keyframe right
+// next to it, since the segment between two keys isn't purely one-sided
+// internally). Reapplying this to a keyframe that was never actually
+// altered is harmless — every call here targets that key's own existing
+// in/out sides with its own original values.
+function lineup_restoreKeySnapshot(prop, keyIndex, snap) {
+    // Ease FIRST, interpolation type SECOND — setTemporalEaseAtKey force-
+    // promotes both sides of a key to Bezier as a side effect, so applying
+    // it after the real interpolation type would silently re-promote a
+    // just-set Hold/Linear side back to Bezier (same ordering rule
+    // applyPastedEase already uses, see its own comment for the full
+    // explanation). setTemporalEaseAtKey requires a valid ease value for
+    // BOTH sides even when only one side is actually Bezier, so whichever
+    // side wasn't captured gets a constructed neutral placeholder — the
+    // placeholder is harmless regardless of its exact values since the
+    // interpolation-type call right after this overrides that side back
+    // to Linear/Hold anyway, where ease doesn't apply.
+    if (snap.wasAutoBezier) {
+        try { prop.setTemporalAutoBezierAtKey(keyIndex, true); } catch (e) {}
+    } else if (snap.inEase || snap.outEase) {
+        var dimN = (snap.inEase || snap.outEase).length;
+        var neutralEase = [];
+        for (var ne = 0; ne < dimN; ne++) neutralEase.push(new KeyframeEase(0, 100 / 3));
+        try { prop.setTemporalEaseAtKey(keyIndex, snap.inEase || neutralEase, snap.outEase || neutralEase); } catch (e) {}
+        if (snap.inIsBezier && snap.outIsBezier) {
+            try { prop.setTemporalContinuousAtKey(keyIndex, snap.wasContinuous); } catch (e) {}
+        }
+    }
+    try { prop.setInterpolationTypeAtKey(keyIndex, snap.inType, snap.outType); } catch (e) {}
+
+    if (snap.isSpatial) {
+        try { prop.setSpatialTangentsAtKey(keyIndex, snap.inTan, snap.outTan); } catch (e) {}
+        try { prop.setSpatialContinuousAtKey(keyIndex, snap.wasSpatialContinuous); } catch (e) {}
+        if (snap.wasSpatialContinuous && snap.wasSpatialAutoBezier) {
+            try { prop.setSpatialAutoBezierAtKey(keyIndex, true); } catch (e) {}
+        }
+    }
+}
+
+// Moves one keyframe to newTime WITHOUT restoring interpolation/ease/tangents yet — that's deferred to one final pass
+// after EVERY keyframe on this property has moved, since restoring per-key immediately could let a sibling's move
+// re-corrupt it. AE has no native "move keyframe time", so this removes and re-adds it, preserving value from snap.
+function lineup_moveKeyOnly(prop, keyIndex, newTime, snap) {
+    if (prop.keyTime(keyIndex) === newTime) return;
+    if (snap.roving) return;
+
     prop.removeKey(keyIndex);
-    prop.setValueAtTime(newTime, value);
-    var ni = prop.nearestKeyIndex(newTime);
+    prop.setValueAtTime(newTime, snap.value);
+    // Not reselected here — done in one final pass after every key has moved (see lineup_alignKeyframes).
+}
 
-    try { prop.setInterpolationTypeAtKey(ni, inType, outType); } catch (e) {}
+// Moves every key in `entries` ({prop, indices, delta}) by its own delta — a rigid per-property translation.
+// Shared by lineup_alignKeyframes and lineup_staggerKeyframes; snapshots ALL keys (plus unselected neighbors, which
+// AE can silently re-interpolate) before any retiming, moves them all, then restores interpolation/ease last.
+function lineup_shiftKeyGroupsByDelta(entries) {
+    var snapshotsByEntry = [];
+    var neighborSnapsByEntry = [];
+    for (var g = 0; g < entries.length; g++) {
+        var prop = entries[g].prop;
+        var indices = entries[g].indices;
+        var snaps = [];
+        var movedIndexSet = {};
+        for (var i = 0; i < indices.length; i++) movedIndexSet[indices[i]] = true;
+        for (var i = 0; i < indices.length; i++) {
+            snaps.push(lineup_snapshotKey(prop, indices[i]));
+        }
+        snapshotsByEntry.push(snaps);
 
-    if (bothBezier) {
-        if (wasAutoBezier) {
-            // Auto-Bezier computes its own ease from the surrounding keys —
-            // just flip the flag back on rather than fighting it with the
-            // stale explicit values captured above.
-            try { prop.setTemporalAutoBezierAtKey(ni, true); } catch (e) {}
-        } else if (inEase && outEase) {
-            try { prop.setTemporalEaseAtKey(ni, inEase, outEase); } catch (e) {}
-            try { prop.setTemporalContinuousAtKey(ni, wasContinuous); } catch (e) {}
+        var neighborSnaps = [];
+        var neighborSeen = {};
+        for (var i = 0; i < indices.length; i++) {
+            var idx = indices[i];
+            var prevIdx = idx - 1, nextIdx = idx + 1;
+            if (prevIdx >= 1 && !movedIndexSet[prevIdx] && !neighborSeen[prevIdx]) {
+                neighborSeen[prevIdx] = true;
+                neighborSnaps.push({ time: prop.keyTime(prevIdx), snap: lineup_snapshotKey(prop, prevIdx) });
+            }
+            if (nextIdx <= prop.numKeys && !movedIndexSet[nextIdx] && !neighborSeen[nextIdx]) {
+                neighborSeen[nextIdx] = true;
+                neighborSnaps.push({ time: prop.keyTime(nextIdx), snap: lineup_snapshotKey(prop, nextIdx) });
+            }
+        }
+        neighborSnapsByEntry.push(neighborSnaps);
+    }
+
+    var newTimesByEntry = [];
+    for (var g = 0; g < entries.length; g++) {
+        var prop = entries[g].prop;
+        var indices = entries[g].indices;
+        var delta = entries[g].delta;
+        var origTimes = [];
+        for (var i = 0; i < indices.length; i++) origTimes.push(prop.keyTime(indices[i]));
+
+        // Rigid shift (not a collapse), so re-locating by ORIGINAL time via nearestKeyIndex stays correct as sibling moves shift indices.
+        var newTimes = [];
+        for (var i = 0; i < origTimes.length; i++) {
+            var nt = origTimes[i] + delta;
+            newTimes.push(nt);
+            lineup_moveKeyOnly(prop, prop.nearestKeyIndex(origTimes[i]), nt, snapshotsByEntry[g][i]);
+        }
+        newTimesByEntry.push(newTimes);
+    }
+
+    for (var g = 0; g < entries.length; g++) {
+        var prop = entries[g].prop;
+        var newTimes = newTimesByEntry[g];
+        var snaps = snapshotsByEntry[g];
+        for (var i = 0; i < newTimes.length; i++) {
+            if (snaps[i].roving) continue;
+            var ni = prop.nearestKeyIndex(newTimes[i]);
+            lineup_restoreKeySnapshot(prop, ni, snaps[i]);
+        }
+        var neighborSnaps = neighborSnapsByEntry[g];
+        for (var i = 0; i < neighborSnaps.length; i++) {
+            var nni = prop.nearestKeyIndex(neighborSnaps[i].time);
+            lineup_restoreKeySnapshot(prop, nni, neighborSnaps[i].snap);
         }
     }
 
-    if (isSpatial) {
-        try { prop.setSpatialTangentsAtKey(ni, inTan, outTan); } catch (e) {}
-        try { prop.setSpatialContinuousAtKey(ni, wasSpatialContinuous); } catch (e) {}
-        if (wasSpatialContinuous && wasSpatialAutoBezier) {
-            try { prop.setSpatialAutoBezierAtKey(ni, true); } catch (e) {}
+    for (var g = 0; g < entries.length; g++) {
+        var prop = entries[g].prop;
+        var newTimes = newTimesByEntry[g];
+        for (var i = 0; i < newTimes.length; i++) {
+            try { prop.setSelectedAtKey(prop.nearestKeyIndex(newTimes[i]), true); } catch (e) {}
         }
     }
-    // Not reselected here — removeKey/setValueAtTime on a LATER key of this
-    // same property can clear selection on keys already processed, so
-    // reselection happens in one final pass after every key has moved (see
-    // lineup_alignKeyframes below) instead of per-key here.
 }
 
-function lineup_roundToFrame(t, frameDuration) {
-    return Math.round(t / frameDuration) * frameDuration;
-}
-
-// alignIdx here is always 0 (left), 1 (centerX) or 2 (right).
-// Each property's own selected keys form a bounding box [earliest, latest]
-// (a single selected key is just a zero-width box). Left/Center/Right moves
-// that box's left/center/right edge to a shared target, then shifts every
-// key in the box by the SAME delta — a rigid translation, so relative
-// timing and easing between the keys is untouched no matter how many are
-// selected on that property. The target itself is shared across every
-// property being aligned (mirroring how position-align shares one anchor
-// across layers): Selection mode uses the earliest/playhead/latest time
-// found anywhere in the whole selection; Composition mode uses the
-// playhead/comp's center frame/comp's last frame.
+// alignIdx: 0=left, 1=centerX, 2=right. Each property's selected keys form a bounding box; this moves that box's
+// edge to comp.time (the playhead) and shifts every key in it by the same delta. alignToSelection is accepted for
+// call-signature parity with lineup_align but unused — keyframe align always targets the playhead, never the selection/comp bounds.
 function lineup_alignKeyframes(alignIdx, alignToSelection, comp, groups) {
     try {
         var allTimes = [];
@@ -406,21 +487,16 @@ function lineup_alignKeyframes(alignIdx, alignToSelection, comp, groups) {
         }
         if (allTimes.length === 0) return "ERROR: No keyframes selected";
 
-        var target;
-        if (alignIdx === 0) {
-            target = alignToSelection ? Math.min.apply(Math, allTimes) : comp.time;
-        } else if (alignIdx === 2) {
-            target = alignToSelection ? Math.max.apply(Math, allTimes) : (comp.duration - comp.frameDuration);
-        } else {
-            target = alignToSelection ? comp.time : lineup_roundToFrame(comp.duration / 2, comp.frameDuration);
-        }
+        var target = comp.time;
 
         app.beginUndoGroup("Align Keyframes");
-        var newTimesByGroup = [];
+
+        var entries = [];
         for (var g = 0; g < groups.length; g++) {
             var prop = groups[g].prop;
+            var indices = groups[g].indices;
             var origTimes = [];
-            for (var i = 0; i < groups[g].indices.length; i++) origTimes.push(prop.keyTime(groups[g].indices[i]));
+            for (var i = 0; i < indices.length; i++) origTimes.push(prop.keyTime(indices[i]));
 
             var boxMin = Math.min.apply(Math, origTimes);
             var boxMax = Math.max.apply(Math, origTimes);
@@ -429,34 +505,122 @@ function lineup_alignKeyframes(alignIdx, alignToSelection, comp, groups) {
             else if (alignIdx === 2) delta = target - boxMax;
             else                     delta = target - (boxMin + boxMax) / 2;
 
-            // Each key ends up at its own distinct new time (a rigid shift,
-            // not a collapse onto one point), so — unlike a collapse — no
-            // two originally-selected keys on this property can land on the
-            // same time and collide; re-locating by ORIGINAL time via
-            // nearestKeyIndex right before moving each one is still what
-            // keeps this correct as sibling moves shift indices around.
-            var newTimes = [];
-            for (var i = 0; i < origTimes.length; i++) {
-                var nt = origTimes[i] + delta;
-                newTimes.push(nt);
-                lineup_retimeKey(prop, prop.nearestKeyIndex(origTimes[i]), nt);
-            }
-            newTimesByGroup.push(newTimes);
+            entries.push({ prop: prop, indices: indices, delta: delta });
         }
-        // Reselect every shifted key at its own new time — the whole box
-        // moved together rather than collapsing onto one point, so (unlike
-        // before) there can be several surviving keys per property to
-        // reselect, not just one. Done last since AE can clear a property's
-        // keyframe selection as a side effect of the removeKey/
-        // setValueAtTime calls above. Deliberately does not set
-        // prop.selected — that selects the whole property, which in turn
-        // marks every keyframe on it selected, not just the moved ones.
-        for (var g = 0; g < groups.length; g++) {
-            var prop = groups[g].prop;
-            var newTimes = newTimesByGroup[g];
-            for (var i = 0; i < newTimes.length; i++) {
-                try { prop.setSelectedAtKey(prop.nearestKeyIndex(newTimes[i]), true); } catch (e) {}
+
+        lineup_shiftKeyGroupsByDelta(entries);
+
+        app.endUndoGroup();
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// ── KEYFRAME STAGGER ─────────────────────────────────────────────────────────
+// Cascades selected keyframes across layers so each layer's block starts a bit later/earlier than the previous one.
+
+// One row per layer with a selected keyframe, in Timeline stacking order — name, its keys' time span, and frameDuration for the Stagger popup.
+function lineup_getStaggerLayerGroups() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "null";
+        var layers = comp.selectedLayers;
+        var rows = [];
+        for (var i = 0; i < layers.length; i++) {
+            var layer = layers[i];
+            var groups = lineup_collectLayerKeyGroups(layer);
+            if (groups.length === 0) continue;
+            var minTime = Infinity, maxTime = -Infinity;
+            for (var g = 0; g < groups.length; g++) {
+                var prop = groups[g].prop, indices = groups[g].indices;
+                for (var k = 0; k < indices.length; k++) {
+                    var t = prop.keyTime(indices[k]);
+                    if (t < minTime) minTime = t;
+                    if (t > maxTime) maxTime = t;
+                }
             }
+            rows.push({
+                layerIndex: layer.index, layerName: layer.name,
+                minTime: minTime, maxTime: maxTime
+            });
+        }
+        rows.sort(function(a, b) { return a.layerIndex - b.layerIndex; });
+        return JSON.stringify({ layers: rows, frameDuration: comp.frameDuration });
+    } catch (err) {
+        return "null";
+    }
+}
+
+// payloadJson: [{ layerIndex, offsetSeconds }, ...] from the Stagger popup. Groups are re-collected fresh (not
+// reused from lineup_getStaggerLayerGroups) and every selected property on a layer gets the same delta, moving it as one block.
+function lineup_staggerKeyframes(payloadJson) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
+        var payload;
+        try { payload = JSON.parse(payloadJson); } catch (e) { return "ERROR: Invalid payload"; }
+        if (!payload || !payload.length) return "ERROR: Nothing to stagger";
+
+        var entries = [];
+        for (var p = 0; p < payload.length; p++) {
+            var layer;
+            try { layer = comp.layer(payload[p].layerIndex); } catch (e) { layer = null; }
+            if (!layer) continue;
+            var groups = lineup_collectLayerKeyGroups(layer);
+            for (var g = 0; g < groups.length; g++) {
+                entries.push({ prop: groups[g].prop, indices: groups[g].indices, delta: payload[p].offsetSeconds });
+            }
+        }
+        if (entries.length === 0) return "ERROR: No keyframes selected";
+
+        app.beginUndoGroup("Stagger Keyframes");
+        lineup_shiftKeyGroupsByDelta(entries);
+        app.endUndoGroup();
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// ── LAYER STAGGER ────────────────────────────────────────────────────────────
+// Cascades each selected layer's startTime instead of retiming keyframes, so it works on layers with none.
+
+// One row per selected layer, in Timeline stacking order — mirrors lineup_getStaggerLayerGroups's shape.
+function lineup_getLayerStaggerGroups() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "null";
+        var layers = comp.selectedLayers;
+        var rows = [];
+        for (var i = 0; i < layers.length; i++) {
+            var layer = layers[i];
+            rows.push({ layerIndex: layer.index, layerName: layer.name, startTime: layer.startTime });
+        }
+        rows.sort(function(a, b) { return a.layerIndex - b.layerIndex; });
+        return JSON.stringify({ layers: rows, frameDuration: comp.frameDuration });
+    } catch (err) {
+        return "null";
+    }
+}
+
+// payloadJson: [{ layerIndex, offsetSeconds }, ...], computed client-side same as lineup_staggerKeyframes's payload.
+function lineup_staggerLayerStarts(payloadJson) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
+        var payload;
+        try { payload = JSON.parse(payloadJson); } catch (e) { return "ERROR: Invalid payload"; }
+        if (!payload || !payload.length) return "ERROR: Nothing to stagger";
+
+        app.beginUndoGroup("Stagger Layer Starts");
+        for (var p = 0; p < payload.length; p++) {
+            var layer;
+            try { layer = comp.layer(payload[p].layerIndex); } catch (e) { layer = null; }
+            if (!layer) continue;
+            layer.startTime = layer.startTime + payload[p].offsetSeconds;
         }
         app.endUndoGroup();
         return "ok";
@@ -467,20 +631,7 @@ function lineup_alignKeyframes(alignIdx, alignToSelection, comp, groups) {
 }
 
 // ── SHAPE ALIGN ───────────────────────────────────────────────────────────────
-// All 6 buttons redirect here whenever a shape-layer Contents item (a Group,
-// or a Rect/Ellipse/Star/Path directly) is selected on a selected layer —
-// unlike keyframes, shapes have real width/height, so vertical align applies
-// same as horizontal. Each item's own bounding box lives in whatever
-// coordinate space its immediate parent (a nested Group, or the layer itself)
-// defines, so getting it into comp space — and an align delta back down to
-// that item's own position — means walking the FULL chain: every ancestor
-// Group's own transform (position/anchor/scale/skew/rotation), then the
-// layer's own transform, then the layer's parent chain (reusing
-// compDeltaToPositionDelta/oneLevelDelta/LST.toComp for that last stretch,
-// same as plain layer align already does).
-// Caveat: the 2D-only math here (no camera-perspective correction, unlike
-// getLayerCompBounds' 3D refinement loop) assumes the layer itself isn't
-// 3D-tilted — fine for the vast majority of (2D) shape layers.
+// Redirects here when a shape Contents item is selected; walks the full ancestor-group + layer + parent transform chain to get comp-space bounds. 2D-only (assumes the layer isn't 3D-tilted).
 
 var LINEUP_SHAPE_MATCHNAMES = {
     "ADBE Vector Group": 1,
@@ -505,16 +656,6 @@ function lineup_collectSelectedShapeItems(comp) {
     return out;
 }
 
-function lineup_hasSelectedShapeItems() {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "0";
-        return lineup_collectSelectedShapeItems(comp).length > 0 ? "1" : "0";
-    } catch (err) {
-        return "0";
-    }
-}
-
 // Cheap poll target for the Grid Distribute picker — lets it guess a
 // cols x rows shape sized to how many layers are actually selected instead
 // of just repeating whatever was picked last time.
@@ -528,11 +669,7 @@ function lineup_getSelectedLayerCount() {
     }
 }
 
-// Walks from a shape item up to (but not including) the layer, collecting
-// every ancestor "ADBE Vector Group" it's nested inside — immediate parent
-// group first, outward. Skips over the plain "ADBE Vectors Group"/"ADBE Root
-// Vectors Group" content-list wrappers that sit between groups (they carry
-// no transform of their own).
+// Walks from a shape item up to (not including) the layer, collecting every ancestor "ADBE Vector Group", skipping the transform-less content-list wrappers between them.
 function lineup_ancestorVectorGroups(item) {
     var groups = [];
     var cur = item;
@@ -616,11 +753,7 @@ function lineup_transformBBoxThroughGroup(tg, box) {
     };
 }
 
-// Bounding box of one Contents item, in whatever space its immediate parent
-// (a Group's own Contents list, or the layer's root Contents) defines — a
-// Group's own transform is already applied here (via
-// lineup_transformBBoxThroughGroup), so the result is ready to union with
-// sibling items in that same parent space.
+// Bounding box of one Contents item in its immediate parent's space, with that Group's own transform already applied — ready to union with sibling items.
 function lineup_shapeItemBBoxInParentSpace(item) {
     var mn = item.matchName;
     if (mn === "ADBE Vector Shape - Rect" || mn === "ADBE Vector Shape - Ellipse") {
@@ -630,9 +763,7 @@ function lineup_shapeItemBBoxInParentSpace(item) {
         return { left: pos[0]-size[0]/2, top: pos[1]-size[1]/2, right: pos[0]+size[0]/2, bottom: pos[1]+size[1]/2 };
     }
     if (mn === "ADBE Vector Shape - Star") {
-        // Treated as its bounding circle (outer radius) rather than the exact
-        // rotated star/polygon envelope — a safe superset, and exact for the
-        // common case of Type = Polygon or a symmetric star.
+        // Treated as its bounding circle (outer radius) — a safe superset, exact for Polygon type or a symmetric star.
         var pos = item.property("ADBE Vector Star Position").value;
         var r = item.property("ADBE Vector Star Outer Radius").value;
         return { left: pos[0]-r, top: pos[1]-r, right: pos[0]+r, bottom: pos[1]+r };
@@ -643,9 +774,7 @@ function lineup_shapeItemBBoxInParentSpace(item) {
         if (!verts || verts.length === 0) return null;
         var lf=Infinity, tp=Infinity, rt=-Infinity, bt=-Infinity;
         for (var v = 0; v < verts.length; v++) {
-            // Tangent handles can pull a bezier segment's curve outside the
-            // vertex hull — including vertex+tangent as candidate points
-            // keeps this a safe (if not perfectly tight) superset.
+            // Include vertex+tangent as candidate points since tangent handles can pull the curve outside the vertex hull.
             var cands = [verts[v], [verts[v][0]+inT[v][0], verts[v][1]+inT[v][1]], [verts[v][0]+outT[v][0], verts[v][1]+outT[v][1]]];
             for (var c = 0; c < cands.length; c++) {
                 var px = cands[c][0], py = cands[c][1];
@@ -704,11 +833,7 @@ function lineup_shapeItemCompBounds(layer, item) {
     };
 }
 
-// Comp delta -> the delta to add to this shape item's own position, walking
-// the same chain as lineup_shapeItemCompBounds in reverse: ancestor-layer
-// chain, the layer's own transform, then every ancestor Group's own
-// transform (outermost group first, mirroring compDeltaToPositionDelta's
-// own top-down ancestor walk).
+// Comp delta -> delta for this shape item's own position, walking lineup_shapeItemCompBounds' chain in reverse (outermost group first).
 function lineup_compDeltaToShapeItemDelta(layer, item, dCompX, dCompY) {
     var d = compDeltaToPositionDelta(layer, dCompX, dCompY);
     d = oneLevelDelta(layer, d[0], d[1]);
@@ -823,34 +948,300 @@ function lineup_alignShapes(alignIdx, alignToSelection, margin, usePercent, offs
     }
 }
 
+// ── SMART SELECT ──────────────────────────────────────────────────────────────
+// Selects a property, finds + selects that SAME property everywhere it exists (selected layers, or whole comp), then reveals it in the Timeline.
+
+// Walks a selected property UP via parentProperty to its owning Layer, collecting each level's matchName into an ordered chain
+// (e.g. ["ADBE Effect Parade", "ADBE Gaussian Blur", "ADBE Gaussian Blur Blurriness"]). Returns a fail reason if unreadable.
+function lineup_buildPropertyChain(prop) {
+    var chain = [];
+    var p = prop;
+    var steps = 0;
+    while (p) {
+        steps++;
+        if (steps > 30) return { fail: "loop-guard chain=" + chain.join(">") };
+        var parent;
+        try { parent = p.parentProperty; } catch (e) { parent = null; }
+        if (!parent) {
+            // No parentProperty means p is the layer itself — instanceof Layer isn't reliable here (fails for Shape layers).
+            if (chain.length === 0) return { fail: "empty-chain" };
+            return { layer: p, chain: chain };
+        }
+        var mn;
+        try { mn = p.matchName; } catch (e) { return { fail: "matchName-throw: " + e.toString() + " chain=" + chain.join(">") }; }
+        chain.unshift(mn);
+        p = parent;
+    }
+    return { fail: "no-layer-found chain=" + chain.join(">") };
+}
+
+// Resolves a matchName chain against a DIFFERENT layer. The first link is a singular container (direct lookup); every
+// link after that BRANCHES, following every child matching the expected name — so "every instance of that effect" works.
+function lineup_findChainMatches(otherLayer, chain) {
+    var results = [];
+    if (!chain || !chain.length) return results;
+    var root;
+    try { root = otherLayer.property(chain[0]); } catch (e) { return results; }
+    if (!root) return results;
+    if (chain.length === 1) { results.push(root); return results; }
+
+    function walk(group, idx) {
+        var targetName = chain[idx];
+        var isLast = (idx === chain.length - 1);
+        var count;
+        try { count = group.numProperties; } catch (e) { return; }
+        for (var i = 1; i <= count; i++) {
+            var p;
+            try { p = group.property(i); } catch (e) { continue; }
+            var mn;
+            try { mn = p.matchName; } catch (e) { continue; }
+            if (mn !== targetName) continue;
+            if (isLast) results.push(p);
+            else { try { walk(p, idx + 1); } catch (e) {} }
+        }
+    }
+    walk(root, 1);
+    return results;
+}
+
+function lineup_smartSelect() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
+
+        var rawSelectedLayers = comp.selectedLayers;
+
+        // Gathered from whatever layers are selected (or every layer, if none are).
+        var gatherLayers = rawSelectedLayers;
+        if (!gatherLayers || !gatherLayers.length) {
+            gatherLayers = [];
+            for (var li = 1; li <= comp.numLayers; li++) gatherLayers.push(comp.layer(li));
+        }
+
+        // comp.selectedProperties only reflects the focused layer, so read each selected layer's own .selectedProperties instead.
+        var selProps = [];
+        for (var sl = 0; sl < gatherLayers.length; sl++) {
+            var layerProps;
+            try { layerProps = gatherLayers[sl].selectedProperties; } catch (e) { layerProps = null; }
+            if (layerProps) for (var j = 0; j < layerProps.length; j++) selProps.push(layerProps[j]);
+        }
+        if (!selProps.length) {
+            try { selProps = comp.selectedProperties || []; } catch (e) {}
+        }
+        if (!selProps.length) return "ERROR: Select a property first";
+        var chains = [];
+        var originIndices = {};
+        for (var i = 0; i < selProps.length; i++) {
+            var info = lineup_buildPropertyChain(selProps[i]);
+            if (info.layer) {
+                chains.push(info.chain);
+                try { originIndices[info.layer.index] = true; } catch (e) {}
+            }
+        }
+        if (!chains.length) return "ERROR: Select a property first";
+
+        // Only treat the layer selection as an explicit scope when it includes a layer the properties didn't already come from.
+        var extraLayerSelected = false;
+        if (rawSelectedLayers && rawSelectedLayers.length) {
+            for (var rl = 0; rl < rawSelectedLayers.length; rl++) {
+                if (!originIndices[rawSelectedLayers[rl].index]) { extraLayerSelected = true; break; }
+            }
+        }
+
+        var scopeLayers;
+        if (extraLayerSelected) {
+            scopeLayers = rawSelectedLayers;
+        } else {
+            scopeLayers = [];
+            for (var li2 = 1; li2 <= comp.numLayers; li2++) scopeLayers.push(comp.layer(li2));
+        }
+
+        app.beginUndoGroup("Smart Select");
+        lineup_deselectAllProps(scopeLayers);
+
+        var matchCount = 0;
+        for (var l = 0; l < scopeLayers.length; l++) {
+            var layer = scopeLayers[l];
+            for (var c = 0; c < chains.length; c++) {
+                var matches = lineup_findChainMatches(layer, chains[c]);
+                for (var m = 0; m < matches.length; m++) {
+                    try { matches[m].selected = true; matchCount++; } catch (e) {}
+                }
+            }
+        }
+        if (matchCount > 0) lineup_revealInTimeline();
+        app.endUndoGroup();
+        return matchCount > 0 ? "ok" : "ERROR: No matching properties found";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// ── SMART MERGE ────────────────────────────────────────────────────────────────
+// Merges two or more selected effects of the same type into one, redirecting every referencing expression to the survivor first.
+
+// Strips the "ADBE " prefix, for a readable error message only.
+function lineup_effectFriendlyName(matchName) {
+    return matchName.replace(/^ADBE\s+/, "");
+}
+
+// Regex-escapes a string for safe interpolation into a `new RegExp(...)`
+// pattern (standard escaping of every regex metacharacter).
+function lineup_reEscape(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Walks every property in the comp recursing structurally via propertyType (not a hardcoded group-name list), reaching
+// Effects/Masks/Layer Styles/Text/shape Contents for free. Calls cb(layer, prop) for every leaf with an expression enabled.
+function lineup_walkExpressionProps(comp, cb) {
+    function walk(layer, prop) {
+        var isLeaf;
+        try { isLeaf = (prop.propertyType === PropertyType.PROPERTY); } catch (e) { return; }
+        if (isLeaf) {
+            var enabled;
+            try { enabled = prop.expressionEnabled; } catch (e) { enabled = false; }
+            if (enabled) { try { cb(layer, prop); } catch (e) {} }
+            return;
+        }
+        var count;
+        try { count = prop.numProperties; } catch (e) { return; }
+        for (var i = 1; i <= count; i++) {
+            var child;
+            try { child = prop.property(i); } catch (e) { continue; }
+            walk(layer, child);
+        }
+    }
+    for (var li = 1; li <= comp.numLayers; li++) {
+        var layer = comp.layer(li);
+        var pcount;
+        try { pcount = layer.numProperties; } catch (e) { continue; }
+        for (var pi = 1; pi <= pcount; pi++) {
+            var top;
+            try { top = layer.property(pi); } catch (e) { continue; }
+            walk(layer, top);
+        }
+    }
+}
+
+function lineup_smartMerge() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
+
+        var rawSelectedLayers = comp.selectedLayers;
+        var gatherLayers = rawSelectedLayers;
+        if (!gatherLayers || !gatherLayers.length) {
+            gatherLayers = [];
+            for (var li = 1; li <= comp.numLayers; li++) gatherLayers.push(comp.layer(li));
+        }
+
+        var selProps = [];
+        for (var sl = 0; sl < gatherLayers.length; sl++) {
+            var layerProps;
+            try { layerProps = gatherLayers[sl].selectedProperties; } catch (e) { layerProps = null; }
+            if (layerProps) for (var j = 0; j < layerProps.length; j++) selProps.push(layerProps[j]);
+        }
+        if (!selProps.length) {
+            try { selProps = comp.selectedProperties || []; } catch (e) {}
+        }
+        if (!selProps.length) return "ERROR: Select two or more effects of the same type to merge (e.g. two Color Controls).";
+
+        // Only direct effect headers qualify (chain exactly ["ADBE Effect Parade", "<matchName>"]); anything else is skipped.
+        var candidates = [];
+        for (var i = 0; i < selProps.length; i++) {
+            var info = lineup_buildPropertyChain(selProps[i]);
+            if (!info.layer || !info.chain || info.chain.length !== 2 || info.chain[0] !== "ADBE Effect Parade") continue;
+            candidates.push({ layer: info.layer, effect: selProps[i], matchName: info.chain[1] });
+        }
+        if (candidates.length < 2) return "ERROR: Select two or more effects of the same type to merge (e.g. two Color Controls).";
+
+        var refMatchName = candidates[0].matchName;
+        for (var c = 1; c < candidates.length; c++) {
+            if (candidates[c].matchName !== refMatchName) {
+                return "ERROR: Selected effects aren't the same type (" + lineup_effectFriendlyName(refMatchName) + " vs " + lineup_effectFriendlyName(candidates[c].matchName) + ").";
+            }
+        }
+
+        var survivor = candidates[0];
+        var losers = candidates.slice(1);
+
+        app.beginUndoGroup("Smart Merge");
+
+        var survivorLayer = survivor.layer, survivorName = survivor.effect.name;
+        var safeSurvivorName = survivorName.replace(/"/g, "\\\"");
+        var safeSurvivorLayerName = survivorLayer.name.replace(/"/g, "\\\"");
+        var qualifiedReplacement = "thisComp.layer(\"" + safeSurvivorLayerName + "\").effect(\"" + safeSurvivorName + "\")";
+        var rewriteCount = 0;
+
+        for (var lo = 0; lo < losers.length; lo++) {
+            var loser = losers[lo];
+            var loserLayer = loser.layer, loserName = loser.effect.name;
+            var loserLayerIdx = loserLayer.index;
+            var sameLayer = (loserLayerIdx === survivorLayer.index);
+
+            var safeLoserName = lineup_reEscape(loserName);
+            var safeLoserLayerName = lineup_reEscape(loserLayer.name);
+
+            // Qualified reference, allowing thisLayer as an alternative — only valid when the referencing expression lives on that same layer.
+            var qualifiedAnyRe = new RegExp(
+                "(thisComp\\s*\\.\\s*layer\\s*\\(\\s*(?:\"" + safeLoserLayerName + "\"|'" + safeLoserLayerName + "'|" + loserLayerIdx + ")\\s*\\)|thisLayer)" +
+                "\\s*\\.\\s*effect\\s*\\(\\s*(?:\"" + safeLoserName + "\"|'" + safeLoserName + "')\\s*\\)",
+                "g"
+            );
+            // Same, without the thisLayer alternative — the only safe form to rewrite from an expression on a DIFFERENT layer.
+            var qualifiedExplicitRe = new RegExp(
+                "(thisComp\\s*\\.\\s*layer\\s*\\(\\s*(?:\"" + safeLoserLayerName + "\"|'" + safeLoserLayerName + "'|" + loserLayerIdx + ")\\s*\\))" +
+                "\\s*\\.\\s*effect\\s*\\(\\s*(?:\"" + safeLoserName + "\"|'" + safeLoserName + "')\\s*\\)",
+                "g"
+            );
+            // Bare effect("LoserName") with no layer qualifier — only valid when the expression lives on the loser's own layer.
+            var bareRe = new RegExp(
+                "(^|[^.\\w])effect\\s*\\(\\s*(?:\"" + safeLoserName + "\"|'" + safeLoserName + "')\\s*\\)",
+                "g"
+            );
+
+            lineup_walkExpressionProps(comp, function(exprLayer, prop) {
+                var expr;
+                try { expr = prop.expression; } catch (e) { return; }
+                if (!expr) return;
+
+                var exprIsOnLoserLayer = (exprLayer.index === loserLayerIdx);
+                var newExpr = expr.replace(exprIsOnLoserLayer ? qualifiedAnyRe : qualifiedExplicitRe, qualifiedReplacement);
+
+                if (exprIsOnLoserLayer) {
+                    var bareReplacement = sameLayer ? ("effect(\"" + safeSurvivorName + "\")") : qualifiedReplacement;
+                    newExpr = newExpr.replace(bareRe, function(m, pre) { return pre + bareReplacement; });
+                }
+
+                if (newExpr !== expr) {
+                    try { prop.expression = newExpr; rewriteCount++; } catch (e) {}
+                }
+            });
+        }
+
+        for (var r = 0; r < losers.length; r++) {
+            try { losers[r].effect.remove(); } catch (e) {}
+        }
+
+        app.endUndoGroup();
+        return "Merged " + candidates.length + " into \"" + survivorName + "\", updated " + rewriteCount + " expression" + (rewriteCount === 1 ? "" : "s");
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
 // ── SHAPE TOOLS ───────────────────────────────────────────────────────────────
 
-// Command 2536, "RevealinTimeline" — a numeric executeCommand id (stable
-// across UI languages, unlike a findMenuCommandId string lookup) that
-// expands/scrolls the Timeline to whatever's currently selected. There is
-// no scriptable "expanded" property on a layer or property group at all
-// (confirmed against the AE scripting community — selecting a property
-// via .selected=true does NOT by itself twirl its ancestor groups open in
-// the Timeline panel), so this is the only way to actually satisfy
-// "expand the layer so you can see what's selected" rather than just
-// leaving the selection correct-but-invisible. Wrapped in its own
-// try/catch since executeCommand can throw if the Timeline isn't the
-// relevant frontmost context for some reason — that's not worth failing
-// the whole selection over.
+// Command 2536, "RevealinTimeline" — stable numeric id that expands/scrolls the Timeline to the current selection.
+// There's no scriptable "expanded" property; .selected=true alone doesn't twirl ancestor groups open.
 function lineup_revealInTimeline() {
     try { app.executeCommand(2536); } catch (e) {}
 }
 
-// Clears whatever's currently selected on each of these layers' own
-// property tree before selecting something new. .selected=true is purely
-// additive — none of the three selection modes below cleared anything
-// previously selected on their own, so e.g. selecting Fills right after
-// selecting Path just added the Fill color to that still-selected Path
-// instead of replacing it. Each mode is meant to be exclusive (only ITS
-// OWN target properties end up selected), hence clearing first here.
-// Snapshotted into a plain array before deselecting since
-// selectedProperties may be a live view that a mid-loop selected=false
-// could otherwise shift under our own iteration.
+// Clears each layer's current property selection before selecting something new, since .selected=true is purely additive.
+// Snapshotted into a plain array first since selectedProperties may be a live view a mid-loop selected=false could shift.
 function lineup_deselectAllProps(layers) {
     for (var i = 0; i < layers.length; i++) {
         var sel = layers[i].selectedProperties;
@@ -863,12 +1254,7 @@ function lineup_deselectAllProps(layers) {
     }
 }
 
-// Selects the Path property ("ADBE Vector Shape", inside a free-form
-// "ADBE Vector Shape - Group" item) of every path-based shape in each
-// selected shape layer. Silently does nothing (no error toast) for a
-// selected layer that isn't a shape layer, or a shape layer with no
-// path-based shapes inside it — Rect/Ellipse/Star items have no single
-// equivalent "Path" property to select, so they're left alone too.
+// Selects the Path property of every free-form path shape in each selected shape layer; silently no-ops for non-shape layers or Rect/Ellipse/Star items.
 function lineup_selectAllPaths() {
     try {
         var comp = app.project.activeItem;
@@ -894,10 +1280,7 @@ function lineup_selectAllPaths() {
     }
 }
 
-// Recursively walks a vector Contents list (the root "ADBE Root Vectors
-// Group" itself, or a nested Group's own "ADBE Vectors Group") selecting
-// the Path property of every free-form path item found. Returns true if
-// anything was selected.
+// Recursively walks a vector Contents list, selecting the Path property of every free-form path item. Returns true if anything was selected.
 function lineup_selectPathsInVectorsGroup(contents) {
     var any = false;
     for (var i = 1; i <= contents.numProperties; i++) {
@@ -914,12 +1297,7 @@ function lineup_selectPathsInVectorsGroup(contents) {
     return any;
 }
 
-// Selects the Color property of every Fill ("ADBE Vector Graphic - Fill" ->
-// "ADBE Vector Fill Color") or Stroke ("ADBE Vector Graphic - Stroke" ->
-// "ADBE Vector Stroke Color") group across every selected shape layer,
-// depending on which matchNames are passed — the two exported entry
-// points below just fix those. Same silent-no-op behavior as
-// lineup_selectAllPaths for anything that doesn't apply.
+// Selects the Color property of every Fill or Stroke group across selected shape layers, depending on which matchNames are passed.
 function lineup_selectAllColorProps(groupMatchName, colorMatchName, undoLabel) {
     try {
         var comp = app.project.activeItem;
@@ -953,11 +1331,7 @@ function lineup_selectAllStrokeColors() {
     return lineup_selectAllColorProps("ADBE Vector Graphic - Stroke", "ADBE Vector Stroke Color", "Select All Strokes");
 }
 
-// Recursively walks a vector Contents list selecting `colorMatchName` off
-// every `groupMatchName` item found (Fill/Stroke groups are direct
-// Contents children, siblings of shape items and nested Groups, same
-// level lineup_selectPathsInVectorsGroup/lineup_collectStrokesInVectorsGroup
-// already walk). Returns true if anything was selected.
+// Recursively walks a vector Contents list selecting `colorMatchName` off every `groupMatchName` item found. Returns true if anything was selected.
 function lineup_selectColorPropsInVectorsGroup(contents, groupMatchName, colorMatchName) {
     var any = false;
     for (var i = 1; i <= contents.numProperties; i++) {
@@ -974,18 +1348,8 @@ function lineup_selectColorPropsInVectorsGroup(contents, groupMatchName, colorMa
     return any;
 }
 
-// Cycles every Stroke's Line Cap (Butt -> Round -> Projecting -> Butt)
-// across all selected shape layers, using the FIRST stroke found (in
-// traversal order — layer selection order, then depth-first through each
-// layer's own Contents) as the reference for which value comes next, then
-// applies that same new value to every stroke found — normalizing any
-// layers/shapes that currently differ into one consistent state rather
-// than cycling each independently. Line Join comes along for the ride
-// (Butt->Miter, Round->Round, Projecting->Bevel all share the same
-// underlying index, 1/2/3, so the join just gets set to the same new
-// value as the cap) unless capOnly is truthy, in which case only the cap
-// changes and each stroke's own existing join is left untouched. Silently
-// does nothing if no selected layer has a stroke.
+// Cycles every Stroke's Line Cap (Butt -> Round -> Projecting -> Butt) using the FIRST stroke found as the reference,
+// normalizing all strokes to one consistent value. Line Join follows along (shared 1/2/3 index) unless capOnly is set.
 function lineup_changeStrokeType(capOnly) {
     try {
         var comp = app.project.activeItem;
@@ -1033,22 +1397,8 @@ function lineup_collectStrokesInVectorsGroup(contents, out) {
 }
 
 // ── SHAPE MERGE / EXPLODE ─────────────────────────────────────────────────────
-// PropertyGroup has no scriptable "move to a different layer" method —
-// duplicate()/addProperty() only ever operate within their own existing
-// parent. The first version of this moved content across layers via AE's
-// own Copy/Paste (app.executeCommand) — the commonly-cited technique for
-// this exact problem, but it turned out to silently no-op when invoked
-// from a CEP panel script: Copy/Paste's behavior depends on the Timeline
-// actually having focus the way it does during real interactive use,
-// which a script triggered from an external panel never gives it —
-// producing the right NUMBER of new layers but every one empty. Rebuilt
-// below to clone shape content by VALUE instead (addProperty + copying
-// each leaf property's current value across, recursively), which has no
-// dependency on clipboard/panel-focus state at all. 2D layers only
-// (matches Shape Align's own scope) — no 3D tilt/camera correction.
-// Keyframes on any per-shape or per-layer property are NOT reproduced,
-// only each layer's/item's current static values, per the "ignore
-// keyframes for now" scope.
+// Clones shape content by VALUE (addProperty + copying leaf values) rather than AE Copy/Paste, which silently no-ops
+// without Timeline focus. 2D layers only; keyframes are not reproduced, only current static values.
 
 function lineup_selectOnlyLayer(comp, layer) {
     for (var i = 1; i <= comp.numLayers; i++) comp.layer(i).selected = false;
@@ -1074,12 +1424,7 @@ var LINEUP_SHAPE_CLONE_BLACKLIST = {
     "ADBE Vector Materials Group": 1
 };
 
-// Adds a new property of the same matchName as `sourceItem` into
-// `targetGroup` (addProperty creates it with AE's own default structure
-// for that type) and copies every one of its values across from source,
-// recursively. Returns the new clone, or null if this matchName couldn't
-// be added (some properties genuinely aren't independently addable —
-// skipped rather than failing the whole clone).
+// Adds a property of `sourceItem`'s matchName into `targetGroup` and recursively copies its values. Returns null if not addable.
 function lineup_cloneShapeItemInto(sourceItem, targetGroup) {
     var mn;
     try { mn = sourceItem.matchName; } catch (e) { return null; }
@@ -1091,26 +1436,9 @@ function lineup_cloneShapeItemInto(sourceItem, targetGroup) {
     return clone;
 }
 
-// Mirrors the copyProperties() approach from a published, field-tested
-// "Explode Shape Layer" script, with one correction: that reference
-// (and an earlier version of this function) matched every child by name —
-// target.property(matchName) — on the theory that a freshly-added parent's
-// fixed sub-properties (a Path item's own Shape/Direction, a Transform
-// Group's Position/Rotation/..., a single Fill's Color/Opacity) already
-// exist and just need finding, while an empty Contents-list child comes
-// back null and gets added fresh, with no need to tell the two cases
-// apart. That holds for NAMED_GROUP parents (each named child appears
-// exactly once), but a repeatable/orderable INDEXED_GROUP parent — a
-// shape's own Contents ("ADBE Vectors Group"/"ADBE Root Vectors Group") or
-// a Group's own Contents — can hold several SIBLINGS with the identical
-// matchName (e.g. two "ADBE Vector Shape - Group" paths under one Merge
-// Paths). Matching those by name found the first path's already-cloned
-// property again on the second path's turn, overwriting it in place
-// instead of adding a second one — silently collapsing N paths/fills/
-// groups down to whichever was copied last. INDEXED_GROUP parents now
-// always addProperty a fresh sibling per source child instead.
-// typeof .setValue === 'function' is how a leaf (settable) property is
-// told apart from a group still needing its own recursion.
+// NAMED_GROUP parents get matched-by-name children (found or added); INDEXED_GROUP parents (e.g. Contents lists) always
+// addProperty a fresh sibling instead, since matching by name there would collapse multiple same-matchName siblings into one.
+// typeof .setValue === 'function' tells a leaf (settable) property apart from a group still needing recursion.
 function lineup_copyPropertyTree(source, target) {
     var indexed = (source.propertyType === PropertyType.INDEXED_GROUP);
     for (var i = 1; i <= source.numProperties; i++) {
@@ -1142,20 +1470,9 @@ function lineup_copyPropertyTree(source, target) {
     }
 }
 
-// Where `source`'s own layer transform (position/rotation/scale, current
-// values only) would need to sit if expressed as a Vector Group's own
-// transform living inside `target`'s Contents, so pasting source's
-// content there and applying this renders at the same comp-space spot.
-// Derived by round-tripping source's local origin and two unit axes
-// through comp space (via this file's own toComp/fromComp pair, above —
-// AE's ExtendScript Layer object has no such methods of its own; those
-// only exist inside expressions, evaluated by the expression engine, not
-// the host-script object model) and back into target's local space —
-// same idea as lineup_vecTransformPoint elsewhere in this file, just one
-// level up (layers instead of shape groups), and layers have no skew to
-// account for. The signed area (cross product) of the two mapped axes
-// flips under a mirrored/negative scale, which plain vector lengths would
-// otherwise lose, so that sign gets folded into scaleY.
+// Computes what `source`'s layer transform would need to be as a Vector Group inside `target`'s Contents, by round-tripping
+// source's local origin and two unit axes through comp space and back into target's local space. Cross product of the
+// mapped axes flips under mirrored/negative scale (which plain vector lengths would lose), so that sign folds into scaleY.
 function lineup_layerRelativeTransform(source, target) {
     var originComp = toComp(source, [0, 0, 0]);
     var xComp = toComp(source, [100, 0, 0]);
@@ -1177,14 +1494,8 @@ function lineup_layerRelativeTransform(source, target) {
     return { position: [originLocal[0], originLocal[1]], rotation: rotation, scale: [scaleX, scaleY] };
 }
 
-// Merges every selected shape layer into the FIRST one selected (which
-// survives) — every other selected shape layer's whole Contents becomes
-// one new Vector Group inside the survivor, transformed to land in
-// exactly the same comp-space spot/rotation/scale it had as its own
-// layer, then the emptied source layer is deleted (or, with
-// keepOriginals, just switched off — see lineup_explodeShapes below for
-// the same choice). No-op (silently, no error) with fewer than 2 shape
-// layers selected.
+// Merges every selected shape layer into the FIRST selected (the survivor) — each other layer's Contents becomes a new
+// Vector Group transformed to the same comp-space spot, then the source is deleted (or, with keepOriginals, disabled).
 function lineup_mergeShapes(keepOriginals) {
     try {
         var comp = app.project.activeItem;
@@ -1198,29 +1509,16 @@ function lineup_mergeShapes(keepOriginals) {
 
         var target = shapeLayers[0];
         app.beginUndoGroup("Merge Shapes");
-        // Every source is fully merged in BEFORE any of them are removed —
-        // removing a layer can invalidate other Layer/PropertyGroup object
-        // references already held on other layers in the same comp, which
-        // is exactly what broke merging a 3rd+ selected layer: source #2's
-        // own reference (captured into shapeLayers up front, same as
-        // source #1's) had already gone stale by the time its turn came,
-        // right after source #1's mid-loop .remove() call.
+        // Every source is fully merged in BEFORE any is removed — removing a layer invalidates other held Layer/PropertyGroup references.
         var toRemove = [];
         for (var i = 1; i < shapeLayers.length; i++) {
             var source = shapeLayers[i];
             var xform = lineup_layerRelativeTransform(source, target);
 
-            // Re-fetched fresh every iteration rather than cached once
-            // above the loop — target.addProperty() on the previous
-            // iteration can invalidate a PropertyGroup reference obtained
-            // before that mutation, which is what threw "null is not an
-            // object" merging a 3rd layer even after deferring removal.
+            // Re-fetched fresh each iteration — target.addProperty() on the previous iteration invalidates a cached PropertyGroup reference.
             var targetRoot = target.property("ADBE Root Vectors Group");
 
-            // One new wrapper group per source layer, holding a clone of
-            // every one of its top-level items — a single unified
-            // transform (xform) then goes on the wrapper regardless of
-            // how many items source actually had.
+            // One new wrapper group per source layer, holding a clone of every top-level item, with one unified transform.
             var wrapGroup = targetRoot.addProperty("ADBE Vector Group");
             wrapGroup.name = source.name;
             var wrapContents = wrapGroup.property("ADBE Vectors Group");
@@ -1229,13 +1527,7 @@ function lineup_mergeShapes(keepOriginals) {
                 lineup_cloneShapeItemInto(srcRoot.property(p), wrapContents);
             }
 
-            // Position/Rotation/Scale live under the group's own Transform
-            // Group, not as direct children of the group itself (same
-            // pattern as lineup_transformBBoxThroughGroup/
-            // lineup_applyShapeVec2Delta elsewhere in this file) —
-            // wrapGroup.property("ADBE Vector Position") is null, and
-            // .setValue on that is exactly what threw "null is not an
-            // object" here.
+            // Position/Rotation/Scale live under the group's own Transform Group, not as direct children of the group itself.
             var wrapTransform = wrapGroup.property("ADBE Vector Transform Group");
             wrapTransform.property("ADBE Vector Position").setValue(xform.position);
             wrapTransform.property("ADBE Vector Rotation").setValue(xform.rotation);
@@ -1256,31 +1548,9 @@ function lineup_mergeShapes(keepOriginals) {
     }
 }
 
-// Splits every selected shape layer that has 2+ top-level Contents GROUPS
-// ("ADBE Vector Group") into that many separate new shape layers, one per
-// group — each group is moved over whole, with everything nested inside it
-// (paths, Fill/Stroke, Merge Paths, Trim Paths, Repeaters, sub-groups...)
-// intact, since lineup_cloneShapeItemInto deep-clones the whole property
-// tree of whatever single item it's given. A layer only qualifies if EVERY
-// one of its top-level Contents items is itself a Group — if any top-level
-// item is a bare Path/Fill/Stroke/Merge Paths/etc. sitting ungrouped
-// alongside others (e.g. two paths combined by a Merge Paths "Difference"
-// set directly at the root, like a hand-drawn letter "O"), that layer is
-// left alone entirely rather than explode it: those raw siblings only
-// render correctly together (Merge Paths only merges paths that are its
-// own siblings within the same Contents list), so splitting them one item
-// per layer would silently break the merge and drop pieces — group them
-// yourself first (Cmd/Ctrl+G) if you want to explode that content later.
-// Each new layer's own transform is just a direct copy of the ORIGINAL
-// layer's (position/rotation/scale/anchor/opacity/parent/timing), since the
-// group itself is moved over unchanged; the original layer's transform
-// composed with the group's own (unchanged) internal transform is what
-// rendered it before, and that's exactly reproduced by giving the new layer
-// that same outer transform. The original layer is then deleted — or, with
-// keepOriginals, kept but switched off (its Video/eye toggle turned off)
-// instead, so nothing is lost. Every new layer created ends up selected
-// (and nothing else), regardless of how many original layers were
-// exploded. No-op (silently) if no selected shape layer qualifies.
+// Splits each selected shape layer with 2+ top-level Contents GROUPS into that many new layers, one per group (deep-cloned
+// intact via lineup_cloneShapeItemInto). Only qualifies if EVERY top-level item is a Group — bare ungrouped siblings (e.g.
+// a Merge Paths "Difference" combining root-level paths) are left alone since splitting them would break the merge.
 function lineup_explodeShapes(keepOriginals) {
     try {
         var comp = app.project.activeItem;
@@ -1303,12 +1573,7 @@ function lineup_explodeShapes(keepOriginals) {
         if (!candidates.length) return "";
 
         app.beginUndoGroup("Explode Shapes");
-        // Every candidate is fully exploded into its new layers BEFORE any
-        // original is removed — same reasoning as Merge Shapes above:
-        // removing a layer can invalidate other, already-captured Layer
-        // object references (here, the rest of `candidates`), so all the
-        // removals are deferred to their own pass at the end instead of
-        // being interleaved mid-loop.
+        // Every candidate is fully exploded before any original is removed — same reasoning as Merge Shapes above.
         var toRemove = [];
         var newLayers = [];
         for (var c = 0; c < candidates.length; c++) {
@@ -1351,41 +1616,9 @@ function lineup_explodeShapes(keepOriginals) {
 }
 
 // ── SPLIT TEXT ────────────────────────────────────────────────────────────────
-// Splits each selected text layer into one new layer per character, word,
-// line, or paragraph — a real split (each new layer's own source text is
-// just that unit), positioned to land exactly where that unit rendered in
-// the original.
-//
-// Position comes from a scratch duplicate carrying a temporary Text
-// Animator: one Range Selector, set to select by index with its Mode set
-// to Subtract — which inverts it, so a sliding one-unit-wide index window
-// is what's left alone while everything else gets selected — driving a
-// Scale property down to [0,0,100]. Everything outside the current unit
-// collapses to nothing, so sourceRectAtTime() on the whole (still fully
-// intact) layer reduces to just that one unit's real, correctly
-// kerned/wrapped/justified bounds, straight from After Effects' own text
-// engine rather than reconstructed from measuring substrings (which loses
-// kerning context at whatever boundary got cut).
-//
-// Alt-click (keepOriginals) parents every split layer to one new null
-// carrying the original's own Anchor Point/Position/Scale/Rotation/
-// Opacity, resets each split layer's own anchor to [0,0], and sets its
-// Position directly to (that unit's measured center) minus (the new
-// layer's own natural center, measured fresh once its text is set) —
-// since a layer anchored at [0,0] renders its local origin exactly at
-// Position, this lands its content's own center on the target regardless
-// of where the content's natural local origin happens to sit, with no
-// assumption that two different layers share a coordinate frame. Only
-// the null needs to account for the original's transform this way — the
-// split layers themselves just do plain 2D placement in the null's space.
-//
-// Without Alt, there's no null: each split layer keeps the original's own
-// anchor/position/scale/rotation/parent untouched, and gets nudged by a
-// comp-space delta instead — toComp() gives the true comp-space point the
-// unit measured at and the point the layer's own (now-shrunk) content
-// currently renders at, and compDeltaToPositionDelta()/shiftPosition()
-// turn the difference into a Position adjustment that already accounts
-// for the layer's own rotation/scale and its parent chain.
+// Splits each selected text layer into one new layer per character/word/line/paragraph, positioned via a scratch duplicate's
+// Range Selector (Subtract mode, index-based) driving Scale to [0,0,100] so sourceRectAtTime() measures just that unit's
+// true kerned bounds. Alt-click (keepOriginals) parents splits to a new null carrying the original's transform.
 function lineup_addIsolatorAnimator(layer, rangeType2) {
     var animators = layer.property("ADBE Text Properties").property("ADBE Text Animators");
     var animator = animators.addProperty("ADBE Text Animator");
@@ -1618,10 +1851,7 @@ function lineup_isGradientColorSource(matchName, name) {
     return n.indexOf("gradient") !== -1;
 }
 
-// Recursively walks a vector Contents list (same traversal shape as
-// lineup_selectColorPropsInVectorsGroup above) collecting every Fill/
-// Stroke color it finds into `slots` as { prop, value }. Disabled Fill/
-// Stroke groups are skipped — an off color isn't worth managing.
+// Recursively walks a vector Contents list collecting every Fill/Stroke color into `slots` as { prop, value }; skips disabled groups.
 function lineup_collectShapeColorSlots(contents, slots) {
     for (var i = 1; i <= contents.numProperties; i++) {
         var item = contents.property(i);
@@ -1635,19 +1865,11 @@ function lineup_collectShapeColorSlots(contents, slots) {
             var colorProp = item.property(colorMatchName);
             if (colorProp) slots.push({ prop: colorProp, value: colorProp.value });
         }
-        // Gradient Fill/Stroke ("ADBE Vector Graphic - G-Fill"/"-G-Stroke")
-        // and every other item type (shapes, Transform, Merge/Trim Paths,
-        // Repeater, ...) have no solid color of interest — skipped by
-        // simply not matching any branch above.
+        // Gradient Fill/Stroke and every other item type have no solid color of interest — skipped by not matching any branch above.
     }
 }
 
-// One level deep into every effect on `effectsGroup` (built-in and
-// third-party effects are all flat parameter lists — no deeper recursion
-// needed) — any parameter whose propertyValueType is COLOR is a color
-// control regardless of which effect it belongs to, which is what lets
-// this catch "any other examples of color selection" without needing to
-// name every effect by hand.
+// One level into every effect (all flat parameter lists, no deeper recursion needed) — any COLOR-typed parameter qualifies, regardless of effect.
 function lineup_collectEffectColorSlots(effectsGroup, slots) {
     if (!effectsGroup) return;
     for (var i = 1; i <= effectsGroup.numProperties; i++) {
@@ -1669,10 +1891,7 @@ function lineup_collectEffectColorSlots(effectsGroup, slots) {
     }
 }
 
-// Same idea as lineup_collectEffectColorSlots, one level into "ADBE Layer
-// Styles" instead of "ADBE Effect Parade" — Gradient Overlay is skipped
-// the same way (name match), everything else (Stroke, Color Overlay,
-// Drop Shadow, Inner/Outer Glow's flat-color mode, ...) is fair game.
+// Same idea as lineup_collectEffectColorSlots, one level into "ADBE Layer Styles" instead. Gradient Overlay is skipped by name match.
 function lineup_collectLayerStyleColorSlots(layer, slots) {
     var styles;
     try { styles = layer.property("ADBE Layer Styles"); } catch (e) { return; }
@@ -1699,10 +1918,7 @@ function lineup_collectLayerStyleColorSlots(layer, slots) {
     }
 }
 
-// Every color-bearing property this tool manages on one layer: shape
-// Fill/Stroke (shape layers only), plus effects and layer styles (every
-// layer type — a text or solid layer with a Fill or Color Control effect
-// on it is just as manageable as a shape layer's own Fill).
+// Every color-bearing property this tool manages on one layer: shape Fill/Stroke, plus effects and layer styles (any layer type).
 function lineup_collectLayerColorSlots(layer, slots) {
     if (layer instanceof ShapeLayer) {
         var root;
@@ -1715,18 +1931,8 @@ function lineup_collectLayerColorSlots(layer, slots) {
     lineup_collectLayerStyleColorSlots(layer, slots);
 }
 
-// A text layer's own character Fill/Stroke color (Character panel, not an
-// effect/layer style) — read off the whole TextDocument rather than a
-// scriptable Property, since AE's scripting API has no per-character-range
-// color access; this manages the document's single overall fill/stroke
-// color, same "whole thing, not mixed ranges" scope Split Text's own
-// caveats elsewhere in this file already accept. Pushed as its own kind
-// (not a {prop,value} slot) because a real Property can just get its
-// .expression set directly, but fillColor/strokeColor are plain fields on
-// the TextDocument value — linking one means re-expressing the whole
-// sourceText, which lineup_manageColors below builds once per affected
-// layer after grouping (a layer with both a managed fill AND stroke needs
-// exactly one combined expression, not two competing ones).
+// A text layer's own character Fill/Stroke color, read off the whole TextDocument (AE has no per-character-range color access).
+// Pushed as its own kind rather than a {prop,value} slot since fillColor/strokeColor need a re-expressed sourceText, not a direct .expression.
 function lineup_collectTextColorSlots(layer, textSlots) {
     if (!(layer instanceof TextLayer)) return;
     var doc;
@@ -1764,34 +1970,13 @@ function lineup_rgbToHsl(r, g, b) {
     return [h, s, l];
 }
 
-// The classic 12-step color-wheel names — matches how a person would
-// describe these hues (Red Orange, Blue Green, ...), not a numeric value.
+// The classic 12-step color-wheel names, matching how a person would describe these hues.
 var LINEUP_HUE_NAMES = [
     "Red", "Red Orange", "Orange", "Yellow Orange", "Yellow", "Yellow Green",
     "Green", "Blue Green", "Blue", "Blue Violet", "Violet", "Red Violet"
 ];
 
-// Low-chroma colors get a lightness-based grayscale name instead of a hue
-// name (a barely-tinted near-white shouldn't read as "Blue") — White/
-// Black only for the very ends, Light/Dark Gray for the rest, so distinct
-// grays still get distinct names without needing a number. Deliberately
-// checked against raw max-min channel spread rather than HSL's own
-// saturation (lineup_rgbToHsl's `s`) — s's denominator shrinks toward 0 as
-// lightness approaches either extreme, so a practically-white color with
-// a one-part-in-a-hundred blue tint (e.g. [0.97,0.97,0.98]) computes an
-// artificially high s and got named "Blue" instead of "White" before this
-// used chroma directly.
-// LINEUP_HUE_NAMES (Red, Red Orange, Orange, ... ) is the familiar
-// artist's 12-step wheel, built around RYB primaries (Red/Yellow/Blue
-// 120° apart) — NOT the same wheel plain RGB hue math measures (Red/
-// Green/Blue 120° apart). Mapped straight through with no correction, a
-// saturated pure green (RGB hue 120°) lands on "Yellow" instead of
-// "Green", since 120° is where the RGB wheel puts green but the RYB-named
-// wheel puts yellow. This piecewise-linear remap (anchored at the 6
-// primary/secondary hues both wheels agree are red/orange-ish/yellow/
-// green/cyan-ish/blue/magenta-ish, even if at different degrees) corrects
-// the six broad chunks so each of LINEUP_HUE_NAMES's 12 slices lines up
-// with the color a person would actually call by that name.
+// Gray detection uses raw chroma, not HSL saturation (which spikes near white/black); this remaps RGB hue to the artist's RYB-based 12-step wheel so e.g. RGB green (120°) reads as "Green" not "Yellow".
 var LINEUP_RGB_TO_RYB_HUE_ANCHORS = [
     [0, 0], [60, 120], [120, 180], [180, 210], [240, 240], [300, 300], [360, 360]
 ];
@@ -1828,17 +2013,8 @@ function lineup_baseColorName(rgba) {
     return LINEUP_HUE_NAMES[idx];
 }
 
-// Groups -> [{ name, value, slots }], numbering every hue-based name that
-// has more than one distinct color sharing it ("Red Orange 01"/"Red
-// Orange 02", lightest first) while leaving a one-off grayscale name bare
-// ("White", not "White 01") — matching how someone would actually label
-// these in the Effects panel.
-// existingNames (optional — an already-live Color Controller's current
-// effect names) lets numbering continue where a PRIOR run left off
-// instead of restarting at 01 and colliding with names that are already
-// taken — e.g. re-running this on a different batch of layers that
-// happens to turn up a second, distinct "Red Orange" should get "Red
-// Orange 02", not another "Red Orange 01".
+// Groups -> [{ name, value, slots }], numbering duplicate hue names ("Red Orange 01"/"02", lightest first) but leaving a
+// one-off grayscale name bare. existingNames lets numbering continue after a prior run instead of colliding with taken names.
 function lineup_nameColorGroups(groups, existingNames) {
     existingNames = existingNames || [];
     var achromatic = { "White": 1, "Black": 1, "Gray": 1, "Light Gray": 1, "Dark Gray": 1 };
@@ -1900,8 +2076,7 @@ function lineup_manageColors() {
 
         var slots = [];
         for (var i = 0; i < targetLayers.length; i++) {
-            // Skip a prior run's own control null so re-running this on
-            // "every layer in the comp" doesn't try to manage its colors.
+            // Skip a prior run's own control null so re-running on "every layer" doesn't try to manage its colors.
             if (targetLayers[i].name === "Color Controller") continue;
             lineup_collectLayerColorSlots(targetLayers[i], slots);
             lineup_collectTextColorSlots(targetLayers[i], slots);
@@ -1920,14 +2095,7 @@ function lineup_manageColors() {
         }
         app.beginUndoGroup("Color Management");
 
-        // Reuse an existing "Color Controller" null rather than always
-        // creating a new one — running this again (on the same layers, a
-        // different selection, or the whole comp) shouldn't pile up
-        // redundant nulls. Its EXISTING Color Control effects are read
-        // first so every newly-found color can be matched against them by
-        // value: a match reuses that effect (and whatever name the user
-        // may have already given it) instead of adding a duplicate: only
-        // genuinely new colors get a new effect appended to the same null.
+        // Reuse an existing "Color Controller" null rather than piling up redundant ones; existing effects are matched by value first.
         var nullLayer = null;
         for (var li = 1; li <= comp.numLayers; li++) {
             if (comp.layer(li).name === "Color Controller") { nullLayer = comp.layer(li); break; }
@@ -1950,12 +2118,7 @@ function lineup_manageColors() {
             effectsGroup = nullLayer.property("ADBE Effect Parade");
         }
 
-        // Text fill/stroke slots can't take an .expression directly (see
-        // lineup_collectTextColorSlots) — each one just records which
-        // controller effect it resolved to here, and every affected text
-        // layer gets exactly one combined sourceText expression built from
-        // this list afterward, once every group (matched AND new) has been
-        // resolved.
+        // Text fill/stroke slots can't take .expression directly; each records its resolved effect here for one combined sourceText expression built afterward.
         var textLinkInfo = [];
 
         var newGroups = [];
@@ -1990,16 +2153,7 @@ function lineup_manageColors() {
             }
         }
 
-        // One combined sourceText expression per affected text layer, built
-        // on the Text Style expression API (sourceText.style / setFillColor
-        // / setStrokeColor / setText) rather than editing a TextDocument's
-        // fillColor/strokeColor fields directly — After Effects expressions
-        // don't support Array.prototype.slice, and setFillColor/
-        // setStrokeColor is the documented way to change a style's color
-        // while setText(value) reapplies it to the property's own actual
-        // text content. Overrides only whichever of fill/stroke this run
-        // actually linked (leaving the other, if unmanaged, exactly as it
-        // already is, since style starts from the CURRENT style).
+        // One combined sourceText expression per text layer, built on the Text Style API (setFillColor/setStrokeColor/setText) since expressions can't edit TextDocument fields directly.
         var textLayersDone = [];
         for (var ti = 0; ti < textLinkInfo.length; ti++) {
             var info = textLinkInfo[ti];
@@ -2098,9 +2252,7 @@ function lineup_collectFillStrokeSlots(contents, layerName, fillSlots, strokeSlo
                 });
             }
         }
-        // Gradient Fill/Stroke ("ADBE Vector Graphic - G-Fill"/"-G-Stroke") and
-        // every other item type (shapes, Transform, Merge/Trim Paths, Repeater,
-        // ...) simply aren't matched above — no color/width of interest there.
+        // Gradient Fill/Stroke and every other item type simply aren't matched above — no color/width of interest there.
     }
 }
 
@@ -2115,10 +2267,7 @@ function lineup_collectAllFillStrokeSlots(comp) {
     return { fillSlots: fillSlots, strokeSlots: strokeSlots };
 }
 
-// { type: 'none' } | { type: 'color', value: [...] } | { type: 'mix' } — folds
-// each slot's own enabled state in: "none" means nothing in scope is actually
-// on, "mix" covers both differing colors AND a mix of on/off, "color" only
-// when every slot is enabled and shares the same value.
+// { type: 'none' } | { type: 'color', value: [...] } | { type: 'mix' } — "mix" covers differing colors AND mixed on/off.
 function lineup_summarizeColorSlots(slots, valueKey) {
     var anyEnabled = false, allEnabled = true, first = null, mixColor = false;
     for (var i = 0; i < slots.length; i++) {
@@ -2197,21 +2346,13 @@ function lineup_getShapeColorHud() {
     }
 }
 
-// Preserves the property's own existing dimensionality/alpha instead of
-// assuming one — AE shape Fill/Stroke colors are commonly [r,g,b] (opacity
-// is its own separate property), but setValue on a color property generally
-// needs an array matching whatever length it already has, not a guessed one.
+// Preserves the property's own existing array length instead of assuming one — setValue needs an array matching what's already there.
 function lineup_shapeColorValueForProp(prop, r, g, b) {
     var cur = prop.value;
     return (cur && cur.length > 3) ? [r, g, b, cur[3]] : [r, g, b];
 }
 
-// Every setter below re-runs the exact same collection as the getter above
-// and indexes into the same flat array — deterministic as long as the shape
-// tree hasn't changed since the HUD/popup last polled (a short-lived window
-// in practice: the popup is a static snapshot until closed and reopened —
-// see main.js). All keyframe-aware: a keyframed property gets a new keyframe
-// at the current time instead of having its whole animation overwritten.
+// Every setter below re-runs the same collection/indexing as the getter; all keyframe-aware (adds a key at current time rather than overwriting the animation).
 
 function lineup_setShapeFillColorAll(r, g, b) {
     try {
@@ -2328,10 +2469,7 @@ function lineup_setShapeStrokeWidthAt(index, width) {
     }
 }
 
-// Solid Fill/Stroke <-> No Fill/No Stroke — toggles the Fill/Stroke item's
-// own .enabled (the same on/off checkbox AE's own Contents panel shows),
-// not a color change, so the property's existing color/width is left alone
-// and just reappears if the item is switched back on later.
+// Toggles the Fill/Stroke item's own .enabled checkbox, not a color change — existing color/width just reappears if switched back on.
 function lineup_setShapeFillEnabledAll(enabled) {
     try {
         var comp = app.project.activeItem;
@@ -2369,14 +2507,7 @@ function lineup_setShapeStrokeEnabledAll(enabled) {
 }
 
 // ── ALIGN ─────────────────────────────────────────────────────────────────────
-// alignIdx: 0=left 1=centerX 2=right 3=top 4=centerY 5=bottom
-// alignToSelection: 1=selection bounds 0=comp
-// margin: number, usePercent: 0/1, offsetKeys: 0/1
-// useKeyframeAlign: 0/1 — the panel's own keyframe-align override toggle
-// (see #keyAlignCheck/_keyAlignEffective in main.js), checked by default
-// whenever keyframes are selected; unchecking it (while keyframes are still
-// selected) forces normal position alignment instead. Omitted entirely ->
-// treated as 1, matching the old always-on behavior.
+// alignIdx: 0=left 1=centerX 2=right 3=top 4=centerY 5=bottom. useKeyframeAlign: 0/1, omitted -> treated as 1.
 
 function lineup_align(alignIdx, alignToSelection, margin, usePercent, offsetKeys, useKeyframeAlign) {
     try {
@@ -2433,11 +2564,7 @@ function lineup_align(alignIdx, alignToSelection, margin, usePercent, offsetKeys
             var pos = posProp.value;
             var np  = is3D ? [pos[0],pos[1],pos[2]] : [pos[0],pos[1]];
 
-            // Comp-space delta Align wants to close, converted to a position-unit
-            // delta through this layer's parent chain (see compDeltaToPositionDelta)
-            // — this is what keeps alignment correct under a scaled/rotated parent
-            // (a null, a rig, ...) instead of assuming 1 position unit always equals
-            // 1 comp pixel.
+            // Comp-space delta converted to a position-unit delta through the parent chain, so alignment stays correct under a scaled/rotated parent.
             var dCompX = 0, dCompY = 0;
             switch (mode) {
                 case "left":    dCompX = mW - rect.left;                        break;
@@ -2450,11 +2577,7 @@ function lineup_align(alignIdx, alignToSelection, margin, usePercent, offsetKeys
             var d0 = compDeltaToPositionDelta(layer, dCompX, dCompY);
             np[0] += d0[0]; np[1] += d0[1];
 
-            // 3D layers with real depth can additionally be skewed by camera
-            // perspective, which compDeltaToPositionDelta doesn't model (it's the
-            // parent chain's linear rotation+scale only) — refine by re-measuring
-            // the actual bounding rect and correcting the residual the same way
-            // until it converges.
+            // 3D layers with depth can be skewed by camera perspective (not modeled above) — refine iteratively by re-measuring bounds until it converges.
             if (is3D && Math.abs(pos[2]) > 0.01) {
                 for (var iter = 0; iter < 5; iter++) {
                     if (posProp.dimensionsSeparated) {
@@ -2553,8 +2676,7 @@ function lineup_distribute(horizontal, distMode, spacing, offsetKeys) {
                 ld.push({ layer:layers[i], center:ctr, half:half });
             }
             ld.sort(function(a,b){ return a.center-b.center; });
-            // mode 0: end layers flush against comp edges (shift rStart/rEnd inward by each end layer's half-size)
-            // mode 1: end layers stay put, middles distributed by center between them
+            // mode 0: end layers flush against comp edges; mode 1: end layers stay put, middles distributed between them.
             var rStart = (distMode===0) ? ld[0].half                                              : ld[0].center;
             var rEnd   = (distMode===0) ? (H ? comp.width : comp.height) - ld[ld.length-1].half   : ld[ld.length-1].center;
             var step   = (rEnd - rStart) / (ld.length - 1);
@@ -2843,10 +2965,7 @@ function lineup_gridDistribute(distMode, cols, rows, alignEdges, hPad, vPad) {
             if (cells[k].bounds.height > cellH) cellH = cells[k].bounds.height;
         }
 
-        // Manual Gap overrides space cells by an exact pixel gap, edge-to-edge,
-        // with the resulting grid re-centered on the comp/selection center —
-        // taking precedence over both the auto-computed gap and Align Edges,
-        // independently per axis.
+        // Manual Gap overrides space cells by an exact pixel gap, re-centered on the comp/selection, taking precedence per axis.
         var colCX = [], rowCY = [];
 
         if (hPadOverride) {
@@ -2899,9 +3018,7 @@ function lineup_gridDistribute(distMode, cols, rows, alignEdges, hPad, vPad) {
 }
 
 // ── SIZING ────────────────────────────────────────────────────────────────────
-// mode: 0=Horizontal 1=Vertical 2=Both, sizeMode: 0=comp 1=selection 2=keyLayer
-// crop: 0=Stretch 1=Crop (proportional — grows the other axis / covers the target)
-// move: 0/1 — center each layer's bounds in the target before scaling
+// mode: 0=Horizontal 1=Vertical 2=Both, sizeMode: 0=comp 1=selection 2=keyLayer, crop: 0=Stretch 1=Crop (proportional)
 
 function lineup_sizeMatch(mode, sizeMode, crop, move) {
     try {
@@ -3005,8 +3122,7 @@ function lineup_sizeMatch(mode, sizeMode, crop, move) {
 }
 
 // ── ANCHOR POINT ─────────────────────────────────────────────────────────────
-// loc: 0-8 (TL,TC,TR, ML,C,MR, BL,BC,BR)
-// anchorMode: 0=object (layer source bounds)  1=selection (combined bounds)  2=comp
+// loc: 0-8 (TL,TC,TR, ML,C,MR, BL,BC,BR). anchorMode: 0=object 1=selection 2=comp
 
 function lineup_anchorMove(loc, anchorMode, ignoreMasks) {
     try {
@@ -3135,12 +3251,8 @@ function lineup_createNull(anchorMode) {
 
 // ── EASE COPY ─────────────────────────────────────────────────────────────────
 
-// KeyframeEase arrays are per-dimension (Position on a 3D layer has 3, Opacity has
-// 1, etc). Pasting ease copied from one property onto a differently-dimensioned
-// property must resize to fit, or setTemporalEaseAtKey throws (silently swallowed
-// by the caller's catch) and the target keeps whatever default ease it already had
-// instead of the copied curve. Broadcasts a 1-dim source across all target dims,
-// and otherwise pads/truncates by repeating the last value.
+// Resizes a KeyframeEase array to fit a differently-dimensioned target property (else setTemporalEaseAtKey throws).
+// Broadcasts a 1-dim source across all target dims, otherwise pads/truncates by repeating the last value.
 function adaptEaseDims(arr, dimN) {
     if (!arr || arr.length === 0 || !dimN || arr.length === dimN) return arr;
     var out = [];
@@ -3148,10 +3260,7 @@ function adaptEaseDims(arr, dimN) {
     return out;
 }
 
-// Elementwise (v2 - v1), for either plain numbers (Rotation, Opacity, ...) or
-// per-dimension arrays (Position, Scale, ...). Returns null when either side
-// is missing/non-numeric so callers can treat "no delta" as "don't know the
-// direction" rather than accidentally treating a 0 as "no change".
+// Elementwise (v2 - v1), for numbers or per-dimension arrays. Returns null (not 0) when either side is missing, so callers can tell "no delta" from "no change".
 function valueDelta(v2, v1) {
     if (v2 === null || v2 === undefined || v1 === null || v1 === undefined) return null;
     if (v2 instanceof Array && v1 instanceof Array) {
@@ -3163,13 +3272,8 @@ function valueDelta(v2, v1) {
     return null;
 }
 
-// A copied ease's speed is signed to the direction the source value was
-// moving in (see main.js's _easeSegmentSamples, which reconstructs the same
-// bezier handles from speed * dt). Pasting that speed verbatim onto a
-// segment moving the opposite way — increasing angle's ease pasted onto a
-// decreasing one — would ease toward the wrong direction, so per dimension,
-// flip the speed's sign whenever the source and target segments disagree on
-// direction. Influence (0-100%) has no direction and is left alone.
+// A copied ease's speed is signed to the source's direction of motion; pasted onto a segment moving the opposite way,
+// it would ease toward the wrong direction, so per dimension the sign flips when source/target disagree. Influence is unaffected.
 function directionalizeEase(easeArr, srcDelta, tgtDelta) {
     if (!easeArr || srcDelta === null || srcDelta === undefined || tgtDelta === null || tgtDelta === undefined) return easeArr;
     var s = (srcDelta instanceof Array) ? srcDelta : [srcDelta];
@@ -3183,24 +3287,9 @@ function directionalizeEase(easeArr, srcDelta, tgtDelta) {
     return out;
 }
 
-// Applies a copied ease template entry to one target keyframe. Order matters:
-// setTemporalEaseAtKey force-promotes both sides of the key to Bezier as a side
-// effect (that's the AE API, not a bug here), so it has to run FIRST; the real
-// interpolation type — which may be Hold or Linear on one or both sides — is
-// (re)applied AFTER, which is what actually restores Hold/Linear. Doing it in the
-// old order (type, then ease) let the ease call silently re-promote a just-set
-// Hold side back to Bezier, and skipping the ease call for any non-Bezier side (as
-// a previous fix did) lost the real ease on the side that *was* Bezier too.
-//
-// src.inEase/inType and src.outEase/outType may each be null — ease copy only
-// captures the side of a keyframe that borders another copied keyframe (see
-// lineup_easeCopy), so the first copied keyframe has no inEase and the last has
-// no outEase. A null side here means "leave whatever this target keyframe
-// already has alone", so it falls back to the target's own current ease/type
-// instead of being overwritten with the source's unrelated far side.
-// tInDelta/tOutDelta are the target segment's own value deltas, used to flip
-// the copied speed's sign when the target is moving the opposite direction
-// from the source (see directionalizeEase).
+// Order matters: setTemporalEaseAtKey force-promotes both sides to Bezier as a side effect, so it must run FIRST;
+// the real interpolation type (possibly Hold/Linear) is (re)applied AFTER to undo that promotion. A null src side
+// means "leave the target's current ease/type alone" (ease copy only captures sides bordering another copied keyframe).
 function applyPastedEase(prop, keyIdx, src, tInDelta, tOutDelta) {
     var inType  = (src.inType  !== null && src.inType  !== undefined) ? src.inType  : prop.keyInInterpolationType(keyIdx);
     var outType = (src.outType !== null && src.outType !== undefined) ? src.outType : prop.keyOutInterpolationType(keyIdx);
@@ -3236,17 +3325,8 @@ function lineup_easeCopy() {
             for (var e=0; e<arr.length; e++) out.push(new KeyframeEase(arr[e].speed, arr[e].influence));
             return out;
         }
-        // A keyframe's inEase/outEase describes the segment on that side of it
-        // (in = segment from the previous keyframe, out = segment to the next).
-        // Only the segments *between two copied keyframes* are a real "copied
-        // transition" — the first copied keyframe's in-side and the last one's
-        // out-side border keyframes outside the copy, so those sides are left
-        // uncaptured (null) rather than grabbing ease data that has nothing to
-        // do with what was actually selected. A lone selected keyframe has no
-        // such neighbor on either side, so both sides are captured as-is.
-        // inDelta/outDelta record which way the value was moving across that
-        // segment (see valueDelta), so paste can detect a reversed direction
-        // and flip the copied speed's sign (see directionalizeEase).
+        // Only segments *between two copied keyframes* are a real "copied transition" — the first key's in-side and
+        // last key's out-side border keyframes outside the copy, so those sides are left uncaptured (null).
         function collectEase(pg, out) {
             for (var i=1; i<=pg.numProperties; i++) {
                 var p; try { p=pg.property(i); } catch(e){ continue; }
@@ -3279,15 +3359,16 @@ function lineup_easeCopy() {
             }
         }
 
-        var template = null;
+        var template = null, templateLayer = null;
         for (var l=0; l<layers.length; l++) {
             var res=[]; collectEase(layers[l], res);
-            if (res.length > 0) { template=res; break; }
+            if (res.length > 0) { template=res; templateLayer=layers[l]; break; }
         }
         if (!template) return "";
 
         _easeClipboard     = template;
         _easeClipboardType = template[0].outType;
+        _easeClipboardIs3D = !!(templateLayer && templateLayer.threeDLayer);
         var sym = (_easeClipboardType===KeyframeInterpolationType.HOLD)   ? "■"
                 : (_easeClipboardType===KeyframeInterpolationType.LINEAR) ? "◆" : "⧗";
         return template.length + " " + sym;
@@ -3316,12 +3397,8 @@ function collectEaseRefGroups(pg, out) {
     }
 }
 
-// Every target in a group shares the same property, so its keyframes' values
-// can be snapshotted once per group. Snapshotting up front (rather than
-// re-reading keyValue per target inside the paste loop) matters for
-// easeValuePaste specifically: it overwrites each target's value as it goes,
-// so reading live would mix an already-pasted neighbor's new value with a
-// not-yet-pasted one's old value and could misdetect direction mid-group.
+// Snapshots each group's keyframe values up front, since re-reading live mid-paste would mix an already-pasted
+// neighbor's new value with a not-yet-pasted one's old value and misdetect direction.
 function snapshotEaseValues(targets) {
     var vals = [];
     for (var i=0; i<targets.length; i++) {
@@ -3330,10 +3407,7 @@ function snapshotEaseValues(targets) {
     return vals;
 }
 
-// The target's own (pre-paste) value deltas across the segments bordering
-// targets[t], to compare against the copied src's deltas for a direction
-// mismatch (see directionalizeEase). Only computed on the side(s) src
-// actually captured.
+// The target's pre-paste value deltas bordering targets[t], compared against src's deltas for a direction mismatch (see directionalizeEase).
 function targetEaseDeltas(origVals, t, src) {
     var outDelta=null, inDelta=null;
     if (src.outEase && t < origVals.length-1) outDelta = valueDelta(origVals[t+1], origVals[t]);
@@ -3378,52 +3452,11 @@ function lineup_easePaste() {
     }
 }
 
-function lineup_easeValuePaste() {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp instanceof CompItem)) return "ERROR: No active composition";
-        if (!_easeClipboard) return "ERROR: No easing copied";
-        var n=_easeClipboard.length, layers=comp.selectedLayers;
-
-        var easingsPasted=0, propertiesPasted=0, layersPasted=0;
-        app.beginUndoGroup("Paste Ease + Value");
-        for (var l=0; l<layers.length; l++) {
-            var groups=[]; collectEaseRefGroups(layers[l], groups);
-            var layerHit=false;
-            for (var g=0; g<groups.length; g++) {
-                var targets=groups[g];
-                if (targets.length !== n) continue;
-                var origVals = snapshotEaseValues(targets);
-                for (var t=0; t<targets.length; t++) {
-                    var ref=targets[t], src=_easeClipboard[t];
-                    try {
-                        if (src.value !== null && src.value !== undefined) ref.prop.setValueAtKey(ref.keyIdx, src.value);
-                        var d = targetEaseDeltas(origVals, t, src);
-                        applyPastedEase(ref.prop, ref.keyIdx, src, d.inDelta, d.outDelta);
-                        easingsPasted++;
-                    } catch(e) {}
-                }
-                propertiesPasted++;
-                layerHit=true;
-            }
-            if (layerHit) layersPasted++;
-        }
-        app.endUndoGroup();
-        return formatPasteSummary(easingsPasted, propertiesPasted, layersPasted);
-    } catch (err) {
-        try { app.endUndoGroup(); } catch(e) {}
-        return "ERROR: " + err.toString();
-    }
-}
-
-function lineup_easeClear() { _easeClipboard=null; _easeClipboardType=null; return "ok"; }
+function lineup_easeClear() { _easeClipboard=null; _easeClipboardType=null; _easeClipboardIs3D=null; return "ok"; }
 
 // ── Ease preview data (live curve/speed graph) ──────────────────────────────
-// Plain-object projection of _easeClipboard for the panel to draw from —
-// deliberately NOT the same objects Paste uses (those need real
-// KeyframeEase instances for setTemporalEaseAtKey), and interpolation type
-// is classified into a plain string here since the panel has no access to
-// the KeyframeInterpolationType enum to compare against.
+// Plain-object projection of _easeClipboard for the panel to draw from — deliberately not the real KeyframeEase
+// instances Paste uses, since the panel has no access to the KeyframeInterpolationType enum to compare against.
 function _easeTypeStr(t) {
     if (t === KeyframeInterpolationType.HOLD) return "hold";
     if (t === KeyframeInterpolationType.LINEAR) return "linear";
@@ -3450,50 +3483,18 @@ function lineup_easeGetClipboard() {
                 outEase: _easeArrToPlain(e.outEase)
             });
         }
-        return JSON.stringify(out);
+        return JSON.stringify({ keys: out, is3D: !!_easeClipboardIs3D });
     } catch (err) {
         return "null";
     }
 }
 
-// Influence AE's own default (33.33%) gets stretched a bit further out —
-// still a gentle ease, just with a bit more of the segment shaped by it.
+// AE's own default influence (33.33%) stretched a bit further for a gentler ease.
 var LINEUP_BEZIER_DEFAULT_INFLUENCE = 45;
 
-// A fresh temporal ease for a keyframe newly switched to Bezier.
-//
-// zeroVelocity=true (Ctrl-click): speed always 0, same as AE's own Easy
-// Ease keyframe assistant — a simple, predictable default.
-//
-// zeroVelocity=false (default): speed is the median (average) of this
-// keyframe's incoming and outgoing velocity (the neighboring keyframes'
-// own value/time deltas), so the new ease reflects the motion already
-// passing through this keyframe instead of flattening it. Exception: if
-// incoming and outgoing velocity disagree in sign (a peak or valley —
-// motion reverses direction right at this keyframe), speed is forced to 0
-// instead of averaging two opposite-signed numbers into something that
-// doesn't represent either side.
-//
-// Spatial properties (Position, and Anchor Point/etc. whenever isSpatial)
-// get exactly ONE KeyframeEase regardless of how many value dimensions
-// they have — AE's temporal ease for a spatial property describes progress
-// ALONG the path (a single scalar "how fast in time"), not a per-axis
-// rate; the path's actual shape is a separate concept governed by spatial
-// tangents. Passing one entry per dimension there is what
-// setTemporalEaseAtKey's own "Value array does not have 1 elements" error
-// was rejecting. Speed for that one entry is the magnitude of the multi-
-// dimensional velocity vector (matching AE's own Graph Editor) — inherently
-// non-negative, so the sign-disagreement rule above doesn't apply there;
-// the two magnitudes are simply averaged.
-//
-// Non-spatial properties (Scale, Color, Opacity, Rotation, ...) get one
-// KeyframeEase per value dimension instead, each with its OWN signed speed
-// (AE's KeyframeEase.speed is meaningfully signed — see directionalizeEase
-// above, which flips it to indicate the opposite direction).
-//
-// Either way, a keyframe with only one neighbor (first/last key) just uses
-// that single side's velocity; one with no neighbors at all (a lone
-// keyframe) falls back to 0.
+// zeroVelocity=true: speed always 0 (like AE's Easy Ease). Otherwise: speed is the average of incoming/outgoing velocity
+// (0 if they disagree in sign — a peak/valley). Spatial properties get exactly ONE KeyframeEase (magnitude of velocity,
+// always non-negative) since AE's spatial temporal ease is a single along-path scalar; non-spatial gets one signed speed per dimension.
 function _lineup_bezierDefaultEase(prop, k, isSpatial, zeroVelocity) {
     if (zeroVelocity) {
         if (isSpatial) return [new KeyframeEase(0, LINEUP_BEZIER_DEFAULT_INFLUENCE)];
@@ -3574,26 +3575,9 @@ function _lineup_bezierDefaultEase(prop, k, isSpatial, zeroVelocity) {
     return arr;
 }
 
-// Backs the quick-swap interpolation buttons — applies to every currently
-// selected keyframe across every selected layer/property (same scope as
-// pressing an interpolation shortcut in AE itself), not just whatever the
-// graph happens to be showing. kind is one of "hold"/"linear"/"bezier"/
-// "autobezier"/"continuousbezier". Auto/Continuous Bezier are both real
-// Bezier interpolation underneath — they only differ by the
-// setTemporalAutoBezierAtKey/setTemporalContinuousAtKey flags layered on
-// top, same API lineup_retimeKey above already relies on to restore them.
-//
-// setTemporalEaseAtKey has to run BEFORE setInterpolationTypeAtKey, not
-// after — same ordering (and the same reason) as applyPastedEase above:
-// setTemporalEaseAtKey force-promotes both sides of the key to Bezier as an
-// AE API side effect, so calling it AFTER the type was already (re)set is
-// what was silently leaving the key on whatever placeholder ease a plain
-// script-side type flip gets (near-zero speed, negligible influence) —
-// the type call was landing last and nothing after it ever touched ease
-// again. Type is (re)applied after ease for the same reason
-// applyPastedEase does: it's what actually settles the key on Bezier
-// (autoBezier/continuous flags only make sense once that's confirmed, so
-// those still come last, mirroring lineup_retimeKey's own ordering).
+// Backs the quick-swap interpolation buttons for every selected keyframe. kind: "hold"/"linear"/"bezier"/"autobezier"/"continuousbezier"
+// (Auto/Continuous are real Bezier plus a flag). setTemporalEaseAtKey must run BEFORE setInterpolationTypeAtKey, since it
+// force-promotes both sides to Bezier as a side effect — same ordering issue as applyPastedEase above.
 var LINEUP_INTERP_LABELS = { hold: "Hold", linear: "Linear", bezier: "Bezier", autobezier: "Auto Bezier", continuousbezier: "Continuous Bezier" };
 function lineup_setKeyframeInterpolation(kind, zeroVelocity) {
     try {
@@ -3614,28 +3598,11 @@ function lineup_setKeyframeInterpolation(kind, zeroVelocity) {
                     } else if (kind === "linear") {
                         prop.setInterpolationTypeAtKey(k, KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.LINEAR);
                     } else if (kind === "autobezier") {
-                        // Auto-Bezier computes its own ease from the surrounding keys
-                        // once the flag is on — no ease to set by hand, so ordering
-                        // relative to the type call doesn't matter here.
+                        // Auto-Bezier computes its own ease once the flag is on — no ease to set by hand, ordering doesn't matter.
                         prop.setInterpolationTypeAtKey(k, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
                         try { prop.setTemporalAutoBezierAtKey(k, true); } catch (e2) {}
                     } else if (kind === "continuousbezier") {
-                        // isSpatial (Position, etc.) needs exactly one KeyframeEase
-                        // covering the whole path, not one per value dimension — see
-                        // _lineup_bezierDefaultEase's own comment for why. Whole
-                        // computation+apply stays one try/catch (not just the
-                        // setTemporalEaseAtKey call) since _lineup_bezierDefaultEase
-                        // itself calls back into the AE DOM and can throw too — left
-                        // unguarded, that exception was escaping to the outer
-                        // per-keyframe catch and skipping the type change entirely,
-                        // which is why interpolation wasn't changing at all.
-                        //
-                        // Re-applied a second time AFTER setTemporalContinuousAtKey —
-                        // turning Continuous on appears to trigger AE's own ease
-                        // recompute as a side effect (the same class of thing Auto
-                        // Bezier does deliberately), which was overwriting a genuinely
-                        // 0 velocity back to some nonzero AE-computed value. Setting
-                        // it again last is what makes it actually stick.
+                        // Re-applied again after setTemporalContinuousAtKey, since turning Continuous on triggers AE's own ease recompute that can overwrite a genuine 0 velocity.
                         var ne3 = null, isSpatial3 = false;
                         try {
                             try { isSpatial3 = prop.isSpatial; } catch (eSp3) {}
@@ -4149,17 +4116,7 @@ function lineup_decompose() {
 }
 
 // ── DUPLICATE COMP (DEEP) ─────────────────────────────────────────────────────
-// Recursively duplicates a comp and every nested precomp used inside it, so the
-// copy is fully independent of the original — editing one never touches the
-// other. Names are versioned (Comp -> Comp_2 -> Comp_3 ...) and each duplicate
-// is placed in the same Project panel folder as its original. A comp used more
-// than once inside the same tree is only duplicated once and shared by every
-// reference to it, mirroring the original structure.
-//
-// If precomp layers are selected in the active comp's timeline, each one gets
-// its own independent deep duplicate and that layer's source is swapped to it
-// in place. Otherwise it deep-duplicates whichever comp(s) are selected in the
-// Project panel.
+// Recursively duplicates a comp and every nested precomp inside it (versioned names, shared dedup); operates on selected precomp layers or Project panel selection.
 
 function lineup_duplicateCompDeep() {
     try {
@@ -4441,8 +4398,7 @@ function lineup_organizeProject() {
 
 // ── PROJECT STRUCTURE ─────────────────────────────────────────────────────────
 
-// Extension -> target-bucket key. Only file types AE can actually hold as a
-// FootageItem are listed; anything else is left where it is rather than guessed at.
+// Extension -> target-bucket key. Only file types AE can hold as a FootageItem are listed; anything else is left where it is.
 var STRUCTURE_EXT_MAP = {
     psd:"PSD", psb:"PSD",
     ai:"AI", eps:"AI",
@@ -4484,13 +4440,7 @@ function footageExt(fi) {
     return null;
 }
 
-// Folders drawn from a preset's tree carry an explicit "role" only when the
-// panel created them as one of Heist's built-ins (see _structMakeNode in
-// main.js) — that's what lets the sorter keep finding "the PSD folder" etc.
-// even after the user renames that node. Anything else (every folder in a
-// custom preset, or a Heist node the user re-typed a brand new child under)
-// has no role, so it's matched here by name instead — same keywords, so
-// naming a custom folder "PSD" or "Audio" gets the same routing for free.
+// Folders only carry an explicit "role" when created as one of the built-ins; everything else is matched here by name/keyword instead.
 var STRUCTURE_ROLE_NAME_MAP = {
     precomps:"precomps", precomp:"precomps",
     psd:"psd", psds:"psd",
@@ -4509,11 +4459,8 @@ function structureRoleKey(name) {
         .replace(/^_+|_+$/g, "");
 }
 
-// Walks a parsed preset tree, creating/reusing folders under `parent` (reusing
-// by exact name match, so re-applying the same preset is idempotent). Depth-0
-// folders are collected into topFolders (used to tell "part of this structure"
-// apart from a pre-existing foreign folder); every folder's role — explicit or
-// name-inferred — is recorded into roleFolders (first match wins on collision).
+// Walks a parsed preset tree, creating/reusing folders under `parent` by exact name match (idempotent re-apply).
+// Depth-0 folders go into topFolders; each folder's role (explicit or name-inferred) is recorded into roleFolders.
 function buildStructureTree(nodes, parent, roleFolders, topFolders, isTop) {
     for (var i = 0; i < nodes.length; i++) {
         var n = nodes[i], name = (n && n.name ? String(n.name) : "");
@@ -4562,12 +4509,8 @@ function lineup_configureProjectStructure(treeJson, breakStructure) {
             return false;
         }
 
-        // Recursively pulls every Comp/Footage item out of a foreign folder tree,
-        // sorts each one into its proper bucket, then deletes folders left empty
-        // behind it. Items we can't classify (no matching extension, or a role
-        // this preset doesn't have a folder for) are left in place, which also
-        // leaves their containing folder un-deleted — nothing unclassified is
-        // ever silently dropped.
+        // Recursively pulls Comp/Footage items out of a foreign folder tree, sorting each into its proper bucket and deleting emptied folders.
+        // Unclassifiable items are left in place (and their folder un-deleted) rather than silently dropped.
         function unpackFolder(folder) {
             var count = 0, kids = itemsInFolder(folder);
             for (var i = 0; i < kids.length; i++) {
@@ -4628,106 +4571,689 @@ function lineup_configureProjectStructure(treeJson, breakStructure) {
     }
 }
 
-// ── LINK PROPERTY TO CONTROLLER ───────────────────────────────────────────────
+// ── SMART LINK ─────────────────────────────────────────────────────────────────
+// Adds an expression-control effect per selected property, on the layer itself if the selection is single-layer, or
+// on one shared new null (seeded from the first layer, others offset-baked) if it spans multiple layers. Re-clicking
+// linked properties tears the link down; clicking a controller null alone tears down the whole thing.
 
-// Climbs parentProperty links from a Property up to the Layer that owns it.
-function ownerLayer(prop) {
-    var p = prop;
-    while (p && !(p instanceof Layer)) p = p.parentProperty;
-    return p;
+// Effect Parade children share one matchName per effect type, so the effect's own (unique) name is used at that level instead; every level below stays on matchName.
+function smartLink_getPropertyPath(prop) {
+    var path = [];
+    var current = prop;
+    while (current) {
+        var parent;
+        try { parent = current.parentProperty; } catch (e) { parent = null; }
+        if (!parent) break;
+        if (parent.matchName === "ADBE Effect Parade") {
+            path.unshift(current.name);
+        } else if (current.matchName) {
+            path.unshift(current.matchName);
+        }
+        current = parent;
+    }
+    return path;
 }
 
-// Spatial properties (Position, Anchor Point) can be split into per-axis
-// followers in the timeline; a linked expression has to assign a single
-// combined array, so merge them back into one property first.
-function collapseSeparatedDims(prop) {
-    if (!prop.dimensionsSeparated) return;
-    var n = prop.value.length, vals = [];
-    for (var d=0; d<n; d++) vals.push(prop.getSeparationFollower(d).value);
-    prop.dimensionsSeparated = false;
-    while (prop.numKeys > 0) prop.removeKey(1);
-    prop.setValue(vals);
+function smartLink_getPropertyByPath(layer, path) {
+    var current = layer;
+    for (var i = 0; i < path.length; i++) {
+        try {
+            current = current.property(path[i]);
+            if (!current) return null;
+        } catch (e) { return null; }
+    }
+    return current;
 }
 
-function lineup_linkPropertyToController(offset) {
+function smartLink_getLayerFromProperty(prop) {
+    var current = prop;
+    var maxIterations = 20;
+    for (var i = 0; i < maxIterations; i++) {
+        if (!current) return null;
+        if (current.containingComp !== undefined) return current;
+        try { current = current.parentProperty; } catch (e) { return null; }
+    }
+    return null;
+}
+
+// Descriptive control/display name with just enough hierarchy to disambiguate
+// (e.g. "Ellipse 1 - Color" instead of just "Color"), capped to the last two
+// meaningful parts so it doesn't run on for deeply nested shape properties.
+function smartLink_buildDisplayName(prop) {
+    var nameParts = [];
+    var propName = prop.name;
     try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
-        var layers = comp.selectedLayers;
-        if (!layers || layers.length < 2) return "ERROR: Select at least 2 layers with the same property selected.";
-
-        var selProps = comp.selectedProperties, props = [];
-        for (var i=0; i<selProps.length; i++) if (selProps[i].propertyType === PropertyType.PROPERTY) props.push(selProps[i]);
-        if (props.length === 0) return "ERROR: Select a property (e.g. Rotation, Opacity, Position) on the selected layers.";
-
-        var targets = [];
-        for (var i=0; i<layers.length; i++) {
-            var lyr = layers[i], found = null, matchCount = 0;
-            for (var j=0; j<props.length; j++) {
-                if (ownerLayer(props[j]) === lyr) { matchCount++; if (!found) found = props[j]; }
+        var current = prop.parentProperty;
+        var depth = 0, maxDepth = 10;
+        while (current && depth < maxDepth) {
+            if (current.containingComp !== undefined) break;
+            var name = current.name;
+            var matchName = current.matchName || "";
+            if (matchName === "ADBE Root Vectors Group" ||
+                matchName === "ADBE Transform Group" ||
+                matchName === "ADBE Effect Parade" ||
+                matchName === "ADBE MTrackers" ||
+                matchName === "ADBE Vectors Group" ||
+                matchName === "ADBE Vector Materials Group" ||
+                name === "Contents" || name === "Transform" || name === "Effects") {
+                current = current.parentProperty;
+                depth++;
+                continue;
             }
-            if (matchCount === 0) return "ERROR: Select the same property on every selected layer.";
-            if (matchCount > 1) return "ERROR: Select only one property across all selected layers.";
-            targets.push({layer: lyr, prop: found});
+            if (name && name !== propName) nameParts.unshift(name);
+            current = current.parentProperty;
+            depth++;
         }
+    } catch (e) {}
+    nameParts.push(propName);
+    if (nameParts.length > 2) nameParts = nameParts.slice(-2);
+    return nameParts.join(" - ");
+}
 
-        var refName = targets[0].prop.matchName;
-        for (var i=1; i<targets.length; i++) {
-            if (targets[i].prop.matchName !== refName) return "ERROR: Select the same property on every selected layer.";
-        }
+// Which expression-control type + heuristics for dropdown/angle/checkbox
+// properties that don't map cleanly onto propertyValueType alone.
+function smartLink_getControlType(prop, layer) {
+    var valueType = prop.propertyValueType;
+    var matchName = prop.matchName || "";
+    var propName = prop.name || "";
 
-        var refProp = targets[0].prop, pvt = refProp.propertyValueType;
-        var controlMatchName, valIdx=1;
-        if (pvt === PropertyValueType.COLOR) controlMatchName = "ADBE Color Control";
-        else if (pvt === PropertyValueType.TwoD || pvt === PropertyValueType.TwoD_SPATIAL) controlMatchName = "ADBE Point Control";
-        else if (pvt === PropertyValueType.OneD && refProp.unitsText === "degrees") controlMatchName = "ADBE Angle Control";
-        else if (pvt === PropertyValueType.OneD) controlMatchName = "ADBE Slider Control";
-        else return "ERROR: Unsupported property type for linking.";
+    // Dropdown Menu Control effects can't be recreated with matching menu items via scripting, so they're not linkable.
+    if (matchName.indexOf("Dropdown") !== -1 || matchName.indexOf("-Menu") !== -1 || propName === "Menu") {
+        try {
+            var ddParent = prop.parentProperty;
+            if (ddParent && ddParent.matchName === "ADBE Dropdown Control") return "unsupported_dropdown";
+        } catch (e) {}
+    }
 
-        app.beginUndoGroup("Link Property to Controller");
-
-        for (var i=0; i<targets.length; i++) {
-            if (targets[i].prop.dimensionsSeparated) collapseSeparatedDims(targets[i].prop);
-        }
-
-        var propLabel = refProp.name;
-        var nullName = propLabel + " Controller", sfx=2, taken=true;
-        while (taken) {
-            taken=false;
-            for (var li=1; li<=comp.numLayers; li++) {
-                if (comp.layer(li).name===nullName) { nullName=propLabel+" Controller "+sfx++; taken=true; break; }
+    // Effect dropdown params are OneD values representing menu selections, heuristically detected by a small integer value + menu-ish name.
+    if (valueType === PropertyValueType.OneD) {
+        try {
+            var val = prop.value;
+            if (val === Math.floor(val) && val >= 1 && val <= 20) {
+                var lowerName = propName.toLowerCase(), lowerMatch = matchName.toLowerCase();
+                if (lowerName.indexOf("mode") !== -1 || lowerName.indexOf("type") !== -1 ||
+                    lowerName.indexOf("method") !== -1 || lowerName.indexOf("quality") !== -1 ||
+                    lowerName.indexOf("channel") !== -1 || lowerName.indexOf("displacement") !== -1 ||
+                    lowerName.indexOf("pinning") !== -1 || lowerName.indexOf("antialiasing") !== -1 ||
+                    lowerMatch.indexOf("popup") !== -1 || lowerMatch.indexOf("menu") !== -1) {
+                    return "unsupported_dropdown";
+                }
             }
+        } catch (e) {}
+    }
+
+    switch (valueType) {
+        case PropertyValueType.TwoD:
+        case PropertyValueType.TwoD_SPATIAL:
+            return "point";
+        case PropertyValueType.ThreeD:
+        case PropertyValueType.ThreeD_SPATIAL:
+            // Position/Anchor Point/Scale report as 3D even on 2D layers — only treat it as 3D if the layer itself is.
+            var isTransformProp = (matchName.indexOf("ADBE Position") !== -1 ||
+                                    matchName.indexOf("ADBE Anchor Point") !== -1 ||
+                                    matchName.indexOf("ADBE Scale") !== -1);
+            if (isTransformProp && layer) {
+                try { if (!layer.threeDLayer) return "point"; } catch (e) {}
+            }
+            return "point3d";
+        case PropertyValueType.COLOR:
+            return "color";
+    }
+
+    if (valueType === PropertyValueType.OneD || valueType === PropertyValueType.CUSTOM_VALUE) {
+        try {
+            var units = prop.unitsText;
+            if (units && (units.indexOf("°") !== -1 || units.toLowerCase().indexOf("deg") !== -1)) return "angle";
+        } catch (e) {}
+
+        var matchNameLower = matchName.toLowerCase();
+        if (matchNameLower.indexOf("rotate") !== -1 || matchNameLower.indexOf("angle") !== -1 ||
+            matchNameLower.indexOf("phase") !== -1 || matchNameLower.indexOf("direction") !== -1 ||
+            matchNameLower.indexOf("shear angle") !== -1 || matchNameLower.indexOf("skew") !== -1) {
+            return "angle";
         }
 
-        var nullLayer = comp.layers.addNull();
-        nullLayer.name = nullName;
+        var propNameLower = propName.toLowerCase();
+        if (propNameLower.indexOf("rotation") !== -1 || propNameLower.indexOf("angle") !== -1 ||
+            propNameLower.indexOf("phase") !== -1 || propNameLower.indexOf("direction") !== -1 ||
+            propNameLower.indexOf("skew") !== -1) {
+            return "angle";
+        }
 
-        var fx = nullLayer.property("ADBE Effect Parade").addProperty(controlMatchName);
-        fx.name = propLabel;
-        var baseValue = targets[0].prop.value;
-        fx.property(valIdx).setValue(baseValue);
-
-        var safeNull = nullName.replace(/"/g, '\\"'), safeFx = propLabel.replace(/"/g, '\\"');
-        var ctrlRef = 'thisComp.layer("'+safeNull+'").effect("'+safeFx+'")('+valIdx+')';
-
-        for (var i=0; i<targets.length; i++) {
-            var prop = targets[i].prop, expr = ctrlRef;
-            if (offset) {
-                var own = prop.value, diff;
-                if (typeof own === "number") diff = own - baseValue;
-                else { diff=[]; for (var d=0; d<own.length; d++) diff.push(own[d] - baseValue[d]); }
-                expr += (typeof diff === "number") ? (' + ' + diff) : (' + [' + diff.join(",") + ']');
+        try {
+            var val2 = prop.value;
+            if ((val2 === 0 || val2 === 1) &&
+                (propNameLower.indexOf("enable") !== -1 || propNameLower.indexOf("on/off") !== -1 ||
+                 propNameLower.indexOf("visible") !== -1 || propNameLower.indexOf("show") !== -1 ||
+                 propNameLower.indexOf("hide") !== -1)) {
+                return "checkbox";
             }
-            prop.expression = expr + ';';
-            prop.expressionEnabled = true;
+        } catch (e) {}
+
+        return "slider";
+    }
+
+    return "slider";
+}
+
+function smartLink_collectKeyframes(prop) {
+    var keyframes = [];
+    if (!prop.canVaryOverTime || prop.numKeys === 0) return keyframes;
+    for (var k = 1; k <= prop.numKeys; k++) {
+        var keyData = { time: prop.keyTime(k), value: prop.keyValue(k) };
+        try {
+            keyData.inInterpolationType = prop.keyInInterpolationType(k);
+            keyData.outInterpolationType = prop.keyOutInterpolationType(k);
+        } catch (e) {}
+        try {
+            if (keyData.inInterpolationType === KeyframeInterpolationType.BEZIER ||
+                keyData.outInterpolationType === KeyframeInterpolationType.BEZIER) {
+                keyData.inTemporalEase = prop.keyInTemporalEase(k);
+                keyData.outTemporalEase = prop.keyOutTemporalEase(k);
+            }
+        } catch (e) {}
+        keyframes.push(keyData);
+    }
+    return keyframes;
+}
+
+// 3D source value onto a 2D Point control just drops the Z.
+function smartLink_convertValueForControl(value, controlType) {
+    if (value === undefined || value === null) return value;
+    if (controlType === "point" && value instanceof Array && value.length >= 3) {
+        return [value[0], value[1]];
+    }
+    return value;
+}
+
+// Once a property is expression-linked its own keyframes are dead weight —
+// the expression alone drives the value now, and any animation worth
+// keeping already got copied onto the new control by smartLink_applyKeyframes.
+function smartLink_stripKeyframes(prop) {
+    try { while (prop.numKeys > 0) prop.removeKey(1); } catch (e) {}
+}
+
+// Ease must be set BEFORE interpolation type — same reason as lineup_setKeyframeInterpolation: setTemporalEaseAtKey
+// force-promotes both sides to Bezier as a side effect, so setting it after the type gets overwritten.
+function smartLink_applyKeyframes(controlProp, keyframes, controlType) {
+    if (!keyframes || !keyframes.length) return;
+    for (var k = 0; k < keyframes.length; k++) {
+        var keyData = keyframes[k];
+        var keyIndex = controlProp.addKey(keyData.time);
+
+        try {
+            controlProp.setValueAtKey(keyIndex, smartLink_convertValueForControl(keyData.value, controlType));
+        } catch (e) { continue; }
+
+        var inType = keyData.inInterpolationType, outType = keyData.outInterpolationType;
+        var isBezier = (inType === KeyframeInterpolationType.BEZIER || outType === KeyframeInterpolationType.BEZIER);
+
+        if (isBezier && keyData.inTemporalEase && keyData.outTemporalEase) {
+            var inEase = keyData.inTemporalEase, outEase = keyData.outTemporalEase;
+            // A spatial source can hand back a 3-dimension ease even for a 2D Point control target — trim to match.
+            if (controlType === "point") {
+                if (inEase.length > 2) inEase = [inEase[0], inEase[1]];
+                if (outEase.length > 2) outEase = [outEase[0], outEase[1]];
+            }
+            try { controlProp.setTemporalEaseAtKey(keyIndex, inEase, outEase); } catch (e) {}
+        }
+
+        if (inType !== undefined && outType !== undefined) {
+            try { controlProp.setInterpolationTypeAtKey(keyIndex, inType, outType); } catch (e) {}
+        }
+    }
+}
+
+function smartLink_addControl(layer, controlType, controlName) {
+    var effects = layer.property("ADBE Effect Parade");
+    var control = null;
+    switch (controlType) {
+        case "slider":   control = effects.addProperty("ADBE Slider Control"); break;
+        case "point":    control = effects.addProperty("ADBE Point Control"); break;
+        case "point3d":  control = effects.addProperty("ADBE Point3D Control"); break;
+        case "color":    control = effects.addProperty("ADBE Color Control"); break;
+        case "angle":    control = effects.addProperty("ADBE Angle Control"); break;
+        case "checkbox": control = effects.addProperty("ADBE Checkbox Control"); break;
+        default:         control = effects.addProperty("ADBE Slider Control");
+    }
+    if (control) control.name = controlName;
+    return control;
+}
+
+// Adds a new control on hostLayer named baseName, appending " 2"/" 3"/... if
+// that name's already taken on this layer (existing controls, whether from a
+// past Smart Link or something else entirely, are never overwritten/reused).
+function smartLink_createUniqueControl(hostLayer, controlType, baseName) {
+    var effects = hostLayer.property("ADBE Effect Parade");
+    var controlName = baseName;
+    var existingControl = null;
+    try { existingControl = effects.property(controlName); } catch (e) {}
+    if (existingControl) {
+        var suffix = 2;
+        while (effects.property(controlName + " " + suffix)) suffix++;
+        controlName = controlName + " " + suffix;
+    }
+    var control = smartLink_addControl(hostLayer, controlType, controlName);
+    return control ? { control: control, name: controlName } : null;
+}
+
+function smartLink_createSharedNull(comp, baseName) {
+    var nullName = baseName, sfx = 2, taken = true;
+    while (taken) {
+        taken = false;
+        for (var li = 1; li <= comp.numLayers; li++) {
+            if (comp.layer(li).name === nullName) { nullName = baseName + " " + sfx++; taken = true; break; }
+        }
+    }
+    var nullLayer = comp.layers.addNull();
+    nullLayer.name = nullName;
+    return nullLayer;
+}
+
+function smartLink_getControlValueProperty(control, controlType) {
+    switch (controlType) {
+        case "slider":   return control.property("ADBE Slider Control-0001");
+        case "point":    return control.property("ADBE Point Control-0001");
+        case "point3d":  return control.property("ADBE Point3D Control-0001");
+        case "color":    return control.property("ADBE Color Control-0001");
+        case "angle":    return control.property("ADBE Angle Control-0001");
+        case "checkbox": return control.property("ADBE Checkbox Control-0001");
+        default:         return control.property(1);
+    }
+}
+
+// Index (1), for localization support; quotes in names are escaped since they're built from user-editable layer/property names.
+// hostLayerName is only passed for a shared-null control, since a bare effect("X")(1) only resolves against the CURRENT layer.
+function smartLink_buildExpression(controlName, hostLayerName) {
+    var safeName = controlName.replace(/"/g, '\\"');
+    if (hostLayerName) {
+        return 'thisComp.layer("' + hostLayerName.replace(/"/g, '\\"') + '").effect("' + safeName + '")(1)';
+    }
+    return 'effect("' + safeName + '")(1)';
+}
+
+// A shared control's non-base layers bake their own value in as a fixed offset from the base's, rather than snapping to match it.
+function smartLink_buildOffsetExpr(ownValue, baseValue, controlType) {
+    var own = smartLink_convertValueForControl(ownValue, controlType);
+    var base = smartLink_convertValueForControl(baseValue, controlType);
+    if (own === undefined || base === undefined) return "";
+    if (typeof own === "number" && typeof base === "number") return " + " + (own - base);
+    if (!(own instanceof Array) || !(base instanceof Array)) return "";
+    var diff = [];
+    for (var d = 0; d < own.length; d++) diff.push(own[d] - (base[d] || 0));
+    return " + [" + diff.join(",") + "]";
+}
+
+// Detects whether a property's expression links it to a Smart Link control, resolving both the same-layer and
+// shared-null forms smartLink_buildExpression produces. Returns { hostLayer, controllerName } or null; tolerates a trailing offset.
+function smartLink_resolveLinkedControl(comp, prop, ownerLayer) {
+    if (!prop.expression || prop.expression.length === 0) return null;
+    var expr = prop.expression;
+    var OFFSET_TAIL = '(?:\\s*\\+\\s*(?:-?[\\d.]+|\\[[^\\]]*\\]))?$';
+
+    var crossMatch = expr.match(new RegExp('^thisComp\\.layer\\("([^"]+)"\\)\\.effect\\("([^"]+)"\\)\\(1\\)' + OFFSET_TAIL));
+    if (crossMatch) {
+        var hostLayer = null;
+        try { hostLayer = comp.layer(crossMatch[1]); } catch (e) {}
+        if (!hostLayer) return null;
+        return { hostLayer: hostLayer, controllerName: crossMatch[2] };
+    }
+
+    var sameMatch = expr.match(new RegExp('^effect\\("([^"]+)"\\)\\(1\\)' + OFFSET_TAIL));
+    if (sameMatch) {
+        if (!ownerLayer) return null;
+        return { hostLayer: ownerLayer, controllerName: sameMatch[1] };
+    }
+
+    var legacyMatch = expr.match(/^effect\("([^"]+)"\)\("(?:Slider|Point|3D Point|Color|Angle|Checkbox)"\)$/);
+    if (legacyMatch && ownerLayer) return { hostLayer: ownerLayer, controllerName: legacyMatch[1] };
+
+    return null;
+}
+
+// Before deleting a control effect during remove-mode, confirm nothing OTHER
+// than the properties already being unlinked this run still points at it —
+// a shared control on a Smart Link null can easily have more consumers than
+// whatever's currently selected, and deleting it out from under them would
+// leave their expression pointing at nothing.
+function smartLink_controllerStillReferenced(comp, hostLayer, controllerName) {
+    var found = false;
+    lineup_walkExpressionProps(comp, function (l, p) {
+        if (found) return;
+        var link = smartLink_resolveLinkedControl(comp, p, l);
+        if (link && link.hostLayer.index === hostLayer.index && link.controllerName === controllerName) found = true;
+    });
+    return found;
+}
+
+function smartLink_detectRemoveMode(comp, selectedProps) {
+    if (!selectedProps || selectedProps.length === 0) return null;
+    var propsToUnlink = [];
+
+    for (var i = 0; i < selectedProps.length; i++) {
+        var prop = selectedProps[i];
+        if (prop.propertyType !== PropertyType.PROPERTY) return null;
+        if (!prop.canSetExpression) return null;
+
+        var ownerLayer = smartLink_getLayerFromProperty(prop);
+        if (!ownerLayer) return null;
+
+        var link = smartLink_resolveLinkedControl(comp, prop, ownerLayer);
+        if (!link) return null;
+
+        var effects = link.hostLayer.property("ADBE Effect Parade");
+        if (!effects) return null;
+        var controlEffect = effects.property(link.controllerName);
+        if (!controlEffect) return null;
+
+        propsToUnlink.push({ prop: prop, layer: link.hostLayer, controllerName: link.controllerName, controlEffect: controlEffect });
+    }
+
+    if (propsToUnlink.length === 0) return null;
+    return { propsToUnlink: propsToUnlink };
+}
+
+function smartLink_executeRemoveMode(comp, removeData) {
+    var propsToUnlink = removeData.propsToUnlink;
+    app.beginUndoGroup("Smart Link - Remove");
+    try {
+        var removedCount = 0;
+        var controlsToRemove = [];
+
+        for (var i = 0; i < propsToUnlink.length; i++) {
+            var data = propsToUnlink[i];
+            data.prop.expression = "";
+            removedCount++;
+
+            var alreadyTracked = false;
+            for (var j = 0; j < controlsToRemove.length; j++) {
+                if (controlsToRemove[j].layer.index === data.layer.index &&
+                    controlsToRemove[j].controllerName === data.controllerName) {
+                    alreadyTracked = true;
+                    break;
+                }
+            }
+            if (!alreadyTracked) controlsToRemove.push({ layer: data.layer, controllerName: data.controllerName });
+        }
+
+        // Effects are looked up fresh here since references can go stale once other effects on the same layer are removed.
+        var keptShared = 0;
+        for (var k = 0; k < controlsToRemove.length; k++) {
+            var control = controlsToRemove[k];
+            if (smartLink_controllerStillReferenced(comp, control.layer, control.controllerName)) {
+                keptShared++;
+                continue;
+            }
+            try {
+                var effects = control.layer.property("ADBE Effect Parade");
+                var effectToRemove = effects && effects.property(control.controllerName);
+                if (effectToRemove) effectToRemove.remove();
+            } catch (removeErr) {}
         }
 
         app.endUndoGroup();
-        return "Linked \""+propLabel+"\" on "+targets.length+" layers to \""+nullName+"\"";
+        var removeMsg = "Removed " + pluralize(removedCount, "Smart Link");
+        if (keptShared > 0) removeMsg += " (kept " + pluralize(keptShared, "shared control") + " still in use elsewhere)";
+        return removeMsg;
     } catch (err) {
-        try { app.endUndoGroup(); } catch(e) {}
+        try { app.endUndoGroup(); } catch (e) {}
         return "ERROR: " + err.toString();
     }
+}
+
+// A null carrying at least one effect is treated as a controller null: selecting just it and clicking Smart Link tears it down.
+function smartLink_isControllerNull(layer) {
+    if (!layer.nullLayer) return false;
+    var effects;
+    try { effects = layer.property("ADBE Effect Parade"); } catch (e) { return false; }
+    if (!effects) return false;
+    try { return effects.numProperties > 0; } catch (e) { return false; }
+}
+
+function smartLink_teardownControllerNull(comp, nullLayers) {
+    app.beginUndoGroup("Smart Link - Remove Null");
+    try {
+        var nullIndexSet = {};
+        for (var n = 0; n < nullLayers.length; n++) nullIndexSet[nullLayers[n].index] = true;
+
+        var unlinkedCount = 0;
+        lineup_walkExpressionProps(comp, function (l, p) {
+            var link = smartLink_resolveLinkedControl(comp, p, l);
+            if (link && nullIndexSet[link.hostLayer.index]) {
+                try { p.expression = ""; unlinkedCount++; } catch (e) {}
+            }
+        });
+
+        for (var d = 0; d < nullLayers.length; d++) {
+            try { nullLayers[d].remove(); } catch (e) {}
+        }
+
+        app.endUndoGroup();
+        return "Removed " + pluralize(unlinkedCount, "expression") + " and deleted " + pluralize(nullLayers.length, "null");
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+function lineup_smartLink() {
+    var comp = app.project.activeItem;
+    if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
+
+    var selectedProps = comp.selectedProperties;
+    var selectedLayers = comp.selectedLayers;
+
+    // Selecting a controller null alone and clicking Smart Link tears the whole thing down instead.
+    if ((!selectedProps || selectedProps.length === 0) && selectedLayers && selectedLayers.length > 0) {
+        var nullsToRemove = [];
+        for (var nl = 0; nl < selectedLayers.length; nl++) {
+            if (smartLink_isControllerNull(selectedLayers[nl])) nullsToRemove.push(selectedLayers[nl]);
+        }
+        if (nullsToRemove.length > 0) return smartLink_teardownControllerNull(comp, nullsToRemove);
+    }
+
+    var removeMode = smartLink_detectRemoveMode(comp, selectedProps);
+    if (removeMode) return smartLink_executeRemoveMode(comp, removeMode);
+
+    // A null layer included alongside the property selection designates itself as the target for new controls.
+    var targetNull = null;
+    if (selectedLayers) {
+        for (var sl = 0; sl < selectedLayers.length; sl++) {
+            if (selectedLayers[sl].nullLayer) { targetNull = selectedLayers[sl]; break; }
+        }
+    }
+
+    // PHASE 1: collect what to link before anything is modified, since adding effects later can invalidate property references.
+    var propertyData = [];
+    var skippedDropdowns = [];
+
+    if (selectedProps && selectedProps.length > 0) {
+        for (var i = 0; i < selectedProps.length; i++) {
+            var prop = selectedProps[i];
+            if (!prop.canSetExpression) continue;
+            if (prop.expression && prop.expression.length > 0) continue;
+
+            var layer = smartLink_getLayerFromProperty(prop);
+            if (!layer) continue;
+
+            var path = smartLink_getPropertyPath(prop);
+            if (path.length === 0) continue;
+
+            var controlType = smartLink_getControlType(prop, layer);
+            if (controlType === "unsupported_dropdown") {
+                skippedDropdowns.push(prop.name);
+                continue;
+            }
+
+            var keyframes = smartLink_collectKeyframes(prop);
+            var currentValue;
+            try { currentValue = prop.value; } catch (valueErr) { continue; }
+
+            propertyData.push({
+                layer: layer,
+                propertyPath: path,
+                propertyName: prop.name,
+                displayName: smartLink_buildDisplayName(prop),
+                controlType: controlType,
+                currentValue: currentValue,
+                keyframes: keyframes
+            });
+        }
+    }
+
+    // Nothing valid selected but whole layers are — auto-add their standard transform properties instead.
+    if (propertyData.length === 0 && selectedLayers && selectedLayers.length > 0) {
+        var transformProps = [
+            { matchName: "ADBE Anchor Point", name: "Anchor Point" },
+            { matchName: "ADBE Position", name: "Position" },
+            { matchName: "ADBE Scale", name: "Scale" },
+            { matchName: "ADBE Rotate Z", name: "Rotation" },
+            { matchName: "ADBE Opacity", name: "Opacity" }
+        ];
+
+        for (var j = 0; j < selectedLayers.length; j++) {
+            var selLayer = selectedLayers[j];
+            for (var t = 0; t < transformProps.length; t++) {
+                var transformPath = ["ADBE Transform Group", transformProps[t].matchName];
+                var testProp = smartLink_getPropertyByPath(selLayer, transformPath);
+                if (!testProp || !testProp.canSetExpression) continue;
+                if (testProp.expression && testProp.expression.length > 0) continue;
+
+                var tControlType = smartLink_getControlType(testProp, selLayer);
+                var tKeyframes = smartLink_collectKeyframes(testProp);
+                var tCurrentValue;
+                try { tCurrentValue = testProp.value; } catch (valueErr) { continue; }
+
+                propertyData.push({
+                    layer: selLayer,
+                    propertyPath: transformPath,
+                    propertyName: testProp.name,
+                    displayName: selLayer.name + " - " + transformProps[t].name,
+                    controlType: tControlType,
+                    currentValue: tCurrentValue,
+                    keyframes: tKeyframes
+                });
+            }
+        }
+    }
+
+    if (propertyData.length === 0) {
+        if (skippedDropdowns.length > 0) return "ERROR: Dropdown menu properties can't be linked (" + skippedDropdowns.join(", ") + ")";
+        return "ERROR: Select a property (Rotation, Opacity, Position, an effect's Color/Angle/Point/Slider, ...) or select whole layers to auto-link their transform properties.";
+    }
+
+    // Multiple distinct layers involved → controls move onto one shared null instead of scattering across source layers.
+    var layerIndexSet = {};
+    var distinctLayerCount = 0;
+    for (var dl = 0; dl < propertyData.length; dl++) {
+        var dlIdx = propertyData[dl].layer.index;
+        if (!layerIndexSet[dlIdx]) { layerIndexSet[dlIdx] = true; distinctLayerCount++; }
+    }
+    var useSharedNull = !!targetNull || distinctLayerCount > 1;
+
+    app.beginUndoGroup("Smart Link");
+    var addedCount = 0;
+    var failedCount = 0;
+    var nullName = null;
+
+    try {
+        if (useSharedNull) {
+            var sharedNull = targetNull || smartLink_createSharedNull(comp, "Smart Link Controller");
+            nullName = sharedNull.name;
+
+            // Group by matching property so the same property selected on 2+ layers shares one control.
+            var groups = {}, groupOrder = [];
+            for (var g = 0; g < propertyData.length; g++) {
+                var gd = propertyData[g];
+                var key = gd.propertyPath.join(">") + "::" + gd.controlType;
+                if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
+                groups[key].push(gd);
+            }
+
+            for (var go = 0; go < groupOrder.length; go++) {
+                var entries = groups[groupOrder[go]];
+                var base = entries[0];
+
+                var created = smartLink_createUniqueControl(sharedNull, base.controlType, base.displayName);
+                if (!created) { failedCount += entries.length; continue; }
+
+                var controlValueProp = smartLink_getControlValueProperty(created.control, base.controlType);
+                if (controlValueProp) {
+                    if (base.keyframes && base.keyframes.length > 0) {
+                        smartLink_applyKeyframes(controlValueProp, base.keyframes, base.controlType);
+                    } else if (base.currentValue !== undefined) {
+                        try { controlValueProp.setValue(smartLink_convertValueForControl(base.currentValue, base.controlType)); } catch (e) {}
+                    }
+                }
+
+                var baseExpr = smartLink_buildExpression(created.name, sharedNull.name);
+
+                for (var e2 = 0; e2 < entries.length; e2++) {
+                    var entry = entries[e2];
+                    var entryProp = smartLink_getPropertyByPath(entry.layer, entry.propertyPath);
+                    if (!entryProp) { failedCount++; continue; }
+
+                    var finalExpr = baseExpr;
+                    if (e2 > 0) {
+                        finalExpr += smartLink_buildOffsetExpr(entry.currentValue, base.currentValue, base.controlType);
+                    }
+
+                    try {
+                        entryProp.expression = finalExpr;
+                        entryProp.expressionEnabled = true;
+                        smartLink_stripKeyframes(entryProp);
+                        addedCount++;
+                    } catch (e) {
+                        failedCount++;
+                    }
+                }
+            }
+        } else {
+            for (var p = 0; p < propertyData.length; p++) {
+                var data = propertyData[p];
+                var layer2 = data.layer;
+
+                var targetProp = smartLink_getPropertyByPath(layer2, data.propertyPath);
+                if (!targetProp) { failedCount++; continue; }
+
+                var created2 = smartLink_createUniqueControl(layer2, data.controlType, data.displayName);
+                if (!created2) { failedCount++; continue; }
+
+                var controlValueProp2 = smartLink_getControlValueProperty(created2.control, data.controlType);
+                if (controlValueProp2) {
+                    if (data.keyframes && data.keyframes.length > 0) {
+                        smartLink_applyKeyframes(controlValueProp2, data.keyframes, data.controlType);
+                    } else if (data.currentValue !== undefined) {
+                        try { controlValueProp2.setValue(smartLink_convertValueForControl(data.currentValue, data.controlType)); } catch (e) {}
+                    }
+                }
+
+                // Adding the control effect can invalidate the earlier property reference, so it's re-fetched fresh.
+                targetProp = smartLink_getPropertyByPath(layer2, data.propertyPath);
+                if (!targetProp) { failedCount++; continue; }
+
+                try {
+                    targetProp.expression = smartLink_buildExpression(created2.name);
+                    targetProp.expressionEnabled = true;
+                    smartLink_stripKeyframes(targetProp);
+                    addedCount++;
+                } catch (e) {
+                    failedCount++;
+                }
+            }
+        }
+    } catch (error) {
+        app.endUndoGroup();
+        return "ERROR: " + error.message;
+    }
+
+    app.endUndoGroup();
+
+    var msg = "Linked " + pluralize(addedCount, "property", "properties");
+    if (nullName) msg += ' to "' + nullName + '"';
+    if (failedCount > 0) msg += " (" + failedCount + " failed)";
+    if (skippedDropdowns.length > 0) msg += " — skipped " + pluralize(skippedDropdowns.length, "dropdown");
+    return msg;
 }
 
 // ── GET COMP SIZE ─────────────────────────────────────────────────────────────
@@ -4851,10 +5377,7 @@ function collectNestedComps(rootComps) {
     return all;
 }
 
-// Captures every keyframe on a leaf property, then rebuilds them at frame-rounded
-// times. ExtendScript has no "move this keyframe" call — removing and re-adding is
-// the only way to relocate one — so all interpolation/ease/spatial data has to be
-// captured up front and reapplied afterward.
+// Captures every keyframe on a leaf property, then rebuilds them at frame-rounded times (ExtendScript has no "move keyframe" call).
 function snapLeafKeyframes(prop, frameDur) {
     var n = prop.numKeys;
     if (n === 0) return;
@@ -4887,11 +5410,7 @@ function snapLeafKeyframes(prop, frameDur) {
         if (data[i].inInterp !== undefined && data[i].outInterp !== undefined) {
             try { prop.setInterpolationTypeAtKey(idx, data[i].inInterp, data[i].outInterp); } catch (e) {}
         }
-        // setTemporalEaseAtKey requires the key to already be Bezier on both sides —
-        // calling it on a Linear/Hold key silently force-promotes it to Bezier, which
-        // is exactly the "snap is adding bezier curves" bug. keyInTemporalEase/
-        // keyOutTemporalEase return a value for every key regardless of type, so this
-        // has to be gated on the captured interpolation type, not just truthiness.
+        // Gated on the captured interpolation type (not just truthiness) since setTemporalEaseAtKey on a Linear/Hold key would force-promote it to Bezier.
         if (data[i].inInterp === KeyframeInterpolationType.BEZIER &&
             data[i].outInterp === KeyframeInterpolationType.BEZIER &&
             data[i].inEase && data[i].outEase) {
@@ -4899,10 +5418,7 @@ function snapLeafKeyframes(prop, frameDur) {
         }
         if (data[i].autoBezier !== undefined) { try { prop.setSpatialAutoBezierAtKey(idx, data[i].autoBezier); } catch (e) {} }
         if (data[i].continuous !== undefined) { try { prop.setSpatialContinuousAtKey(idx, data[i].continuous); } catch (e) {} }
-        // Auto-Bezier tangents are recomputed by AE from the (now snapped) neighboring
-        // keyframe spacing — forcing back the pre-snap tangent values here would fight
-        // that recompute and visibly kink the curve. Only restore explicit tangents for
-        // keys that were already in manual (non-auto) Bezier mode.
+        // Auto-Bezier tangents are recomputed by AE from the snapped spacing; forcing back pre-snap values would kink the curve.
         if (!data[i].autoBezier && data[i].inTangent && data[i].outTangent) {
             try { prop.setSpatialTangentsAtKey(idx, data[i].inTangent, data[i].outTangent); } catch (e) {}
         }
@@ -4937,10 +5453,7 @@ function snapCompKeyframesToFrames(comp) {
     }
 }
 
-// Rounds each layer's in/out points to the nearest whole frame at the new frame
-// rate. Order of assignment matters — AE rejects an inPoint/outPoint write that
-// would momentarily put inPoint >= outPoint, so whichever edge isn't crossing
-// the other (relative to the layer's *current* points) is set first.
+// Rounds each layer's in/out points to the new frame rate. Order matters: AE rejects a write that would momentarily put inPoint >= outPoint.
 function snapLayerInOutToFrames(comp) {
     var frameDur = comp.frameDuration;
     for (var li = 1; li <= comp.numLayers; li++) {
@@ -4962,10 +5475,7 @@ function snapLayerInOutToFrames(comp) {
     }
 }
 
-// Only un-parented layers are shifted directly: a parented layer's position is in
-// its parent's local space, not comp space, so once the parent (also a layer in this
-// comp) is shifted, every descendant inherits that shift through the parenting
-// transform automatically. Shifting them too would double the offset.
+// Only un-parented layers are shifted directly — a parented descendant already inherits its parent's shift through the parenting transform.
 function applyBatchSettingsToComp(comp, s, warnings) {
     if (s.applyDims) {
         var oldW = comp.width, oldH = comp.height;
@@ -4998,10 +5508,7 @@ function applyBatchSettingsToComp(comp, s, warnings) {
     }
 }
 
-// Always succeeds — even with nothing selected — so the panel can open and show
-// "No comp selected" instead of being blocked. Seeds from the top selected comp
-// in the Project panel when available, otherwise falls back to sane defaults
-// (1920x1080, Square Pixels, 30fps, Full res, 5s duration, 0s start).
+// Always succeeds, even with nothing selected, so the panel can show "No comp selected" instead of being blocked.
 function lineup_getBatchCompSettingsSeed() {
     try {
         var proj = app.project;
@@ -5047,8 +5554,7 @@ function lineup_batchApplyCompSettings(
         }
         if (allComps.length === 0) return "ERROR: Select at least one composition in the Project panel.";
 
-        // Indices (into allComps, same order the panel's comp list was built from)
-        // the user removed from the batch via the panel's per-row remove button.
+        // Indices (into allComps) the user removed from the batch via the panel's per-row remove button.
         var excluded = {};
         if (excludedIndices) {
             var exParts = String(excludedIndices).split(",");
@@ -5098,10 +5604,7 @@ function lineup_batchApplyCompSettings(
 }
 
 // ── BATCH RENAME ─────────────────────────────────────────────────────────────
-// Seeded from Batch Comp Settings' own seed call (lineup_getBatchCompSettingsSeed
-// above) rather than a separate one — both already filter proj.selection down
-// to the exact same set of selected CompItems, so the panel-side JS just
-// reuses those names for this tab too (see openBatchCompSettings in main.js).
+// Seeded from Batch Comp Settings' own seed call rather than a separate one, since both filter proj.selection identically.
 
 // Spreadsheet-style column letters: 1 -> A, 2 -> B, … 26 -> Z, 27 -> AA, …
 function numberToLetters(num) {
@@ -5124,9 +5627,7 @@ function lineup_batchRenameComps(pattern, start, orderIndices) {
         if (allComps.length === 0) return "ERROR: Select at least one composition in the Project panel.";
         if (!pattern) return "ERROR: Enter a name pattern.";
 
-        // orderIndices is a CSV of indices into allComps, in the (possibly
-        // reordered, possibly trimmed) order the panel's comp list ended up in —
-        // that order, not allComps' original order, drives the numbering.
+        // orderIndices is a CSV of indices into allComps in the panel's (possibly reordered/trimmed) order, which drives the numbering.
         var order = [];
         if (orderIndices) {
             var parts = String(orderIndices).split(",");
@@ -5145,9 +5646,7 @@ function lineup_batchRenameComps(pattern, start, orderIndices) {
             for (var pos = 0; pos < order.length; pos++) {
                 var num      = startNum + pos;
                 var letterPos = pos + 1; // [A] always starts at A, independent of Start-at
-                // Replace every [#], [##], [###]… run with the index, zero-padded to
-                // the number of # characters between the brackets, and the semi-secret
-                // [A] token with a letter based on position alone.
+                // Replace every [#]/[##]/[###]… run with the index zero-padded to the # count, and [A] with a letter by position.
                 var newName = pattern.replace(/\[#+\]/g, function (m) {
                     var width = m.length - 2;
                     var s = String(num);
@@ -5171,10 +5670,7 @@ function lineup_batchRenameComps(pattern, start, orderIndices) {
 
 // ── COMP EXPORT ──────────────────────────────────────────────────────────────
 
-// Always succeeds — even with nothing selected — so the panel can open and show
-// "No comp selected" instead of being blocked. Returns the current project's
-// folder and base filename (both empty if it's never been saved) so the panel
-// can build the suggested save name itself as the comp selection changes.
+// Always succeeds, even unsaved/nothing selected, returning the project's folder/base filename (empty if unsaved) for the panel's suggested save name.
 function lineup_getCompExportSeed() {
     try {
         var proj  = app.project;
@@ -5203,11 +5699,8 @@ function lineup_pickExportLocation(defaultPath) {
     } catch (e) { return "ERROR: " + e.toString(); }
 }
 
-// Combines AE's own "Save" + "Save As" + "Reduce Project": saves the current
-// project in place first (so nothing unsaved is left behind), duplicates it to
-// a new file, strips the duplicate down to just the chosen comps (asset links
-// stay where they are, nothing gets copied/collected), saves that, and leaves
-// the new reduced project open as the active one.
+// Combines Save + Save As + Reduce Project: saves in place, duplicates to a new file, strips it to just the chosen
+// comps (asset links stay put, nothing copied/collected), saves that, and leaves it open as the active project.
 function lineup_exportReducedProject(exportPath, excludedIndices) {
     try {
         var proj = app.project;
@@ -5220,8 +5713,7 @@ function lineup_exportReducedProject(exportPath, excludedIndices) {
         }
         if (allComps.length === 0) return "ERROR: Select at least one composition in the Project panel.";
 
-        // Indices (into allComps, same order the panel's comp list was built from)
-        // the user removed from the batch via the panel's per-row remove button.
+        // Indices (into allComps) the user removed from the batch via the panel's per-row remove button.
         var excluded = {};
         if (excludedIndices) {
             var exParts = String(excludedIndices).split(",");
@@ -5445,49 +5937,10 @@ function find_replace(paramsJson) {
     }
 }
 
-function spellcheck_replace(layerIndex, keyIndex, oldWord, newWord) {
-    try {
-        app.beginUndoGroup("Spellcheck Fix");
-        var comp = app.project.activeItem;
-        if (!(comp instanceof CompItem)) { app.endUndoGroup(); return "ERROR:No active composition."; }
-        var layer = comp.layer(parseInt(layerIndex, 10));
-        if (!(layer instanceof TextLayer)) { app.endUndoGroup(); return "ERROR:Not a text layer."; }
-        var srcText = layer.property("ADBE Text Properties").property("ADBE Text Document");
-        var ki = parseInt(keyIndex, 10);
-        var td = ki > 0 ? srcText.keyValue(ki) : srcText.value;
-        td.text = td.text.replace(new RegExp("\\b" + oldWord + "\\b", "gi"), newWord);
-        if (ki > 0) { srcText.setValueAtKey(ki, td); } else { srcText.setValue(td); }
-        app.endUndoGroup();
-        return "OK";
-    } catch (e) {
-        try { app.endUndoGroup(); } catch (_) {}
-        return "ERROR:" + e.message;
-    }
-}
-
 // ── ACTIVITY TRACKING ─────────────────────────────────────────────────────────
-// Read-only snapshot for the Trophy tab's gamification poll (see
-// _activityPollTick in main.js). There's no ExtendScript event for "a
-// keyframe was added"/"a layer was created"/etc. — the panel calls this on
-// a timer and diffs the counts itself to infer new activity, so this just
-// reports raw totals plus enough identity info (projectId/compId/
-// selectionId) for the caller to tell "the user did something" apart from
-// "the user switched to a different project/comp/selection that already
-// had this content."
-//
-// The keyframe count reads comp.selectedProperties — the specific
-// properties whose row is actually highlighted in the Timeline, which AE
-// already tracks for you — instead of recursively walking every property
-// of every selected layer (effects, transform, everything) on a 3-second
-// timer. That walk scaled with total comp complexity per layer (layers ×
-// effects × params) and ExtendScript runs synchronously on AE's main
-// thread, so a slow tick read as an actual UI stutter, not just background
-// CPU; reading selectedProperties is a small, already-computed list
-// regardless of how big the comp or its layers are. Trade-off: a keyframe
-// added to a property that isn't currently row-selected in the Timeline
-// (e.g. via script/expression, or while a different property's row is
-// selected) goes untracked — same spirit as the pre-existing "layers that
-// aren't selected go untracked" trade-off, just one level more specific.
+// Read-only snapshot for the Trophy tab's gamification poll — no ExtendScript event exists for "a keyframe was added" etc.,
+// so the panel diffs these raw totals itself on a timer. Keyframe count reads comp.selectedProperties (the Timeline's
+// already-highlighted rows) rather than walking every property of every selected layer, to keep a 3-second poll cheap.
 function lineup_getActivitySnapshot() {
     var proj = app.project;
     var projectId = proj.file ? proj.file.fsName : "__unsaved__";
@@ -5500,10 +5953,7 @@ function lineup_getActivitySnapshot() {
     var comp = proj.activeItem;
     var isComp = comp && comp instanceof CompItem;
     var compId = isComp ? comp.id : -1;
-    // Playhead position — not scored, purely a cheap extra "is the user
-    // still doing something" signal for the Trophy timer's inactivity
-    // check (scrubbing/playback moves this without necessarily changing
-    // any of the counts above).
+    // Playhead position — not scored, just a cheap extra activity signal for the Trophy timer's inactivity check.
     var currentTime = isComp ? comp.time : -1;
 
     var selected = isComp ? comp.selectedLayers : [];
@@ -5514,10 +5964,7 @@ function lineup_getActivitySnapshot() {
     selIndices.sort(function (a, b) { return a - b; });
     var selectionId = selIndices.join(',');
 
-    // matchName (falling back to name) is stable and English-independent
-    // per property — sorted before joining so the identity string only
-    // changes when the actual SET of selected properties changes, not
-    // whatever order AE happens to return them in this tick.
+    // matchName (falling back to name) is stable per property, sorted so the identity string ignores AE's per-tick ordering.
     var keyframeCount = 0;
     var propIds = [];
     var selectedProps = isComp ? comp.selectedProperties : [];
@@ -5531,12 +5978,7 @@ function lineup_getActivitySnapshot() {
     propIds.sort();
     var propSelectionId = propIds.join(',');
 
-    // Effects Applied stat (see ACTIVITY_POINTS.fx / _activityPollTick in
-    // main.js) — a flat per-layer effect count, not a walk of each effect's
-    // own sub-properties, since "how many effects are applied" doesn't
-    // need those inspected. Still scoped to selected LAYERS (not
-    // selectedProperties above, which is keyframe-specific) — same
-    // reasoning as before, caps cost at however many layers are selected.
+    // Effects Applied stat: a flat per-layer effect count (no sub-property walk), scoped to selected layers.
     var fxCount = 0;
     for (var s2 = 0; s2 < selected.length; s2++) {
         try {
@@ -5545,9 +5987,13 @@ function lineup_getActivitySnapshot() {
         } catch (e) {}
     }
 
+    // numItems backs up compId as a project-switch signal in main.js — comp.id
+    // is only unique within a single project, so a freshly opened project's
+    // active comp can coincidentally reuse the previous project's id.
     return JSON.stringify({
         projectId: projectId,
         compId: compId,
+        numItems: proj.numItems,
         selectionId: selectionId,
         propSelectionId: propSelectionId,
         currentTime: currentTime,
