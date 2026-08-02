@@ -8,6 +8,8 @@ var _easeClipboard   = null;   // array of { inType, outType, inEase, outEase }
 var _easeClipboardType = null;
 // Whether the copied layer is 3D — value/ease array LENGTH alone can't tell (a 2D layer's Scale can carry a vestigial Z entry).
 var _easeClipboardIs3D = null;
+var _markerClipboard = null;   // array of { relTime, comment, chapter, cuePointName, duration, frameTarget, label, protectedRegion, url, params }
+var _markerClipboardSpan = 0;  // source's own total duration (layer out-in, or comp.duration) — lets the panel preview draw a rectangle for the whole layer, not just the span between the first/last marker
 
 // ── Position helpers ──────────────────────────────────────────────────────────
 
@@ -3489,6 +3491,144 @@ function lineup_easeGetClipboard() {
     }
 }
 
+// ── MARKER CONTROLS ──────────────────────────────────────────────────────────
+// Scope follows the same selection-driven convention as Ease Copy: selected layer(s) are
+// the read/write target; with nothing selected, the active comp's own markers are used instead.
+// Times are stored relative to the source's own start (a layer's inPoint, or 0 for a comp) and
+// re-anchored to the target's start on paste, so markers stay meaningful across layers/comps of
+// different lengths and positions in time.
+
+function lineup_markerCopy() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp instanceof CompItem)) return "ERROR: No active composition";
+
+        var layers = comp.selectedLayers;
+        var srcProp = null, anchor = 0, span = 0;
+
+        if (layers.length > 0) {
+            for (var i = 0; i < layers.length; i++) {
+                var prop = null;
+                try { prop = layers[i].marker; } catch (e) {}
+                if (prop && prop.numKeys > 0) {
+                    srcProp = prop; anchor = layers[i].inPoint;
+                    span = layers[i].outPoint - layers[i].inPoint;
+                    break;
+                }
+            }
+        } else {
+            var compProp = comp.markerProperty;
+            if (compProp && compProp.numKeys > 0) { srcProp = compProp; anchor = 0; span = comp.duration; }
+        }
+        if (!srcProp) return "";
+
+        var out = [];
+        for (var k = 1; k <= srcProp.numKeys; k++) {
+            var v = srcProp.keyValue(k);
+            var entry = {
+                relTime: srcProp.keyTime(k) - anchor,
+                comment: v.comment, chapter: v.chapter, cuePointName: v.cuePointName,
+                duration: v.duration, frameTarget: v.frameTarget, url: v.url,
+                label: v.label, protectedRegion: v.protectedRegion
+            };
+            try { entry.params = v.getParameters(); } catch (e) { entry.params = null; }
+            out.push(entry);
+        }
+
+        _markerClipboard = out;
+        _markerClipboardSpan = span;
+        return pluralize(out.length, "marker");
+    } catch (err) {
+        return "ERROR: " + err.toString();
+    }
+}
+
+function lineup_markerPaste(append) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp instanceof CompItem)) return "ERROR: No active composition";
+        if (!_markerClipboard || _markerClipboard.length === 0) return "ERROR: No markers copied";
+
+        var layers = comp.selectedLayers;
+        var targets = []; // { prop, anchor }
+        if (layers.length > 0) {
+            for (var i = 0; i < layers.length; i++) {
+                var prop = null;
+                try { prop = layers[i].marker; } catch (e) {}
+                if (prop) targets.push({ prop: prop, anchor: layers[i].inPoint });
+            }
+        } else {
+            targets.push({ prop: comp.markerProperty, anchor: 0 });
+        }
+        if (targets.length === 0) return "ERROR: Selected layer(s) don't support markers";
+
+        var pasted = 0;
+        app.beginUndoGroup("Paste Markers");
+        try {
+            for (var t = 0; t < targets.length; t++) {
+                var prop = targets[t].prop, anchor = targets[t].anchor;
+                if (!append) {
+                    for (var k = prop.numKeys; k >= 1; k--) { try { prop.removeKey(k); } catch (e) {} }
+                }
+                for (var c = 0; c < _markerClipboard.length; c++) {
+                    var e = _markerClipboard[c];
+                    var mv = new MarkerValue(e.comment || "");
+                    try { mv.chapter = e.chapter || ""; } catch (ex) {}
+                    try { mv.cuePointName = e.cuePointName || ""; } catch (ex) {}
+                    try { mv.duration = e.duration || 0; } catch (ex) {}
+                    try { mv.frameTarget = e.frameTarget || ""; } catch (ex) {}
+                    try { mv.url = e.url || ""; } catch (ex) {}
+                    try { if (e.label !== undefined && e.label !== null) mv.label = e.label; } catch (ex) {}
+                    try { mv.protectedRegion = !!e.protectedRegion; } catch (ex) {}
+                    try { if (e.params) mv.setParameters(e.params); } catch (ex) {}
+                    try { prop.setValueAtTime(Math.max(0, anchor + e.relTime), mv); pasted++; } catch (ex) {}
+                }
+            }
+        } catch (err) {
+            app.endUndoGroup();
+            return "ERROR: " + err.toString();
+        }
+        app.endUndoGroup();
+
+        return pluralize(pasted, "marker") + " pasted on " +
+            (layers.length > 0 ? pluralize(targets.length, "layer") : "composition");
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e2) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+function lineup_markerClear() { _markerClipboard = null; _markerClipboardSpan = 0; return "ok"; }
+
+// Plain-object projection of _markerClipboard for the panel's live preview strip — params omitted, it's a purely visual readout (comment/label/duration/relTime), not a paste round-trip.
+// Also reports the CURRENT paste target (scope/layerCount) fresh on every call — independent of
+// the clipboard itself, which describes what was copied, not what Paste would apply it to right
+// now. Lets the panel's Paste button show whether it'll land on the comp or on layer(s), and stay
+// accurate as the user's Project/Timeline selection changes while the panel's just sitting open.
+function lineup_markerGetClipboard() {
+    if (!_markerClipboard) return "null";
+    try {
+        var out = [];
+        for (var i = 0; i < _markerClipboard.length; i++) {
+            var e = _markerClipboard[i];
+            out.push({ relTime: e.relTime, duration: e.duration || 0, comment: e.comment || "", label: e.label || 0 });
+        }
+
+        var scope = "comp", layerCount = 0;
+        try {
+            var comp = app.project.activeItem;
+            if (comp instanceof CompItem) {
+                layerCount = comp.selectedLayers.length;
+                if (layerCount > 0) scope = "layer";
+            }
+        } catch (e) {}
+
+        return JSON.stringify({ markers: out, span: _markerClipboardSpan || 0, scope: scope, layerCount: layerCount });
+    } catch (err) {
+        return "null";
+    }
+}
+
 // AE's own default influence (33.33%) stretched a bit further for a gentler ease.
 var LINEUP_BEZIER_DEFAULT_INFLUENCE = 45;
 
@@ -5352,6 +5492,42 @@ function positionIs3D(posProp) {
     return posProp.value.length === 3;
 }
 
+// Replicates Adobe's built-in "Scale Composition.jsx" sample script: parents every
+// currently-unparented layer to a temporary 3D null, scales the null (and any camera
+// zooms) by the resize factor, then removes the null — AE's native "dejump on unparent"
+// bakes the correct compensating position/scale/rotation into every layer for us.
+function scaleCompContentProportionally(comp, factorX, factorY) {
+    var factorZ = (factorX + factorY) / 2;
+
+    var nullLayer = comp.layers.addNull();
+    nullLayer.threeDLayer = true;
+    nullLayer.position.setValue([0, 0, 0]);
+
+    for (var li = 1; li <= comp.numLayers; li++) {
+        var layer = comp.layer(li);
+        var wasLocked = layer.locked;
+        layer.locked = false;
+        if (layer !== nullLayer && !layer.parent) layer.parent = nullLayer; // falsy check — comes back as undefined, not null, when unset
+        layer.locked = wasLocked;
+    }
+
+    for (var li = 1; li <= comp.numLayers; li++) {
+        var layer = comp.layer(li);
+        if (layer.matchName !== "ADBE Camera Layer") continue;
+        var zoom = layer.zoom;
+        if (zoom.numKeys === 0) {
+            zoom.setValue(zoom.value * factorZ);
+        } else {
+            for (var k = 1; k <= zoom.numKeys; k++) zoom.setValueAtKey(k, zoom.keyValue(k) * factorZ);
+        }
+    }
+
+    var nullScale = nullLayer.scale.value;
+    nullLayer.scale.setValue([nullScale[0] * factorX, nullScale[1] * factorY, nullScale[2] * factorZ]);
+
+    nullLayer.remove(); // dejumps every child layer's transform to compensate
+}
+
 // Recursively collects every comp used as a layer source inside the given root
 // comps (and inside those, etc) — backs the "Also update nested compositions" option.
 function collectNestedComps(rootComps) {
@@ -5479,19 +5655,25 @@ function snapLayerInOutToFrames(comp) {
 function applyBatchSettingsToComp(comp, s, warnings) {
     if (s.applyDims) {
         var oldW = comp.width, oldH = comp.height;
-        comp.width  = s.width;
-        comp.height = s.height;
-        var dx = (s.width - oldW) / 2, dy = (s.height - oldH) / 2;
-        if (dx !== 0 || dy !== 0) {
-            for (var li = 1; li <= comp.numLayers; li++) {
-                var layer = comp.layer(li);
-                if (layer.parent) continue; // falsy check — comes back as undefined, not null, when unset
-                var pos = layer.position;
-                if (hasExpression(pos)) {
-                    warnings.push(layer.name + " — position has an expression");
-                    continue;
+        if (s.scaleContent && (s.width !== oldW || s.height !== oldH)) {
+            scaleCompContentProportionally(comp, s.width / oldW, s.height / oldH);
+            comp.width  = s.width;
+            comp.height = s.height;
+        } else {
+            comp.width  = s.width;
+            comp.height = s.height;
+            var dx = (s.width - oldW) / 2, dy = (s.height - oldH) / 2;
+            if (dx !== 0 || dy !== 0) {
+                for (var li = 1; li <= comp.numLayers; li++) {
+                    var layer = comp.layer(li);
+                    if (layer.parent) continue; // falsy check — comes back as undefined, not null, when unset
+                    var pos = layer.position;
+                    if (hasExpression(pos)) {
+                        warnings.push(layer.name + " — position has an expression");
+                        continue;
+                    }
+                    try { shiftPosition(pos, dx, dy, positionIs3D(pos)); } catch (e) {}
                 }
-                try { shiftPosition(pos, dx, dy, positionIs3D(pos)); } catch (e) {}
             }
         }
     }
@@ -5537,7 +5719,7 @@ function lineup_getBatchCompSettingsSeed() {
 }
 
 function lineup_batchApplyCompSettings(
-    applyDims, width, height,
+    applyDims, width, height, scaleContent,
     applyPAR, pixelAspect,
     applyFR, frameRate, snapKeyframes,
     applyRes, resolutionFactor,
@@ -5570,7 +5752,7 @@ function lineup_batchApplyCompSettings(
         if (comps.length === 0) return "ERROR: No compositions left to apply to — all were removed from the list.";
 
         var s = {
-            applyDims: !!applyDims, width: width, height: height,
+            applyDims: !!applyDims, width: width, height: height, scaleContent: !!scaleContent,
             applyPAR: !!applyPAR, pixelAspect: pixelAspect,
             applyFR: !!applyFR, frameRate: frameRate, snapKeyframes: !!snapKeyframes,
             applyRes: !!applyRes, resolutionFactor: resolutionFactor,

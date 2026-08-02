@@ -3053,6 +3053,8 @@ body.toolbar-dragging-active, body.toolbar-dragging-active * {
    room without needing to grow the slot itself. Still shown when Ease Copy
    is a standalone Bottom Layout widget, where there's no such squeeze. */
 #sec-favorite .tool-body[data-block-id="ease"] .ease-title-row { display: none; }
+/* Marker Controls' own title row, same reasoning as Ease Copy's above. */
+#homeClassic .markers-title-row { display: none; }
 
 /* Hidden via Classic's Sections list (shared state — see
    _applySharedHiddenState in main.js) — removed from the grid entirely. */
@@ -4203,7 +4205,11 @@ body.bl-drag-active {
     opacity: 0;
     max-width: 0;
     pointer-events: none;
-    transition: opacity 0.15s ease, max-width 0.15s ease;
+    /* max-width is NOT transitioned (only opacity) — animating both together read as the
+       icon sliding/cropping in from the left as the reveal window widened, rather than a
+       plain fade. max-width still jumps from 0 straight to its final 28px, just instantly
+       instead of over time, so the row still reserves zero space while hidden. */
+    transition: opacity 0.15s ease;
 }
 .key-align-toggle.key-align-toggle-visible {
     opacity: 1;
@@ -5698,6 +5704,317 @@ input[type="checkbox"]:checked::after {
     background: #8a2a2a;
     border-color: #8a2a2a;
     color: #fff;
+}
+
+/* ── Marker Controls ──────────────────────────────────────────────────────── */
+/* Same compact-mode flatten as Ease Copy's ".ease-subpanel" rules further up
+   (they're generic, this widget reuses them directly) — the labeled COPY/
+   PASTE cards collapse to plain flex children of one shared row so Copy and
+   Paste can stretch to fill whatever width Bottom Layout/the Favorite slot
+   actually gives this box, instead of sitting at their own fixed size with
+   dead space around them. */
+.tool-box[data-block-id="markers"] .tool-body,
+#sec-favorite .tool-body[data-block-id="markers"] {
+    gap: 5px;
+}
+.tool-box[data-block-id="markers"] {
+    padding-bottom: 5px;
+}
+/* flex:1 1 0, same basis as .marker-preview below — the preview and this
+   button row now split the box's height evenly instead of the buttons
+   only ever claiming their own content height and ceding everything else
+   to the preview. */
+.tool-box[data-block-id="markers"] .ease-panels-row,
+#sec-favorite .tool-body[data-block-id="markers"] .ease-panels-row {
+    align-items: stretch;
+    gap: 4px;
+    flex: 1 1 0;
+    min-height: 26px;
+}
+.tool-box[data-block-id="markers"] .ease-subpanel,
+#sec-favorite .tool-body[data-block-id="markers"] .ease-subpanel {
+    display: contents;
+}
+.tool-box[data-block-id="markers"] .ease-subpanel-lbl,
+#sec-favorite .tool-body[data-block-id="markers"] .ease-subpanel-lbl {
+    display: none;
+}
+.tool-box[data-block-id="markers"] .ease-subpanel-body,
+#sec-favorite .tool-body[data-block-id="markers"] .ease-subpanel-body {
+    display: contents;
+}
+.tool-box[data-block-id="markers"] .ease-action-btn,
+#sec-favorite .tool-body[data-block-id="markers"] .ease-action-btn {
+    height: 100%;
+    padding: 0 6px;
+    font-size: 11px;
+    flex: 1;
+}
+.tool-box[data-block-id="markers"] .display-box,
+#sec-favorite .tool-body[data-block-id="markers"] .display-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1.2;
+    min-width: 0;
+    padding: 0 6px;
+    cursor: pointer;
+}
+
+/* Paste's comp-vs-layer(s) indicator (see _updateMarkerPasteScopeIcon in
+   main.js) — the button itself needs to be a flex row to lay the icon
+   and "Paste" text out side by side and vertically centered together;
+   a plain button's default inline flow left the icon sitting a couple px
+   off from the text's own baseline. */
+.marker-paste-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+.marker-paste-scope-icon {
+    position: relative;
+    display: inline-flex;
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+}
+.marker-paste-scope-icon svg {
+    width: 100%;
+    height: 100%;
+}
+/* Selected-layer count, only shown past a single layer — bottom-right
+   corner of the icon, same small-badge language as a notification count. */
+.marker-paste-scope-count {
+    position: absolute;
+    bottom: -3px;
+    right: -4px;
+    font-size: 7px;
+    line-height: 1;
+    background: #191919;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0 2px;
+    color: var(--text-dim);
+}
+
+/* Live preview strip — Compact-only (Classic has no equivalent, same as
+   Ease Copy's own graph), and shown at any Bottom Layout width since a
+   horizontal timeline (unlike Ease's curve) reads fine both narrow and
+   full-width — no span-specific show/hide needed. flex:1 1 0, same basis
+   as the button row above — the two now split the box's height evenly
+   (see _renderMarkerPreview in main.js for what actually gets drawn
+   inside: a rectangle standing in for the layer/comp's own bar, with
+   flags + colored duration regions laid over it). */
+.marker-preview { display: none; }
+.tool-box[data-block-id="markers"] .marker-preview,
+#sec-favorite .tool-body[data-block-id="markers"] .marker-preview {
+    display: block;
+    position: relative;
+    width: 100%;
+    flex: 1 1 0;
+    min-height: 46px;
+    padding: 6px 8px;
+    background: #131313;
+    border: 1px solid #2c2c2c;
+    border-radius: 6px;
+    overflow: hidden;
+}
+.marker-preview-track {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+/* Time ruler along the very top of the strip (built by
+   _buildMarkerTimelineRuler in main.js) — sits in the same 27% margin
+   above .marker-layer-bar that already existed (no other percentages
+   below needed to move), so a marker's on-screen position can be read
+   against actual comp/layer time instead of just relative to the other
+   markers. */
+.marker-preview-ruler {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 22%;
+}
+.marker-ruler-tick {
+    position: absolute;
+    bottom: 0;
+    width: 1px;
+    height: 4px;
+    background: #3a3a3a;
+}
+.marker-ruler-label {
+    position: absolute;
+    bottom: 6px;
+    font-size: 7px;
+    line-height: 1;
+    color: #5a5a5a;
+    white-space: nowrap;
+    pointer-events: none;
+}
+/* The rectangle standing in for the source layer/comp's own bar — spans
+   the full copied duration (data.span from lineup_markerGetClipboard),
+   not just the stretch between the first and last marker, so the strip
+   reads as "here's the layer, and here's where on it the markers sit"
+   rather than an arbitrary zoomed-in crop. Centered in the preview
+   (top:27%/height:46%, so an equal 27% margin above and below) —
+   .marker-chip's own flag shares that same top(27%)/bottom(27%) anchor
+   so everything lines up regardless of how tall the box ends up being.
+   Its own overflow:hidden clips the duration regions inside to its
+   rounded corners instead of them poking out square at the very ends. */
+.marker-layer-bar {
+    position: absolute;
+    /* left/right flush with .marker-preview-track's own edges (0, not an inset) —
+       .marker-chip's "left" percentage below is relative to this same track, so
+       any inset here would drift the flag/duration-region alignment rightward. */
+    left: 0;
+    right: 0;
+    top: 27%;
+    height: 46%;
+    border-radius: 2px;
+    background: #222222;
+    overflow: hidden;
+}
+/* A marker's duration, drawn as a region directly on the layer bar (same
+   idea as After Effects' own timeline highlighting a marker's duration
+   along the layer it's on) rather than a thin secondary bar below — this
+   is the actual "preview the duration" request, made legible instead of
+   a 2px sliver. Its own background is a left-to-right grey-to-label-color
+   gradient (set inline in main.js, per-marker color), not a flat fill. */
+.marker-chip-region {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    opacity: 0.62;
+    /* Only the right end (where the duration actually ends) gets rounded — the
+       left edge blends into the bar's own start-of-duration grey, so a rounded
+       left corner would have nothing to read against. */
+    border-top-right-radius: 2px;
+    border-bottom-right-radius: 2px;
+}
+/* Zero-width, full-height anchor column at the marker's time position —
+   flag and tag below are positioned off this (not off .marker-preview-
+   track directly) purely so their "left" only has to be set once, here. */
+.marker-chip {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+}
+/* An upside-down rounded pentagon (flat top, tapering to a point at the
+   bottom) — the actual shape drawn is an SVG <path> built in
+   _buildMarkerFlagSvg (main.js), since true rounded corners on a
+   pointed shape aren't achievable with clip-path alone.
+   .marker-chip-flag itself is a plain DIV (not the <svg> directly) —
+   top/bottom match .marker-layer-bar's own top(27%)/bottom(27%) PLUS a
+   couple px of inset on each side, so it sits inside the bar with a
+   little breathing room rather than touching its top/bottom edges. As a
+   non-replaced element it reliably stretches to fill that span via the
+   standard auto-height-from-top-and-bottom rule. An <svg> is a
+   *replaced* element, and replaced elements resolve auto height from an
+   intrinsic ratio instead of the top/bottom span when both are set —
+   putting the <svg> in unconstrained here (width/height:100% below,
+   which DOES resolve reliably against a plain block parent) is what
+   actually gets it flush to the bar's own inset edges; the svg alone
+   with top/bottom set was quietly falling back to its own intrinsic
+   size. */
+.marker-chip-flag {
+    position: absolute;
+    top: calc(27% + 2px);
+    bottom: calc(27% + 2px);
+    left: 0;
+    width: 9px;
+    margin-left: -4.5px;
+    z-index: 2;
+}
+.marker-chip-flag svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+/* Directly under the layer bar's own bottom edge (top:27% + height:46% =
+   73%, same two numbers as .marker-layer-bar above), not above the flag —
+   reads as a caption for the bar rather than crowding the pentagon glyph. */
+.marker-chip-tag {
+    position: absolute;
+    top: 73%;
+    left: 0;
+    margin-top: 3px;
+    font-size: 8px;
+    line-height: 1;
+    color: var(--text-dim);
+    white-space: nowrap;
+    max-width: 46px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Left-to-right "markers being placed" pop-in, played only on a real Copy/Clear
+   (see the shouldAnimate check in _renderMarkerPreview) — each piece gets a class
+   + animation-delay (MARKER_CHIP_STAGGER_MS * index, index already left-to-right
+   since markers are sorted by relTime) rather than one shared animation on a
+   parent, since scaling .marker-chip itself (a zero-width, full-track-height
+   anchor column) would drag its off-center children toward the column's own
+   vertical middle mid-scale instead of leaving them put. */
+@keyframes markerFlagPopIn {
+    0%   { opacity: 0; transform: scale(0.3); }
+    55%  { opacity: 1; transform: scale(1.2); }
+    80%  { transform: scale(0.92); }
+    100% { transform: scale(1); }
+}
+.marker-anim-pop {
+    animation: markerFlagPopIn 320ms ease-out both;
+}
+/* Grows from its own left edge (the marker's start time) toward the right (its
+   duration's end) — transform-origin:left makes the scaleX read as the duration
+   "filling in" left-to-right rather than expanding from its center. */
+@keyframes markerRegionGrowIn {
+    0%   { opacity: 0; transform: scaleX(0); }
+    100% { opacity: 1; transform: scaleX(1); }
+}
+.marker-anim-grow {
+    transform-origin: left center;
+    animation: markerRegionGrowIn 260ms ease-out both;
+}
+@keyframes markerTagFadeIn {
+    0%   { opacity: 0; transform: translateY(3px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+.marker-anim-fade {
+    animation: markerTagFadeIn 220ms ease-out both;
+}
+
+.marker-preview-empty {
+    display: none;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    color: #555555;
+    font-size: 10px;
+}
+.marker-preview-empty-icon { width: 13px; height: 13px; flex-shrink: 0; }
+.marker-preview.is-empty .marker-preview-empty { display: flex; }
+.marker-preview.is-empty .marker-preview-track { display: none; }
+
+/* Trash — a plain sibling of the two .ease-subpanel cards (not wrapped in
+   one itself, it needs no "Copy"/"Paste"-style text label), sitting to
+   the right of Paste. In Classic it's a small square icon button at
+   normal .icon-btn.small size; in Compact it stretches to the row's
+   full height (matching Copy/Paste's own height:100%) and keeps a 1:1
+   aspect ratio instead of a fixed 28px, since the row's height now
+   varies with the 50/50 split above. */
+#markerClearBtn {
+    flex: 0 0 auto;
+}
+.tool-box[data-block-id="markers"] #markerClearBtn,
+#sec-favorite .tool-body[data-block-id="markers"] #markerClearBtn {
+    width: auto;
+    height: 100%;
+    aspect-ratio: 1 / 1;
 }
 
 /* ── Anchor grid ──────────────────────────────────────────────────────────── */

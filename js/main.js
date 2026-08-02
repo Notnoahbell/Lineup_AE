@@ -303,7 +303,7 @@ function _syncCtrlRowLabels() {
 
 // ── Layout mode (Compact / Classic / Toolbar) ────────────────────────────────
 // Each tool's .tool-body node physically relocates between Compact's tool-box and Classic's section-body; Toolbar hosts fresh single-action clones instead and is never routed by CLASSIC_BLOCK_IDS.
-var CLASSIC_BLOCK_IDS = ['anchor', 'organize', 'ease', 'alignlayers', 'distribute', 'sizing', 'autocrop', 'sort', 'vectortools'];
+var CLASSIC_BLOCK_IDS = ['anchor', 'organize', 'ease', 'markers', 'alignlayers', 'distribute', 'sizing', 'autocrop', 'sort', 'vectortools'];
 
 function setLayoutMode(mode) {
     if (mode !== 'classic' && mode !== 'toolbar') mode = 'compact';
@@ -822,6 +822,12 @@ function doAlign(idx) {
 // Whether Left/Center/Right should retime keyframes — keyframes selected AND the override toggle checked. Passed into lineup_align() explicitly rather than re-derived in host.jsx.
 var _keyframesPresent = false; // raw: does the Timeline have any keyframes selected right now
 var _keyAlignMode     = false; // effective: keyframesPresent AND the toggle is checked — drives the icon swap
+// Sticky across selection changes — set the moment the user manually unchecks the toggle, and
+// only cleared by manually checking it again (see toggleKeyAlignOverride). Without this,
+// _pollKeyAlignMode force-checked the toggle back on every time keyframes were freshly selected,
+// so anyone who just wants to nudge layer position visually while keyframes happen to be
+// selected had to keep re-unchecking it every single time instead of once.
+var _keyAlignUserDisabled = false;
 function _keyAlignEffective() {
     var chk = document.getElementById('keyAlignCheck');
     return _keyframesPresent && (!chk || chk.checked);
@@ -846,7 +852,12 @@ function _applyKeyAlignMode() {
 
 // Wired to #keyAlignCheck's onchange — a manual click needs the same
 // re-evaluation _pollKeyAlignMode's own state change triggers below.
+// Only fires on a genuine user click (setting .checked from JS elsewhere does not raise
+// 'change'), so this is exactly the "explicit" signal _keyAlignUserDisabled needs: unchecking it
+// here is what sets the override; checking it again is the only thing that clears it.
 function toggleKeyAlignOverride() {
+    var chk = document.getElementById('keyAlignCheck');
+    _keyAlignUserDisabled = !!(chk && !chk.checked);
     _applyKeyAlignMode();
 }
 
@@ -864,11 +875,21 @@ function _pollKeyAlignMode() {
 
         var toggle = document.getElementById('keyAlignToggle');
         if (toggle) toggle.classList.toggle('key-align-toggle-visible', present);
-        if (present) {
-            // Resets to checked every time it (re)appears — never remembers a previous manual uncheck.
+        if (present && !_keyAlignUserDisabled) {
+            // Defaults to checked every time it (re)appears — UNLESS the user explicitly
+            // unchecked it before, in which case _keyAlignUserDisabled leaves it alone here and
+            // it just stays unchecked (see toggleKeyAlignOverride).
             var chk = document.getElementById('keyAlignCheck');
             if (chk) chk.checked = true;
         }
+        // The toggle's own width (max-width) jumps instantly, not CSS-transitioned — only its
+        // opacity fades (see .key-align-toggle) — so the row's real final width is already in
+        // place by the very next line; no need to wait on anything before re-measuring. Re-syncs
+        // here because normally only a panel RESIZE re-runs _syncCtrlRowLabels, and this toggle
+        // appearing/disappearing never resizes anything, so nothing else catches the row
+        // overflowing once the toggle's width is added (see the tight/tighter comment block in
+        // style.css for the label-dropping this re-engages).
+        _syncCtrlRowLabels();
         _applyKeyAlignMode();
     });
 }
@@ -2598,6 +2619,287 @@ function doEaseClear() {
         _pollEaseGraph();
         _easeSelIndicatorRender();
     });
+}
+
+// ── MARKER CONTROLS ──────────────────────────────────────────────────────────
+// Same selection-driven scope as Ease Copy: a selected layer (or nothing, meaning the active comp) is both the read and write target.
+
+// No separate count readout to update — the preview strip is the only feedback now, and
+// _renderMarkerPreview (called via _refreshMarkerPreview below) drives Paste/Trash's disabled
+// state directly off the clipboard it just fetched, so there's nothing else to sync here.
+function doMarkerCopy() {
+    run('lineup_markerCopy()', function() { _refreshMarkerPreview(); });
+}
+
+// Default paste replaces the target's markers; Alt+click appends alongside whatever's already there instead.
+function doMarkerPaste(event) {
+    var append = !!(event && event.altKey);
+    run('lineup_markerPaste(' + (append ? 1 : 0) + ')', function(result) { showToast(result, 'info'); });
+}
+
+function doMarkerClear() {
+    run('lineup_markerClear()', function() { _refreshMarkerPreview(); });
+}
+
+// Approximates After Effects' default marker/label swatches (index 0 = "None", 1-16 the
+// standard label colors) — label colors are user-customizable in AE's own preferences, which
+// scripting has no direct read access to, so this is a best-effort visual match, not a live read.
+var MARKER_LABEL_COLORS = [
+    '#7a7a7a', '#e0524a', '#d1c24a', '#6fd0c4', '#e08fd0', '#a89be0', '#e0a97a', '#8fd0b0',
+    '#6f9fe0', '#7fc46a', '#a06fd0', '#e0954a', '#a67c52', '#d060a0', '#5fc0d0', '#c2b280', '#4f7a4a'
+];
+
+function _formatMarkerTime(seconds) {
+    return (Math.round(seconds * 100) / 100) + 's';
+}
+
+// Small icons swapped into the Paste button (see _updateMarkerPasteScopeIcon) so the comp-vs-
+// layer target is obvious at a glance instead of needing a sentence of explanatory text — a
+// plain rounded-rect outline for "the composition itself", two overlapping ones for "layer(s)".
+var MARKER_SCOPE_ICON_COMP  = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="2.5" width="12" height="9" rx="1.6"/></svg>';
+var MARKER_SCOPE_ICON_LAYER = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1" y="4" width="9" height="8" rx="1.4"/><rect x="4" y="1.5" width="9" height="8" rx="1.4"/></svg>';
+
+// data.scope/data.layerCount come from lineup_markerGetClipboard, computed fresh off the CURRENT
+// Project/Timeline selection every call — not the clipboard's own recorded scope — so this tracks
+// whatever Paste would actually target right now, live as the user's selection changes.
+function _updateMarkerPasteScopeIcon(data) {
+    var iconEl = document.getElementById('markerPasteScopeIcon');
+    if (!iconEl) return;
+
+    if (!data || !data.scope) {
+        iconEl.innerHTML = '';
+        iconEl.title = '';
+        return;
+    }
+
+    if (data.scope === 'layer') {
+        var count = data.layerCount || 1;
+        iconEl.innerHTML = MARKER_SCOPE_ICON_LAYER +
+            (count > 1 ? ('<span class="marker-paste-scope-count">' + count + '</span>') : '');
+        iconEl.title = 'Will paste onto ' + count + (count === 1 ? ' selected layer' : ' selected layers');
+    } else {
+        iconEl.innerHTML = MARKER_SCOPE_ICON_COMP;
+        iconEl.title = 'Will paste onto the composition';
+    }
+}
+
+var _markerPreviewLastRaw = null;
+
+// Per-marker delay step for the left-to-right pop-in (see _renderMarkerPreview/
+// marker-anim-pop/marker-anim-grow/marker-anim-fade below) — big enough that the sweep actually
+// reads as sequential rather than "everything faded in at once" with just 2-4 markers (the
+// common case), while a dozen markers still finish staggering in well under a second.
+var MARKER_CHIP_STAGGER_MS = 90;
+// Fingerprint of the last-ANIMATED markers array — separate from _markerPreviewLastRaw (which
+// also changes on a plain scope/layerCount poll tick) so the pop-in only plays for a real
+// content change, not every 250ms refresh.
+var _markerChipsFingerprint = null;
+
+// Re-renders on an actual clipboard OR paste-target change (dedup via the raw JSON string —
+// lineup_markerGetClipboard's scope/layerCount are part of that same string, so a selection
+// change alone still counts as "changed" here). Called after every Copy/Clear, once at startup
+// to sync the strip with any clipboard left over from a prior panel session, and polled on the
+// same 250ms cadence as _pollEaseGraph so the Paste button's comp/layer indicator stays live as
+// the user's selection changes while the panel just sits open — gated on offsetParent the same
+// way that poll is, so it's a no-op whenever Marker Controls isn't actually visible.
+function _refreshMarkerPreview() {
+    var box = document.getElementById('markerPreview');
+    if (!box || !box.offsetParent) return;
+    cs.evalScript('lineup_markerGetClipboard()', function(result) {
+        if (!result || result === 'undefined') return;
+        if (result === _markerPreviewLastRaw) return;
+        _markerPreviewLastRaw = result;
+        var data = null;
+        try { data = JSON.parse(result); } catch (e) {}
+        _renderMarkerPreview(data);
+    });
+}
+
+// Flat top with rounded corners, tapering to a single point at the bottom — an upside-down
+// rounded pentagon, same silhouette as AE's own marker glyphs. clip-path can't round a pointed
+// shape's corners, so this is drawn as a real SVG path instead of a CSS-only span.
+var MARKER_FLAG_VIEWBOX = '0 0 9 11';
+var MARKER_FLAG_PATH = 'M1.5,0 H7.5 A1.5,1.5 0 0 1 9,1.5 V6.5 L4.5,11 L0,6.5 V1.5 A1.5,1.5 0 0 1 1.5,0 Z';
+
+// .marker-chip-flag (the positioned/sized element) is a plain DIV wrapping the
+// <svg>, not the <svg> itself — an <svg> is a *replaced* element, and replaced
+// elements resolve auto height from their intrinsic ratio rather than an
+// absolutely-positioned top+bottom span, so it was quietly NOT stretching to
+// the bar's bottom edge. The div (non-replaced) reliably fills that span; the
+// svg inside just takes width/height:100% of it.
+function _buildMarkerFlagSvg(color) {
+    var svgNS = 'http://www.w3.org/2000/svg';
+    var wrap = document.createElement('div');
+    wrap.className = 'marker-chip-flag';
+
+    var svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', MARKER_FLAG_VIEWBOX);
+    // Stretches the path to fill the div's box instead of letterboxing/
+    // centering at the pentagon's native 7:11 ratio.
+    svg.setAttribute('preserveAspectRatio', 'none');
+    var path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', MARKER_FLAG_PATH);
+    path.setAttribute('fill', color);
+    path.setAttribute('stroke', 'rgba(0,0,0,0.5)');
+    path.setAttribute('stroke-width', '0.75');
+    // Keeps the outline a consistent 0.75 (real, non-stretched) units on
+    // every edge despite the svg's own non-uniform x/y scale from the
+    // preserveAspectRatio="none" stretch above — without this, the stroke
+    // would render visibly thicker on the pentagon's horizontal edges than
+    // its vertical ones whenever the bar's height differs from 11px.
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(path);
+    wrap.appendChild(svg);
+    return wrap;
+}
+
+// Picks a "nice" tick interval (seconds) so a ruler across the given span shows roughly 5-8
+// ticks regardless of how long the copied layer/comp actually is — the same round-number-step
+// idea any timeline ruler/graph axis uses, just a fixed candidate list instead of a log-scale calc.
+var MARKER_RULER_STEPS = [0.1, 0.2, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1200];
+function _pickMarkerRulerStep(span) {
+    var raw = span / 6;
+    for (var i = 0; i < MARKER_RULER_STEPS.length; i++) {
+        if (MARKER_RULER_STEPS[i] >= raw) return MARKER_RULER_STEPS[i];
+    }
+    return MARKER_RULER_STEPS[MARKER_RULER_STEPS.length - 1];
+}
+
+// A small time ruler along the very top of the strip — ticks/labels at 0, step, 2*step, ... up
+// to span, in the same 0%-100% coordinate space as .marker-layer-bar and the chips below it, so
+// a marker's on-screen position can be read against actual comp/layer time, not just eyeballed
+// relative to the other markers.
+function _buildMarkerTimelineRuler(span) {
+    var ruler = document.createElement('div');
+    ruler.className = 'marker-preview-ruler';
+
+    var step  = _pickMarkerRulerStep(span);
+    var count = Math.floor(span / step + 1e-6);
+
+    for (var i = 0; i <= count; i++) {
+        var t   = i * step;
+        var pct = Math.min((t / span) * 100, 100);
+
+        var tick = document.createElement('div');
+        tick.className = 'marker-ruler-tick';
+        tick.style.left = pct + '%';
+        ruler.appendChild(tick);
+
+        var label = document.createElement('span');
+        label.className = 'marker-ruler-label';
+        label.style.left = pct + '%';
+        // First tick hugs the left edge, last hugs the right — centered would run the labels at
+        // either end off the edge of the (overflow:hidden) preview box.
+        label.style.transform = (i === 0) ? 'translateX(0)' : (pct >= 99) ? 'translateX(-100%)' : 'translateX(-50%)';
+        label.textContent = _formatMarkerTime(t);
+        ruler.appendChild(label);
+    }
+
+    return ruler;
+}
+
+// Draws the source layer/comp itself as a rectangle (.marker-layer-bar, sized to data.span —
+// the real layer/comp duration, not just the first-to-last-marker stretch), then lays one
+// .marker-chip per copied marker over it: a pentagon flag at its relative start time, a solid
+// colored region across the bar for its duration (if any), and a text tag with its comment —
+// the "tags, colors, and durations" readout of what got copied, against the layer it came from.
+// Also the sole source of truth for Paste/Trash's disabled state, so it stays in sync with the
+// clipboard whether that changed via Copy, Clear, or (on panel load) a prior session entirely.
+function _renderMarkerPreview(data) {
+    var box   = document.getElementById('markerPreview');
+    var track = document.getElementById('markerPreviewTrack');
+    if (!box || !track) return;
+
+    var markers = (data && Array.isArray(data.markers)) ? data.markers.slice() : [];
+
+    var pasteBtn = document.getElementById('markerPasteBtn');
+    var clearBtn = document.getElementById('markerClearBtn');
+    if (pasteBtn) pasteBtn.disabled = markers.length === 0;
+    if (clearBtn) clearBtn.disabled = markers.length === 0;
+    _updateMarkerPasteScopeIcon(markers.length === 0 ? null : data);
+
+    track.innerHTML = '';
+
+    if (markers.length === 0) {
+        box.classList.add('is-empty');
+        return;
+    }
+    box.classList.remove('is-empty');
+    markers.sort(function(a, b) { return a.relTime - b.relTime; });
+
+    // The "markers placed left to right" pop-in only plays when the actual copied markers
+    // changed (a real Copy/Clear) — not on every 250ms poll tick, most of which fire because
+    // scope/layerCount changed (the user picked a different layer) with the same clipboard.
+    var chipsFingerprint = JSON.stringify(markers);
+    var shouldAnimate = chipsFingerprint !== _markerChipsFingerprint;
+    _markerChipsFingerprint = chipsFingerprint;
+
+    // Falls back to the markers' own extent (padded) only for stale/odd data with no span —
+    // the normal case always has data.span from lineup_markerGetClipboard.
+    var span = (data && data.span > 0) ? data.span : 0;
+    if (span <= 0) {
+        var tMax = 0;
+        for (var i = 0; i < markers.length; i++) tMax = Math.max(tMax, markers[i].relTime + (markers[i].duration || 0));
+        span = Math.max(tMax, 0.001) * 1.08;
+    }
+
+    track.appendChild(_buildMarkerTimelineRuler(span));
+
+    var bar = document.createElement('div');
+    bar.className = 'marker-layer-bar';
+    track.appendChild(bar);
+
+    for (var i = 0; i < markers.length; i++) {
+        var m = markers[i];
+        var color   = MARKER_LABEL_COLORS[m.label] || MARKER_LABEL_COLORS[0];
+        var leftPct = Math.min(Math.max((m.relTime / span) * 100, 0), 100);
+        // Markers are already sorted left-to-right (by relTime) above, so the loop index alone
+        // gives a clean left-to-right stagger — no separate position-based delay math needed.
+        var animDelay = (i * MARKER_CHIP_STAGGER_MS) + 'ms';
+
+        if (m.duration > 0) {
+            var region = document.createElement('div');
+            region.className = 'marker-chip-region';
+            region.style.left = leftPct + '%';
+            region.style.width = Math.max((Math.min(m.duration, span - m.relTime) / span) * 100, 0.8) + '%';
+            // The bar's own dark grey (#222222, matching .marker-layer-bar's background) at the
+            // marker's start (left), fading into its real label color by the duration's end
+            // (right) — reads as the color "arriving" at the end of the duration rather than a
+            // flat block, with the region blending into the bar itself at its own start.
+            region.style.background = 'linear-gradient(90deg, #222222 0%, ' + color + ' 100%)';
+            if (shouldAnimate) {
+                region.classList.add('marker-anim-grow');
+                region.style.animationDelay = animDelay;
+            }
+            bar.appendChild(region);
+        }
+
+        var chip = document.createElement('div');
+        chip.className = 'marker-chip';
+        chip.style.left = leftPct + '%';
+        chip.title = (m.comment || '(no comment)') + ' — ' + _formatMarkerTime(m.relTime) +
+            (m.duration > 0 ? (' · ' + _formatMarkerTime(m.duration) + ' duration') : '');
+
+        var flagEl = _buildMarkerFlagSvg(color);
+        if (shouldAnimate) {
+            flagEl.classList.add('marker-anim-pop');
+            flagEl.style.animationDelay = animDelay;
+        }
+        chip.appendChild(flagEl);
+
+        if (m.comment) {
+            var tag = document.createElement('span');
+            tag.className = 'marker-chip-tag';
+            tag.textContent = m.comment;
+            if (shouldAnimate) {
+                tag.classList.add('marker-anim-fade');
+                tag.style.animationDelay = animDelay;
+            }
+            chip.appendChild(tag);
+        }
+
+        track.appendChild(chip);
+    }
 }
 
 // Backs the quick-swap interpolation button; applies to the live Timeline selection, independent of the ease clipboard. Re-polls immediately for the corner indicator.
@@ -6372,6 +6674,7 @@ var BL_CATALOG = [
     { id: 'quickactions2', label: 'Quick Actions (2nd Bar)' },
     { id: 'spellcheck',    label: 'Spell Check' },
     { id: 'ease',          label: 'Ease Copy' },
+    { id: 'markers',       label: 'Marker Controls' },
     { id: 'vectortools',   label: 'Shape Tools' }
 ];
 var BL_CATALOG_IDS = BL_CATALOG.map(function(c) { return c.id; });
@@ -8424,6 +8727,7 @@ function _bcsInit() {
     _bcsBindEnable('bcsDurCheck',   ['bcsDurInput', 'bcsDurUnit']);
     _bcsBindEnable('bcsStartCheck', ['bcsStartInput', 'bcsStartUnit']);
     _bcsBindRowEnable('bcsDimsCheck', document.getElementById('bcsDimsControls'));
+    _bcsBindRowEnable('bcsDimsCheck', document.getElementById('bcsScaleRow'));
     _bcsBindRowEnable('bcsFrCheck',   document.getElementById('bcsSnapRow'));
 
     // Delegated dirty-tracking for every native control; scrub fields are custom (no native events while dragging), so they call _bcsMarkDirty() directly instead.
@@ -8536,9 +8840,10 @@ function closeBatchCompSettings() {
 }
 
 function applyBatchCompSettings() {
-    var applyDims = chkVal('bcsDimsCheck');
-    var width     = _bcsWidthScrub.get();
-    var height    = _bcsHeightScrub.get();
+    var applyDims   = chkVal('bcsDimsCheck');
+    var width       = _bcsWidthScrub.get();
+    var height      = _bcsHeightScrub.get();
+    var scaleContent = chkVal('bcsScaleCheck');
 
     var applyPAR = chkVal('bcsParCheck');
     var par      = BCS_PAR_PRESETS[selVal('bcsParSelect')];
@@ -8585,7 +8890,7 @@ function applyBatchCompSettings() {
     }
 
     var script = 'lineup_batchApplyCompSettings(' +
-        applyDims + ',' + width + ',' + height + ',' +
+        applyDims + ',' + width + ',' + height + ',' + scaleContent + ',' +
         applyPAR + ',' + par + ',' +
         applyFR + ',' + frameRate + ',' + snapKeys + ',' +
         applyRes + ',' + resFactor + ',' +
@@ -9613,6 +9918,7 @@ document.addEventListener('DOMContentLoaded', function() {
     _easeInterpInit();
     _initEaseInterpSquare();
     _easeSelIndicatorRender();
+    _refreshMarkerPreview();
     _splitTextInit();
     _smartInit();
     _initAnchorTiers();
@@ -9656,6 +9962,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setInterval(_pollShapeColorHud, 1000);
     setInterval(_pollFavSmartStack, 300);
     setInterval(_pollEaseGraph, 250);
+    setInterval(_refreshMarkerPreview, 250);
     // The activity poll's interval is started by restoreScoringSetting() instead of unconditionally here — see _activityApplyScoringEnabled.
 
     // Distribute pickers' star buttons persist independently of any UI chrome — just load the saved state so their stars render correctly.

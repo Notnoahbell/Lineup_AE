@@ -299,6 +299,57 @@
       </div>
     </div>
 
+    <div id="sec-markers-original" class="sec-hidden">
+      <div class="tool-body" data-block-id="markers">
+        <!-- Compact-only title bar; hidden in Classic since #cls-markers already shows the same header. -->
+        <div class="ctrl-row markers-title-row" style="padding-left:2px">
+          <svg class="sec-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="color:#3ec7d6">
+            <line x1="5" y1="3" x2="5" y2="17"/>
+            <path d="M5,3 L15,3 L12,7 L15,11 L5,11" fill="currentColor" stroke="none"/>
+          </svg>
+          <span class="lbl">Marker Controls</span>
+        </div>
+        <!-- Live readout of the copied clipboard (see _renderMarkerPreview/lineup_markerGetClipboard); populated with one .marker-chip per marker, positioned/sized proportionally along the strip. Compact-only, like Ease Copy's own preview graph. -->
+        <div class="marker-preview is-empty" id="markerPreview">
+          <div class="marker-preview-track" id="markerPreviewTrack"></div>
+          <div class="marker-preview-empty" id="markerPreviewEmpty">
+            <svg class="marker-preview-empty-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="3" x2="5" y2="17"/>
+              <path d="M5,3 L15,3 L12,7 L15,11 L5,11"/>
+            </svg>
+            <span>No markers copied</span>
+          </div>
+        </div>
+        <!-- No separate count "screen" — the preview above already shows what's copied. Trash sits to the right of Paste rather than overlaid on the preview. -->
+        <div class="ease-panels-row">
+          <div class="ease-subpanel">
+            <span class="ease-subpanel-lbl">Copy</span>
+            <div class="ease-subpanel-body">
+              <button class="ease-action-btn" onclick="doMarkerCopy()">Copy</button>
+            </div>
+          </div>
+          <div class="ease-subpanel">
+            <span class="ease-subpanel-lbl">Paste</span>
+            <div class="ease-subpanel-body">
+              <button class="ease-action-btn marker-paste-btn" id="markerPasteBtn" onclick="doMarkerPaste(event)" disabled title="Click: replace the target's markers. Alt+Click: append to its existing markers.">
+                <span id="markerPasteScopeIcon" class="marker-paste-scope-icon"></span>
+                Paste
+              </button>
+            </div>
+          </div>
+          <button class="icon-btn small filled btn-trash" id="markerClearBtn" onclick="doMarkerClear()" disabled title="Clear marker clipboard">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+              <polyline points="3,5 4.5,12 9.5,12 11,5"/>
+              <line x1="2" y1="4" x2="12" y2="4"/>
+              <line x1="5.5" y1="4" x2="5.5" y2="2.5"/>
+              <line x1="8.5" y1="4" x2="8.5" y2="2.5"/>
+              <line x1="5.5" y1="2.5" x2="8.5" y2="2.5"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="tool-col" id="homeGrid">
 
       <!-- Never shown in Compact (Quick Actions replaces it); relocated into Classic's Organize section when active, same as every other block. -->
@@ -414,8 +465,8 @@
               <option value="0">Selection</option>
               <option value="1" selected>Composition</option>
             </select>
-            <!-- Only visible while keyframes are selected (see _pollKeyAlignMode/.key-align-toggle-visible); defaults checked, and unchecking forces normal position alignment (see doAlign/_applyKeyAlignMode). -->
-            <label class="keyframe-toggle key-align-toggle" id="keyAlignToggle" title="Align Keyframes — checked (the default whenever keyframes are selected), Align Left/Center/Right retime the selected keyframes instead of moving layer position. Uncheck to align position normally even with keyframes selected.">
+            <!-- Only visible while keyframes are selected (see _pollKeyAlignMode/.key-align-toggle-visible); defaults checked, and unchecking forces normal position alignment (see doAlign/_applyKeyAlignMode). An explicit uncheck sticks across future keyframe selections too (_keyAlignUserDisabled) until manually re-checked. -->
+            <label class="keyframe-toggle key-align-toggle" id="keyAlignToggle" title="Align Keyframes — checked (the default whenever keyframes are selected), Align Left/Center/Right retime the selected keyframes instead of moving layer position. Uncheck to align position normally even with keyframes selected — stays unchecked for future keyframe selections too, until you check it again.">
               <input type="checkbox" id="keyAlignCheck" checked onchange="toggleKeyAlignOverride()">
               <span class="keyframe-toggle-hourglass">
                 <svg viewBox="0 0 14 14">
@@ -1001,6 +1052,14 @@
         </svg>
       </div>
 
+      <!-- Same tool as #sec-markers-original/Classic's Marker Controls section; this box only ever holds the collapse icon, its real .tool-body lives wherever _applyLayoutMode/_favApplyLayout last put it. -->
+      <div class="tool-box bl-unpinned" id="sec-markers" data-block-id="markers" data-span="3" data-rowspan="2">
+        <svg class="qa-collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="color:#3ec7d6">
+          <line x1="5" y1="3" x2="5" y2="17"/>
+          <path d="M5,3 L15,3 L12,7 L15,11 L5,11" fill="currentColor" stroke="none"/>
+        </svg>
+      </div>
+
     </div><!-- /.tool-col -->
 
     <!-- Hidden unless Settings > Layout is Classic; each section body starts empty and gets the same .tool-body[data-block-id] DOM nodes relocated in by _applyLayoutMode(), so both layouts share identical state with zero duplication. -->
@@ -1046,6 +1105,18 @@
           <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
         </div>
         <div class="section-body" data-body-for="ease"></div>
+      </div>
+
+      <div class="section" id="cls-markers" data-block-id="markers">
+        <div class="section-hdr" onclick="toggleClassicSection('markers')">
+          <svg class="sec-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="color:#3ec7d6">
+            <line x1="5" y1="3" x2="5" y2="17"/>
+            <path d="M5,3 L15,3 L12,7 L15,11 L5,11" fill="currentColor" stroke="none"/>
+          </svg>
+          <span class="sec-title">Marker Controls</span>
+          <svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,3 5,7 8,3"/></svg>
+        </div>
+        <div class="section-body" data-body-for="markers"></div>
       </div>
 
       <div class="section" id="cls-alignlayers" data-block-id="alignlayers">
@@ -2039,6 +2110,10 @@
             <svg class="help-tile-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="color:#e05555"><path d="M12,5 L12,3.5 Q12,2 10.5,2 L3.5,2 Q2,2 2,3.5 L2,10.5 Q2,12 3.5,12 L5,12"/><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
             <span class="help-tile-title">Ease Copy</span>
           </button>
+          <button type="button" class="help-tile" onclick="_openHelpGroup('markers')">
+            <svg class="help-tile-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="color:#3ec7d6"><line x1="5" y1="3" x2="5" y2="17"/><path d="M5,3 L15,3 L12,7 L15,11 L5,11" fill="currentColor" stroke="none"/></svg>
+            <span class="help-tile-title">Marker Controls</span>
+          </button>
           <button type="button" class="help-tile" onclick="_openHelpGroup('autocrop')">
             <svg class="help-tile-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color:#5ec47a"><polyline points="3.69,1.48 3.69,10.32 12.53,10.32"/><polyline points="1.48,3.69 10.32,3.69 10.32,12.53"/></svg>
             <span class="help-tile-title">Auto Crop</span>
@@ -2218,6 +2293,29 @@
               </div>
               <span class="help-desc">Empties the ease clipboard.</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MARKER CONTROLS -->
+      <div class="help-page help-page-detail" data-help-group="markers">
+        <button type="button" class="help-back-btn" onclick="_closeHelpGroup()">
+          <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5,1.5 2.5,5 6.5,8.5"/></svg>
+          All tools
+        </button>
+        <div class="help-detail-hdr">
+          <svg class="help-sec-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="color:#3ec7d6"><line x1="5" y1="3" x2="5" y2="17"/><path d="M5,3 L15,3 L12,7 L15,11 L5,11" fill="currentColor" stroke="none"/></svg>
+          <span class="help-detail-title-text">Marker Controls</span>
+        </div>
+        <div class="help-items">
+          <div class="help-item">
+            <span class="help-key">Copy</span>
+            <span class="help-desc">Copies markers from the selected layer's Marker property — or the active comp's own markers if nothing is selected.</span>
+          </div>
+          <div class="help-sec-group">
+            <div class="help-item sec"><span class="help-key">Paste</span><span class="help-desc">Replaces the target's markers with the copied set. The target is the selected layer(s), or the active comp if nothing is selected. Marker times are re-anchored to the target's own start, so they line up even across layers/comps of different lengths.</span></div>
+            <div class="help-item sec"><span class="help-key">Alt+Paste</span><span class="help-desc">Appends the copied markers alongside the target's existing markers instead of replacing them.</span></div>
+            <div class="help-item sec"><span class="help-key">Clear</span><span class="help-desc">Empties the marker clipboard.</span></div>
           </div>
         </div>
       </div>
@@ -2515,6 +2613,11 @@
                 </svg>
               </button>
             </div>
+          </div>
+          <div class="ctrl-row bcs-row-dim" id="bcsScaleRow" style="padding-left:18px">
+            <label class="check-label" title="Proportionally scales every layer's position, scale, and rotation to match the new composition size — same technique as After Effects' built-in Scale Composition script.">
+              <input type="checkbox" id="bcsScaleCheck"> Scale Content
+            </label>
           </div>
 
           <div class="ctrl-row">
