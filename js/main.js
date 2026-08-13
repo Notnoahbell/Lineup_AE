@@ -448,6 +448,17 @@ function closeSettingsPopup() {
 
 // ── What's New popup ──────────────────────────────────────────────────────────
 // Shown once per upgrade for versions listed below; a plain patch bump with no entry stays silent.
+
+// Shared between WHATS_NEW['1.10.1'] below (the release BBQC actually shipped
+// in) and _maybeOfferBBQC's own version-independent nag, so both render the
+// same blurb from one place.
+var BBQC_WHATSNEW_ITEM = {
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M3.9 4a8.1 8.1 0 0 0 16.2 0Z"/><path d="M8 12L6 21M16 12L18 21M7 16h10"/></svg>',
+    accent: '#ff8a2a', // BBQC's own accent (BBQC_CEP/css/style.css --accent), not Lineup's blue
+    title: 'BBQC Companion Panel',
+    body: "BBQC is a companion panel that ships alongside Lineup and stays updated automatically. If you don't already have it, install it below — or skip and grab it anytime from Settings."
+};
+
 var WHATS_NEW = {
     '1.8.6': [
         {
@@ -509,14 +520,7 @@ var WHATS_NEW = {
             body: "Select, Link, and Merge are now one button — click to rerun whichever you used last, right-click to switch between them."
         }
     ],
-    '1.10.1': [
-        {
-            icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M3.9 4a8.1 8.1 0 0 0 16.2 0Z"/><path d="M8 12L6 21M16 12L18 21M7 16h10"/></svg>',
-            accent: '#ff8a2a', // BBQC's own accent (BBQC_CEP/css/style.css --accent), not Lineup's blue
-            title: 'BBQC Companion Panel',
-            body: "BBQC is a companion panel that ships alongside Lineup and stays updated automatically. If you don't already have it, install it below — or skip and grab it anytime from Settings."
-        }
-    ]
+    '1.10.1': [BBQC_WHATSNEW_ITEM]
 };
 
 // lastSeen is only absent on a genuinely fresh install — record it silently and
@@ -553,21 +557,21 @@ function _renderWhatsNew(version) {
             '</div>';
         list.appendChild(row);
     });
-    _renderWhatsNewFooter(version);
+    _renderWhatsNewFooter();
 }
 
-// Most versions just get a plain dismiss button. A version whose highlighted
-// feature still has a pending install (right now: 1.10.1's BBQC, while it's
-// not yet installed — see bbqcRowBtn's visibility, toggled by _refreshBBQCUI
-// in update.js) gets Download/Skip instead. This is the ONLY place BBQC's
-// install is ever asked about — there is deliberately no separate confirm
-// modal anywhere else.
-function _renderWhatsNewFooter(version) {
+// Most versions just get a plain dismiss button. Whenever BBQC is staged but
+// not yet installed (bbqcRowBtn visible — toggled by _refreshBBQCUI in
+// update.js) this gets Download/Skip instead, regardless of which version's
+// entry is showing — not hardcoded to 1.10.1, since a user can land here for
+// any version once _maybeOfferBBQC (below) reuses this same footer.
+function _renderWhatsNewFooter() {
     var ftr = document.getElementById('whatsNewFooterActions');
     if (!ftr) return;
     var bbqcBtn = document.getElementById('bbqcRowBtn');
-    var bbqcPending = version === '1.10.1' && bbqcBtn && !bbqcBtn.classList.contains('settings-hidden');
+    var bbqcPending = bbqcBtn && !bbqcBtn.classList.contains('settings-hidden');
     if (bbqcPending) {
+        try { localStorage.setItem(LS_BBQC_OFFERED, '1'); } catch (e) {}
         ftr.innerHTML =
             '<button class="btn" onclick="closeWhatsNewPopup()">Skip</button>' +
             '<button class="update-banner-btn whatsnew-download-btn" onclick="installBBQC(); closeWhatsNewPopup();">Download</button>';
@@ -575,6 +579,55 @@ function _renderWhatsNewFooter(version) {
         ftr.innerHTML = '<button class="btn whatsnew-dismiss-btn" onclick="closeWhatsNewPopup()">Got it</button>';
     }
 }
+
+// Version-independent one-shot BBQC nag, decoupled from WHATS_NEW/version
+// matching entirely. Needed because the old design only ever asked inside
+// the What's New popup for the exact version BBQC shipped in (1.10.1) — any
+// user who updated past that version (or straight from a pre-BBQC version,
+// skipping it) was never asked again. Triggered from update.js once
+// _ensureBBQCStaged confirms staging is in place, so it also covers users
+// who needed that self-heal to get BBQC_CEP staged at all. Gated by its own
+// flag (not lineup-last-seen-version) so it fires exactly once ever,
+// independent of how many versions get skipped in between — Settings is the
+// permanent fallback afterward either way.
+var LS_BBQC_OFFERED = 'lineup-bbqc-offered';
+
+function _maybeOfferBBQC() {
+    var bbqcSection = document.getElementById('bbqcSection');
+    var bbqcBtn = document.getElementById('bbqcRowBtn');
+    if (!bbqcSection || bbqcSection.classList.contains('settings-hidden')) return; // never staged
+    if (!bbqcBtn || bbqcBtn.classList.contains('settings-hidden')) return; // already installed
+
+    var offered = null;
+    try { offered = localStorage.getItem(LS_BBQC_OFFERED); } catch (e) {}
+    if (offered === '1') return;
+
+    var wnPopup = document.getElementById('whatsNewPopup');
+    if (wnPopup && wnPopup.classList.contains('whatsnew-popup-visible')) return; // don't clobber an already-open What's New popup this launch — try again next launch, flag not yet set
+
+    try { localStorage.setItem(LS_BBQC_OFFERED, '1'); } catch (e) {}
+
+    var titleEl = document.getElementById('whatsNewTitle');
+    if (titleEl) titleEl.textContent = 'Install BBQC?';
+    var list = document.getElementById('whatsNewList');
+    if (list) {
+        list.innerHTML = '';
+        var item = BBQC_WHATSNEW_ITEM;
+        var iconStyle = item.accent ? ' style="color:' + item.accent + ';background:' + item.accent + '24"' : '';
+        var row = document.createElement('div');
+        row.className = 'whatsnew-item';
+        row.innerHTML =
+            '<div class="whatsnew-item-icon"' + iconStyle + '>' + item.icon + '</div>' +
+            '<div class="whatsnew-item-text">' +
+                '<div class="whatsnew-item-title">' + item.title + '</div>' +
+                '<div class="whatsnew-item-body">' + item.body + '</div>' +
+            '</div>';
+        list.appendChild(row);
+    }
+    _renderWhatsNewFooter();
+    openWhatsNewPopup();
+}
+window._maybeOfferBBQC = _maybeOfferBBQC;
 
 function openWhatsNewPopup() {
     var panel = document.getElementById('whatsNewPopup');

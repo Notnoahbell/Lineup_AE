@@ -516,9 +516,10 @@
     // BBQC_CEP files land in the staging folder above. If BBQC is already
     // installed as its own extension, bring it up to date immediately — no
     // prompt, per the "otherwise just install the update data" behavior. If
-    // it isn't installed, there's nothing to do here — the What's New popup
-    // (main.js) is the only place that offers to install it, driven by
-    // _refreshBBQCUI's live check rather than anything staged here.
+    // it isn't installed, there's nothing to do here — main.js's
+    // _maybeOfferBBQC (triggered after _ensureBBQCStaged below) is what
+    // offers to install it, driven by _refreshBBQCUI's live check rather
+    // than anything staged here.
     function _syncBBQC() {
         if (!_nodeAvailable()) return;
         var paths = _bbqcPaths();
@@ -555,10 +556,55 @@
         }
     }
 
-    // Shared by both the What's New popup's Download button (main.js) and the
+    // Self-heals a gap in the self-update pipeline: when a user self-updates
+    // from a version older than when BBQC_FOLDER was added to
+    // INSTALL_FOLDERS (anything before ~1.10.0), the COPY happens inside
+    // _installUpdate as run by the OLD update.js still loaded in memory at
+    // that moment — its INSTALL_FOLDERS closure predates BBQC, so BBQC_CEP
+    // never gets copied out of the downloaded zip no matter what the new
+    // release actually contains. The result: staged never becomes true, so
+    // the Settings row stays hidden and nothing is ever offered, forever —
+    // exactly as if BBQC didn't exist for that user. Detected here simply by
+    // staged not existing; repaired by re-fetching the current release zip
+    // (now that the CURRENT, BBQC-aware code is what's running) and staging
+    // just the BBQC_CEP folder from it. Leaves it staged-but-not-installed,
+    // same as a normal update — still requires the user to opt in.
+    function _ensureBBQCStaged(cb) {
+        var paths = _bbqcPaths();
+        if (!paths || require('fs').existsSync(paths.staged)) { cb(); return; }
+
+        function stageFrom(zipUrl) {
+            if (!zipUrl) { cb(); return; }
+            var fs = require('fs'), os = require('os'), path = require('path');
+            var tmpRoot = path.join(os.tmpdir(), 'lineup-bbqc-repair-' + Date.now());
+            var zipPath = path.join(tmpRoot, 'bbqc.zip');
+            var extractDir = path.join(tmpRoot, 'extracted');
+            try { _mkdirp(tmpRoot); } catch (e) { cb(); return; }
+            _downloadToFile(zipUrl, zipPath, null, function (err) {
+                if (err) { try { _removeRecursive(tmpRoot); } catch (e2) {} cb(); return; }
+                _extractZip(zipPath, extractDir, function (err2) {
+                    if (err2) { try { _removeRecursive(tmpRoot); } catch (e3) {} cb(); return; }
+                    try {
+                        var rootEntries = fs.readdirSync(extractDir);
+                        var sourceRoot = (rootEntries.length === 1 && fs.statSync(path.join(extractDir, rootEntries[0])).isDirectory())
+                            ? path.join(extractDir, rootEntries[0])
+                            : extractDir;
+                        var bbqcSrc = path.join(sourceRoot, BBQC_FOLDER);
+                        if (fs.existsSync(bbqcSrc)) _copyRecursive(bbqcSrc, paths.staged);
+                    } catch (e4) {}
+                    try { _removeRecursive(tmpRoot); } catch (e5) {}
+                    cb();
+                });
+            });
+        }
+
+        var cached = _readCachedLatest();
+        if (cached && cached.zipUrl) { stageFrom(cached.zipUrl); return; }
+        _fetchLatestRelease(function (latest) { stageFrom(latest ? latest.zipUrl : null); });
+    }
+
+    // Shared by both main.js's BBQC offer prompt's Download button and the
     // Settings button — both just copy the already-staged files into place.
-    // There is deliberately no separate confirm dialog for this: What's New
-    // is the only place that asks.
     window.installBBQC = function () {
         if (!_nodeAvailable()) {
             showToast('Installing BBQC needs Node integration — restart After Effects and try again.');
@@ -674,6 +720,10 @@
     document.addEventListener('DOMContentLoaded', function () {
         checkForUpdates(false);
         _refreshBBQCUI();
+        _ensureBBQCStaged(function () {
+            _refreshBBQCUI();
+            if (typeof window._maybeOfferBBQC === 'function') window._maybeOfferBBQC();
+        });
     });
 
 })();

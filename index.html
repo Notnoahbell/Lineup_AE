@@ -2041,14 +2041,14 @@
     </div>
   </div>
   <div class="settings-popup-ftr">
-    <span class="lbl" id="settingsVersionLbl">Version 1.10.2</span>
+    <span class="lbl" id="settingsVersionLbl">Version 1.10.3</span>
     <button class="btn" onclick="checkForUpdates(true)">Check for Updates</button>
   </div>
  </div>
 </div>
 
 <!-- ── WHAT'S NEW POPUP ─────────────────────────────────────────────────────── -->
-<!-- Shown once per upgrade, only for versions flagged in WHATS_NEW (main.js); see _maybeShowWhatsNew, called from update.js's checkForUpdates. -->
+<!-- Shown once per upgrade, only for versions flagged in WHATS_NEW (main.js); see _maybeShowWhatsNew, called from update.js's checkForUpdates. Also reused, independent of any of that, by _maybeOfferBBQC's own one-shot BBQC nag (main.js), triggered from update.js's DOMContentLoaded handler once BBQC staging is confirmed. -->
 <div id="whatsNewPopup" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ closeWhatsNewPopup(); })">
  <div class="settings-modal-box whatsnew-modal-box" onclick="event.stopPropagation()">
   <div class="settings-popup-hdr">
@@ -2079,7 +2079,7 @@
     <div class="footer-brand">
       <img src="heist_icon_32.png" class="footer-logo" alt="">
       <span class="footer-name">Heist Lineup</span>
-      <span class="footer-version" id="footerVersion">v1.10.2</span>
+      <span class="footer-version" id="footerVersion">v1.10.3</span>
     </div>
     <div class="footer-actions">
     <!-- Classic hides the tab bar entirely (see body.layout-classic .tab-bar), so this toggles straight to/from Trophy instead (see _toggleClassicTrophyTab in main.js). -->
