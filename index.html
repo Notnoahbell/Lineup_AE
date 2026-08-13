@@ -80,6 +80,40 @@
   </div>
 </div>
 
+<!-- ── BBQC INSTALL PROMPT (shown once after an update stages a BBQC the user doesn't have yet) ── -->
+<div id="bbqcConfirmOverlay" class="settings-overlay update-confirm-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ dismissBBQCConfirm(); })">
+  <div class="settings-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#6cc0ff">
+        <path d="M8,10.5 V2.5"/>
+        <polyline points="5,7.5 8,10.5 11,7.5"/>
+        <path d="M2.5,10.5 V12.3 A1.2,1.2 0 0,0 3.7,13.5 H12.3 A1.2,1.2 0 0,0 13.5,12.3 V10.5"/>
+      </svg>
+      <span class="settings-title">Install BBQC?</span>
+      <button class="settings-close" onclick="dismissBBQCConfirm()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="settings-body">
+      <p class="update-confirm-text">BBQC is a companion panel that ships alongside Lineup. You don't have it installed yet — install it now?</p>
+      <div class="ctrl-row update-confirm-actions">
+        <button class="btn" onclick="dismissBBQCConfirm()">Not Now</button>
+        <button class="update-banner-btn" onclick="installBBQC()">
+          <svg class="update-banner-btn-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6,1.5 V7.8"/>
+            <polyline points="3.2,5 6,7.8 8.8,5"/>
+            <path d="M2,9.5 H10"/>
+          </svg>
+          Install
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── TAB BAR ──────────────────────────────────────────────────────────────── -->
 <div class="tab-bar" id="tabBarEl">
   <button class="tab-btn tab-btn-icon active" id="tabBtn-home" onclick="switchTab('home')" title="Home">
@@ -151,17 +185,20 @@
         </svg>
         <div class="tool-body" data-block-id="anchor">
           <div class="anchor-row" id="anchorRow">
-            <div class="anchor-grid">
-              <button class="anchor-btn" title="Top Left"      onclick="doAnchor(0, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7,15 L7,9.5 Q7,7 9.5,7 L15,7"/></svg></button>
-              <button class="anchor-btn" title="Top Center"    onclick="doAnchor(1, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="8" x2="16" y2="8"/></svg></button>
-              <button class="anchor-btn" title="Top Right"     onclick="doAnchor(2, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17,15 L17,9.5 Q17,7 14.5,7 L9,7"/></svg></button>
-              <button class="anchor-btn" title="Middle Left"   onclick="doAnchor(3, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="8" x2="8" y2="16"/></svg></button>
-              <button class="anchor-btn" title="Center" onclick="doAnchor(4, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="7" height="7" rx="1.8"/></svg></button>
-              <button class="anchor-btn" title="Middle Right"  onclick="doAnchor(5, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="16" y1="8" x2="16" y2="16"/></svg></button>
-              <button class="anchor-btn" title="Bottom Left"   onclick="doAnchor(6, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7,9 L7,14.5 Q7,17 9.5,17 L15,17"/></svg></button>
-              <button class="anchor-btn" title="Bottom Center" onclick="doAnchor(7, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="16" x2="16" y2="16"/></svg></button>
-              <button class="anchor-btn" title="Bottom Right"  onclick="doAnchor(8, this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17,9 L17,14.5 Q17,17 14.5,17 L9,17"/></svg></button>
+            <!-- Right-click any button to create a null at that anchor location (per the Based-on dropdown) instead of moving the layer's own anchor point — see doAnchorNull/lineup_createNullAtAnchor. -->
+            <div class="anchor-grid anchor-grid-3x3" data-grid-size="3">
+              <button class="anchor-btn" title="Top Left"      onclick="doAnchor(0, this, 3)" oncontextmenu="doAnchorNull(0, this, 3); return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7,15 L7,9.5 Q7,7 9.5,7 L15,7"/></svg></button>
+              <button class="anchor-btn" title="Top Center"    onclick="doAnchor(1, this, 3)" oncontextmenu="doAnchorNull(1, this, 3); return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="8" x2="16" y2="8"/></svg></button>
+              <button class="anchor-btn" title="Top Right"     onclick="doAnchor(2, this, 3)" oncontextmenu="doAnchorNull(2, this, 3); return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17,15 L17,9.5 Q17,7 14.5,7 L9,7"/></svg></button>
+              <button class="anchor-btn" title="Middle Left"   onclick="doAnchor(3, this, 3)" oncontextmenu="doAnchorNull(3, this, 3); return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="8" x2="8" y2="16"/></svg></button>
+              <button class="anchor-btn" title="Center" onclick="doAnchor(4, this, 3)" oncontextmenu="doAnchorNull(4, this, 3); return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="7" height="7" rx="1.8"/></svg></button>
+              <button class="anchor-btn" title="Middle Right"  onclick="doAnchor(5, this, 3)" oncontextmenu="doAnchorNull(5, this, 3); return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="16" y1="8" x2="16" y2="16"/></svg></button>
+              <button class="anchor-btn" title="Bottom Left"   onclick="doAnchor(6, this, 3)" oncontextmenu="doAnchorNull(6, this, 3); return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7,9 L7,14.5 Q7,17 9.5,17 L15,17"/></svg></button>
+              <button class="anchor-btn" title="Bottom Center" onclick="doAnchor(7, this, 3)" oncontextmenu="doAnchorNull(7, this, 3); return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="16" x2="16" y2="16"/></svg></button>
+              <button class="anchor-btn" title="Bottom Right"  onclick="doAnchor(8, this, 3)" oncontextmenu="doAnchorNull(8, this, 3); return false;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17,9 L17,14.5 Q17,17 14.5,17 L9,17"/></svg></button>
             </div>
+            <!-- Populated by _buildAnchor5x5Grid (main.js) — 25 buttons generated from the same icon language as the 3x3 above (corner/edge/center, plus a dot for interior points). Shown in place of the 3x3 while Alt is held in Compact mode (see _syncAnchorAltGrid). -->
+            <div class="anchor-grid anchor-grid-5x5" id="anchorGrid5x5" data-grid-size="5"></div>
           </div>
           <!-- Compact-only (hidden in Classic, see #homeClassic .anchor-mode-line): wide tier shows an icon+word+flyout button, narrow-stack collapses it to an icon-only shuffle button, dispatched by _anchorModeBtnClick based on live _narrowStack (see ANCHOR_MODE_OPTIONS in main.js). -->
           <div class="ctrl-row anchor-mode-line">
@@ -396,6 +433,13 @@
                 <rect x="2" y="2" width="16" height="16" rx="3.5"/>
                 <line x1="5.3" y1="8" x2="14.7" y2="8" stroke-linecap="round"/>
                 <line x1="5.3" y1="12" x2="11" y2="12" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <!-- Bulk Replace -->
+            <button class="organize-btn" style="--icon-hover:#6ac0d8" title="Bulk Replace" onclick="openBulkReplace()">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4,7 H14 M14,7 L11,4 M14,7 L11,10"/>
+                <path d="M16,13 H6 M6,13 L9,16 M6,13 L9,10"/>
               </svg>
             </button>
             <div class="btn-divider"></div>
@@ -1327,6 +1371,21 @@
         </svg>
         <span>Settings</span>
       </button>
+      <button class="tools-grid-btn" data-group="organize" data-tool-id="batchRename" title="Batch Rename" onclick="openBatchRename()">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+          <rect x="2" y="2" width="16" height="16" rx="3.5"/>
+          <line x1="5.3" y1="8" x2="14.7" y2="8" stroke-linecap="round"/>
+          <line x1="5.3" y1="12" x2="11" y2="12" stroke-linecap="round"/>
+        </svg>
+        <span>Rename</span>
+      </button>
+      <button class="tools-grid-btn" data-group="organize" data-tool-id="bulkReplace" title="Bulk Replace" onclick="openBulkReplace()">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4,7 H14 M14,7 L11,4 M14,7 L11,10"/>
+          <path d="M16,13 H6 M6,13 L9,16 M6,13 L9,10"/>
+        </svg>
+        <span>Bulk Replace</span>
+      </button>
       <button class="tools-grid-btn" data-group="organize" data-tool-id="compExport" title="Comp Export" onclick="openCompExport()">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
           <path d="M5,2.5 H12 L15.5,6 V17 a1,1 0 0,1 -1,1 H5 a1,1 0 0,1 -1,-1 V3.5 a1,1 0 0,1 1,-1 Z"/>
@@ -1989,8 +2048,19 @@
       <span class="toggle-track"></span>
     </label>
   </div>
+  <!-- Hidden by default (see .settings-hidden); _refreshBBQCUI in update.js shows this only once BBQC's files have been staged by an update and aren't installed as their own extension yet. -->
+  <div class="settings-tab-row settings-hidden" id="installBBQCRow">
+    <span class="lbl settings-row-lbl">
+      <svg class="settings-row-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3.9 4a8.1 8.1 0 0 0 16.2 0Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+        <path d="M8 12L6 21M16 12L18 21M7 16h10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+      BBQC
+    </span>
+    <button class="btn" onclick="installBBQC()">Install</button>
+  </div>
   <div class="settings-popup-ftr">
-    <span class="lbl" id="settingsVersionLbl">Version 1.9.6</span>
+    <span class="lbl" id="settingsVersionLbl">Version 1.10.0</span>
     <button class="btn" onclick="checkForUpdates(true)">Check for Updates</button>
   </div>
  </div>
@@ -2025,7 +2095,7 @@
     <div class="footer-brand">
       <img src="heist_icon_32.png" class="footer-logo" alt="">
       <span class="footer-name">Heist Lineup</span>
-      <span class="footer-version" id="footerVersion">v1.9.6</span>
+      <span class="footer-version" id="footerVersion">v1.10.0</span>
     </div>
     <div class="footer-actions">
     <!-- Classic hides the tab bar entirely (see body.layout-classic .tab-bar), so this toggles straight to/from Trophy instead (see _toggleClassicTrophyTab in main.js). -->
@@ -2251,7 +2321,11 @@
         <div class="help-items">
           <div class="help-item">
             <span class="help-key">3×3 grid</span>
-            <span class="help-desc">Moves the anchor to any corner, edge midpoint, or center of the layer — without shifting the layer visually.</span>
+            <span class="help-desc">Moves the anchor to any corner, edge midpoint, or center of the layer — without shifting the layer visually. Right-click a button instead of left-clicking to create a null at that location instead (see Null below), leaving the anchor itself untouched — still driven by the same Based-on setting.</span>
+          </div>
+          <div class="help-item">
+            <span class="help-key">Hold Alt</span>
+            <span class="help-desc">Switches the grid to 5×5 for finer, in-between anchor placements (Compact layout only).</span>
           </div>
           <div class="help-sec-group">
             <div class="help-item sec"><span class="help-key">Based on</span><span class="help-desc"><em>Object</em> positions within each layer's own source bounds; <em>Selection</em> within the combined bounding box of all selected layers; <em>Composition</em> relative to the full comp.</span></div>
@@ -2263,7 +2337,7 @@
               </div>
               <span class="help-desc">Empties the anchor clipboard.</span>
             </div>
-            <div class="help-item sec"><span class="help-key">Null</span><span class="help-desc">Creates a null layer at the layer's current anchor position.</span></div>
+            <div class="help-item sec"><span class="help-key">Null</span><span class="help-desc">Creates a null at the anchor point (Object mode: one null per selected layer, each at that layer's own anchor; Selection/Composition: one shared null). Right-clicking any grid button does the same thing at that button's own location instead of the current anchor point, without moving the anchor itself. Either way, an already-parented layer keeps its existing parent — the new null is spliced in as a rung between the layer and whatever it was parented to, not a replacement.</span></div>
           </div>
         </div>
       </div>
@@ -2476,7 +2550,25 @@
                 </svg>
                 <span class="help-key">Batch Comp Settings</span>
               </div>
-              <span class="help-desc">Two tabs. <em>Settings</em> applies dimensions, pixel aspect, frame rate, resolution, duration, and/or start time to every selected comp at once (scrubbable Width/Height with an aspect lock; Snap Keyframes rounds everything to the new frame rate). <em>Rename</em> applies a numbered pattern — [#]/[##]/[###] insert a zero-padded counter from Start at, drag rows to reorder/renumber, ✕ to skip one; the semi-secret [A] token inserts a letter (A…Z, AA…) by position alone, always starting at A.</span>
+              <span class="help-desc">Applies dimensions, pixel aspect, frame rate, resolution, duration, and/or start time to every selected comp at once (scrubbable Width/Height with an aspect lock; Snap Keyframes rounds everything to the new frame rate); ✕ to skip one from the batch.</span>
+            </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+                  <rect x="2" y="2" width="16" height="16" rx="3.5"/>
+                  <line x1="5.3" y1="8" x2="14.7" y2="8" stroke-linecap="round"/>
+                  <line x1="5.3" y1="12" x2="11" y2="12" stroke-linecap="round"/>
+                </svg>
+                <span class="help-key">Batch Rename</span>
+              </div>
+              <span class="help-desc">Find and replace on names, run against the active comp's selected layers if any are selected, else the comps selected in the Project panel (see the ? next to each field for details). The Find field is a regex — plain text matches that substring anywhere in the name, while ^ or $ match the empty start/end of the name so whatever's in Replace gets prepended or appended instead. Replace can also enumerate: [#]/[##]/[###]… insert a zero-padded counter from Start at, and the semi-secret [A] token inserts a letter (A…Z, AA…) by position alone. When renaming compositions (not layers), Replace also accepts [frameRate], [aspectRatio], [dimension] (widthxheight), [width], [height], and [duration] (largest unit, one decimal, never frames) to pull in that comp's own info. ✕ to skip one from the batch.</span>
+            </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4,7 H14 M14,7 L11,4 M14,7 L11,10"/><path d="M16,13 H6 M6,13 L9,16 M6,13 L9,10"/></svg>
+                <span class="help-key">Bulk Replace</span>
+              </div>
+              <span class="help-desc">Select footage items in the Project panel, click Bulk Replace, then choose the same number of replacement files — paired in order (Project panel selection order to file-pick order). Every pairing is shown for review before anything changes: drag a row's file card onto another row to swap which file goes where, and ✕ drops a row from the batch entirely; non-footage items in the selection (comps, folders, solids) are skipped automatically. Uses After Effects' own Replace Footage under the hood, so every layer, effect, and keyframe referencing the old file keeps working against the new one.</span>
             </div>
             <div class="help-item sec">
               <div class="help-key-row">
@@ -2582,14 +2674,14 @@
         </svg>
       </button>
     </div>
-    <div class="bcs-ui-tabs">
-      <button class="bcs-ui-tab active" data-tab="settings" onclick="switchBcsTab('settings')">Settings</button>
-      <button class="bcs-ui-tab"        data-tab="rename"   onclick="switchBcsTab('rename')">Rename</button>
-    </div>
-    <!-- Settings panel -->
-    <div class="settings-body bcs-body bcs-tab-panel active" id="bcsTabSettings">
-      <div class="bcs-complist" id="bcsCompList">
-        <div class="bcs-complist-empty" id="bcsCompEmpty">No comp selected</div>
+    <div class="settings-body bcs-body" id="bcsTabSettings">
+      <div class="bcs-complist-wrap">
+        <div class="bcs-complist" id="bcsCompList">
+          <div class="bcs-complist-empty" id="bcsCompEmpty">No comp selected</div>
+        </div>
+        <div class="bcs-resize-handle" data-resize-target="bcsCompList" title="Drag to resize">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><g transform="rotate(-45 7 7)"><line x1="3" y1="5" x2="11" y2="5"/><line x1="3" y1="9" x2="11" y2="9"/></g></svg>
+        </div>
       </div>
 
       <label class="check-label">
@@ -2686,24 +2778,98 @@
         <button class="btn" id="bcsApplyBtn" onclick="applyBatchCompSettings()">Apply</button>
       </div>
     </div>
-    <!-- Rename panel -->
-    <div class="settings-body bcs-body bcs-tab-panel" id="bcsTabRename">
-      <div class="bcs-complist" id="brnCompList">
-        <div class="bcs-complist-empty">No comp selected</div>
+  </div>
+</div>
+
+<!-- Batch Rename Modal — targets the active comp's selected layers when any
+     are selected, else the comps selected in the Project panel. -->
+<div id="brnOverlay" class="settings-overlay bcs-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ closeBatchRename(); })">
+  <div class="settings-modal bcs-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" style="color:#e8c140">
+        <rect x="1.4" y="1.4" width="11.2" height="11.2" rx="2.4"/>
+        <line x1="3.7" y1="5.6" x2="10.3" y2="5.6" stroke-linecap="round"/>
+        <line x1="3.7" y1="8.4" x2="7.7" y2="8.4" stroke-linecap="round"/>
+      </svg>
+      <span class="settings-title">Batch Rename</span>
+      <button class="settings-close" onclick="closeBatchRename()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="settings-body bcs-body" id="brnBody">
+      <div class="bcs-complist-wrap">
+        <div class="bcs-complist" id="brnCompList">
+          <div class="bcs-complist-empty">No comp or layer selected</div>
+        </div>
+        <div class="bcs-resize-handle" data-resize-target="brnCompList" title="Drag to resize">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><g transform="rotate(-45 7 7)"><line x1="3" y1="5" x2="11" y2="5"/><line x1="3" y1="9" x2="11" y2="9"/></g></svg>
+        </div>
       </div>
 
       <div class="ctrl-row">
-        <span class="lbl">Pattern</span>
-        <input type="text" id="brnPattern" placeholder="e.g. Comp_[###]" style="flex:1; min-width:0;">
+        <span class="lbl">Find</span>
+        <input type="text" id="brnFind" placeholder="e.g. Light" style="flex:1; min-width:0;">
+        <button type="button" class="brn-help-btn" title="Plain text matches that text anywhere in the name. ^ matches the very start of the name and $ matches the very end — combine with Replace to prepend or append text instead of replacing anything.">?</button>
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">Replace</span>
+        <input type="text" id="brnReplace" placeholder="" style="flex:1; min-width:0;">
+        <button type="button" class="brn-help-btn bcs-hidden" id="brnCompInfoHelpBtn" title="Compositions only. [frameRate], [aspectRatio] (width:height, rounded to 1 decimal), [dimension] (widthxheight), [width], [height], and [duration] (largest unit — h:mm:ss.s / m:ss.s / s.s, one decimal, never frames) insert that composition's own info.">?</button>
       </div>
       <div class="ctrl-row">
         <span class="lbl">Start at</span>
         <input type="text" id="brnStart" value="1" style="width:40px">
+        <button type="button" class="brn-help-btn" title="Only matters if Replace contains [#], [##], [###]… or [A]. Each run of #'s becomes a zero-padded counter (width = number of #'s) starting from this number, counting up once per renamed item; [A] inserts a letter (A…Z, AA…) by position instead, always starting at A.">?</button>
       </div>
 
       <div class="ctrl-row bcs-actions">
-        <button class="btn" onclick="closeBatchCompSettings()">Cancel</button>
+        <button class="btn" onclick="closeBatchRename()">Cancel</button>
         <button class="btn" id="brnApplyBtn" onclick="applyBatchRename()">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Replace Modal — pairs the Project-panel selection (fixed, panel order) with a file-dialog
+     pick (also fixed, dialog return order) positionally; see openBulkReplace/_brlRenderList/
+     applyBulkReplace in main.js. Neither order is guaranteed to match click order, so nothing is
+     applied until the user reviews the paired list here and can remove any row that looks wrong. -->
+<div id="brlOverlay" class="settings-overlay bcs-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ closeBulkReplace(); })">
+  <div class="settings-modal bcs-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color:#6ac0d8">
+        <path d="M4,7 H14 M14,7 L11,4 M14,7 L11,10"/>
+        <path d="M16,13 H6 M6,13 L9,16 M6,13 L9,10"/>
+      </svg>
+      <span class="settings-title">Bulk Replace</span>
+      <button class="settings-close" onclick="closeBulkReplace()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="settings-body bcs-body" id="brlBody">
+      <div class="bcs-complist-wrap">
+        <div class="bcs-complist" id="brlList">
+          <div class="bcs-complist-empty">No footage selected</div>
+        </div>
+        <div class="bcs-resize-handle" data-resize-target="brlList" title="Drag to resize">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><g transform="rotate(-45 7 7)"><line x1="3" y1="5" x2="11" y2="5"/><line x1="3" y1="9" x2="11" y2="9"/></g></svg>
+        </div>
+      </div>
+      <div class="brl-note" id="brlNote"></div>
+
+      <div class="ctrl-row">
+        <button class="btn" id="brlPickBtn" onclick="_brlPickFiles()" style="flex:1;">Choose Files…</button>
+      </div>
+
+      <div class="ctrl-row bcs-actions">
+        <button class="btn" onclick="closeBulkReplace()">Cancel</button>
+        <button class="btn" id="brlApplyBtn" onclick="applyBulkReplace()" disabled>Apply</button>
       </div>
     </div>
   </div>
@@ -2843,8 +3009,13 @@
       </button>
     </div>
     <div class="settings-body bcs-body">
-      <div class="bcs-complist" id="cexCompList">
-        <div class="bcs-complist-empty">No comp selected</div>
+      <div class="bcs-complist-wrap">
+        <div class="bcs-complist" id="cexCompList">
+          <div class="bcs-complist-empty">No comp selected</div>
+        </div>
+        <div class="bcs-resize-handle" data-resize-target="cexCompList" title="Drag to resize">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><g transform="rotate(-45 7 7)"><line x1="3" y1="5" x2="11" y2="5"/><line x1="3" y1="9" x2="11" y2="9"/></g></svg>
+        </div>
       </div>
 
       <div class="ctrl-row">
@@ -2976,7 +3147,7 @@
 <script src="js/main.js?v=1"></script>
 <script src="js/spellcheck.js?v=13"></script>
 <script src="js/find.js?v=1"></script>
-<script src="js/update.js?v=9"></script>
+<script src="js/update.js?v=10"></script>
 <script src="js/leaderboard.js?v=1"></script>
 </body>
 </html>

@@ -1,0 +1,297 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BBQC</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <section class="view-row">
+      <svg class="app-logo" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3.9 4a8.1 8.1 0 0 0 16.2 0Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"></path>
+        <path d="M8 12L6 21M16 12L18 21M7 16h10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path>
+      </svg>
+      <div id="viewDropdown" class="custom-select">
+        <button id="viewDropdownBtn" class="custom-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+          <span class="view-mode-icon">
+            <svg id="viewModeIconProject" class="option-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h3.5l1.5 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg>
+            <svg id="viewModeIconComp" class="option-icon hidden" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M10 9l5 3-5 3z"></path></svg>
+          </span>
+          <span id="viewDropdownLabel" class="custom-select-label">Project</span>
+          <svg class="custom-select-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+        </button>
+        <div id="viewDropdownMenu" class="custom-select-menu hidden" role="listbox">
+          <div class="select-highlight-bar" aria-hidden="true"></div>
+          <button class="custom-select-option selected" type="button" data-view="project" role="option">
+            <svg class="option-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h3.5l1.5 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg>
+            <span>Project</span>
+          </button>
+          <button id="compViewOption" class="custom-select-option" type="button" data-view="comp" role="option" title="Active Comp">
+            <svg class="option-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M10 9l5 3-5 3z"></path></svg>
+            <span id="compViewOptionLabel">Active Comp</span>
+          </button>
+        </div>
+      </div>
+      <div class="frameio-actions">
+        <button id="frameioSyncIndicator" class="frameio-sync-indicator hidden" type="button">
+          <span class="sync-dot"></span>
+          <span id="frameioSyncLabel" class="sync-label">Synced</span>
+          <span id="frameioSyncTime" class="sync-time"></span>
+        </button>
+        <button id="summaryBtn" class="icon-action-btn" type="button" title="QC Summary" aria-label="QC Summary">
+          <svg viewBox="0 0 24 24"><path d="M12 15V3"></path><path d="M7 8l5-5 5 5"></path><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"></path></svg>
+        </button>
+        <button id="frameioToggleBtn" class="icon-action-btn frameio-toggle" type="button" aria-haspopup="dialog" title="Frame.io" aria-label="Frame.io">
+          <svg viewBox="0 0 243.2 277.8" aria-hidden="true">
+            <path d="M1.1,255.3c14.2-36,21.8-75.4,21.8-116.4S15.4,58.5,1.1,22.5c-0.7-1.8-1.1-3.9-1.1-6C0,8,6.6,0,16,0 c6,0,11.7,3.7,14,9.4c15.6,40.1,24.3,83.7,24.3,129.5c0,45.6-8.7,89.4-24.3,129.5c-2.3,5.7-8,9.4-14,9.4c-9.4,0-16-8-16-16.5 C0,259.2,0.5,257.2,1.1,255.3z"></path>
+            <path d="M75.9,226.2c6.4-28,9.9-57.3,9.9-87.3s-3.4-59.4-9.9-87.5c-0.2-1.1-0.5-2.5-0.5-3.7c0-8.7,6.9-16.3,16-16.3 c6.9,0,13.1,4.8,14.7,11.7c7.3,30.7,11.2,62.8,11.2,95.8s-3.9,65.1-11.2,95.8c-1.6,6.9-7.8,11.7-14.7,11.7c-9.2,0-16-7.8-16-16.5 C75.4,228.7,75.6,227.4,75.9,226.2z"></path>
+            <path d="M148.7,138.9c0-14.4-0.7-28.4-2.1-42.4c-0.9-9.6,6.4-17.9,15.8-17.9c8,0,14.7,6,15.4,13.8 c1.6,15.4,2.3,30.7,2.3,46.5c0,15.6-0.7,31.2-2.3,46.5c-0.7,7.8-7.3,13.8-15.4,13.8c-9.4,0-16.7-8.5-15.8-17.9 C148,167.3,148.7,153.1,148.7,138.9z"></path>
+            <path d="M243.2,138.9c0,3.9-1.6,8-4.6,11l-9.2,9.2c-2.1,2.1-4.8,3-7.3,3c-5.3,0-10.5-4.1-10.5-10.5v-25.2 c0-6.4,5.3-10.5,10.5-10.5c2.5,0,5.3,0.9,7.3,3l9.2,8.9C241.6,130.6,243.2,134.8,243.2,138.9z"></path>
+          </svg>
+        </button>
+      </div>
+    </section>
+
+    <div class="notes-panel-wrap">
+      <section id="listToolbar" class="list-toolbar">
+        <label class="check-wrap" title="Mark all complete">
+          <input id="markAllCheckbox" class="note-check" type="checkbox" />
+          <span class="fake-check"></span>
+        </label>
+        <button id="selectAllBtn" class="select-all-btn" type="button" title="Select all for batch actions">Select All</button>
+        <button id="batchDeleteBtn" class="batch-delete-btn" type="button" title="Delete selected" aria-label="Delete selected comments" disabled>
+          <svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M9 7V4h6v3"></path><path d="M7 7l1 13h8l1-13"></path><path d="M10 10v7M14 10v7"></path></svg>
+        </button>
+        <div class="toolbar-spacer"></div>
+        <div id="sortDropdown" class="custom-select sort-select">
+          <button id="sortDropdownBtn" class="custom-select-trigger" type="button" aria-haspopup="menu" aria-expanded="false">
+            <span class="custom-select-label">Sort by</span>
+            <svg class="custom-select-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+          </button>
+          <div id="sortDropdownMenu" class="custom-select-menu hidden" role="menu">
+            <div class="select-highlight-bar" aria-hidden="true"></div>
+            <button class="custom-select-option selected" type="button" data-sort="none" role="menuitemradio" aria-checked="true">None</button>
+            <div class="sort-menu-divider"></div>
+            <button class="custom-select-option" type="button" data-sort="added" role="menuitemradio" aria-checked="false">Time Added</button>
+            <button class="custom-select-option" type="button" data-sort="timecode" role="menuitemradio" aria-checked="false">Timecode</button>
+            <div class="sort-menu-divider"></div>
+            <label class="sort-menu-checkbox">
+              <span class="check-wrap">
+                <input id="hideCompletedCheckbox" class="note-check" type="checkbox" />
+                <span class="fake-check"></span>
+              </span>
+              <span>Hide Completed</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section id="notesPanel" class="notes-panel">
+        <div id="emptyState" class="empty-state">
+          <svg class="empty-state-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            <line x1="7" y1="9" x2="16" y2="9"></line>
+            <line x1="7" y1="13" x2="13" y2="13"></line>
+          </svg>
+          <span id="emptyStateText">No comments yet.</span>
+        </div>
+        <div id="notesList" class="notes-list"></div>
+        <button id="addNoteBtn" class="add-note-fab" type="button" title="Add Comment" aria-label="Add Comment">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+        </button>
+      </section>
+    </div>
+
+    <footer class="panel-footer">
+      <div class="status-row"><span id="statusText"></span><span id="selectionText" class="selection-text"></span></div>
+    </footer>
+  </main>
+
+  <!-- Add/Edit Modal -->
+  <div id="noteModal" class="modal-backdrop hidden">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h2 class="modal-header-title">
+          <svg class="note-modal-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            <line x1="7" y1="9" x2="16" y2="9"></line>
+            <line x1="7" y1="13" x2="13" y2="13"></line>
+          </svg>
+          <span id="noteModalTitle">Add Comment</span>
+        </h2>
+        <button class="icon-only close-modal" data-close="noteModal" aria-label="Close" title="Close">×</button>
+      </div>
+
+      <div id="noteTypeBlock" class="field-block">
+        <label>Comment Type</label>
+        <div class="segmented">
+          <button id="typeComp" class="segment active" data-type="comp">
+            <svg class="option-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M10 9l5 3-5 3z"></path></svg>
+            Active Comp
+          </button>
+          <button id="typeProject" class="segment" data-type="project">
+            <svg class="option-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h3.5l1.5 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg>
+            Project
+          </button>
+        </div>
+
+        <div id="compTypeOptions">
+          <label class="inline-checkbox">
+            <span class="check-wrap">
+              <input id="atPlayheadCheckbox" class="note-check" type="checkbox" checked />
+              <span class="fake-check"></span>
+            </span>
+            <span>At Playhead</span>
+            <span id="playheadPreview" class="inline-checkbox-hint"></span>
+          </label>
+
+          <div id="manualTimecodeBlock" class="field-block manual-timecode-block hidden">
+            <label for="manualTimecodeInput">Timecode (HH:MM:SS:FF)</label>
+            <input id="manualTimecodeInput" type="text" autocomplete="off" placeholder="00:00:00:00" />
+            <div id="manualTimecodeHelper" class="helper-text"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="field-block">
+        <label for="noteTitleInput">Title</label>
+        <input id="noteTitleInput" type="text" autocomplete="off" placeholder="Task title" />
+      </div>
+
+      <div class="field-block">
+        <label for="noteBodyInput">Comment</label>
+        <textarea id="noteBodyInput" rows="5" placeholder="Optional details"></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn ghost" data-close="noteModal">Cancel</button>
+        <button id="saveNoteBtn" class="modal-btn primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Frame.io Settings Modal -->
+  <div id="frameioSettingsModal" class="modal-backdrop hidden">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h2 class="modal-header-title">
+          <svg class="frameio-modal-icon" viewBox="0 0 243.2 277.8" aria-hidden="true">
+            <path d="M1.1,255.3c14.2-36,21.8-75.4,21.8-116.4S15.4,58.5,1.1,22.5c-0.7-1.8-1.1-3.9-1.1-6C0,8,6.6,0,16,0 c6,0,11.7,3.7,14,9.4c15.6,40.1,24.3,83.7,24.3,129.5c0,45.6-8.7,89.4-24.3,129.5c-2.3,5.7-8,9.4-14,9.4c-9.4,0-16-8-16-16.5 C0,259.2,0.5,257.2,1.1,255.3z"></path>
+            <path d="M75.9,226.2c6.4-28,9.9-57.3,9.9-87.3s-3.4-59.4-9.9-87.5c-0.2-1.1-0.5-2.5-0.5-3.7c0-8.7,6.9-16.3,16-16.3 c6.9,0,13.1,4.8,14.7,11.7c7.3,30.7,11.2,62.8,11.2,95.8s-3.9,65.1-11.2,95.8c-1.6,6.9-7.8,11.7-14.7,11.7c-9.2,0-16-7.8-16-16.5 C75.4,228.7,75.6,227.4,75.9,226.2z"></path>
+            <path d="M148.7,138.9c0-14.4-0.7-28.4-2.1-42.4c-0.9-9.6,6.4-17.9,15.8-17.9c8,0,14.7,6,15.4,13.8 c1.6,15.4,2.3,30.7,2.3,46.5c0,15.6-0.7,31.2-2.3,46.5c-0.7,7.8-7.3,13.8-15.4,13.8c-9.4,0-16.7-8.5-15.8-17.9 C148,167.3,148.7,153.1,148.7,138.9z"></path>
+            <path d="M243.2,138.9c0,3.9-1.6,8-4.6,11l-9.2,9.2c-2.1,2.1-4.8,3-7.3,3c-5.3,0-10.5-4.1-10.5-10.5v-25.2 c0-6.4,5.3-10.5,10.5-10.5c2.5,0,5.3,0.9,7.3,3l9.2,8.9C241.6,130.6,243.2,134.8,243.2,138.9z"></path>
+          </svg>
+          Frame.io
+        </h2>
+        <button class="icon-only close-modal" data-close="frameioSettingsModal" aria-label="Close" title="Close">×</button>
+      </div>
+
+      <div class="modal-tabs" role="tablist">
+        <button class="modal-tab selected" type="button" data-tab="sync" role="tab" aria-selected="true">Composition Syncs</button>
+        <button class="modal-tab" type="button" data-tab="account" role="tab" aria-selected="false">Account</button>
+      </div>
+
+      <div id="frameioTabSync" class="modal-tab-panel">
+        <div class="frameio-sync-screen">
+          <div id="frameioSyncList" class="frameio-sync-list"></div>
+          <div id="frameioSyncEmpty" class="helper-text hidden">No compositions are synced yet. Add one below.</div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="frameioAddSyncBtn" class="frameio-add-btn" type="button" title="Add Composition Sync" aria-label="Add Composition Sync">+</button>
+        </div>
+
+        <div id="frameioAddSyncForm" class="field-block hidden">
+          <label for="frameioNewSyncCompSelect">Composition</label>
+          <select id="frameioNewSyncCompSelect"></select>
+
+          <label for="frameioNewSyncLinkInput" style="margin-top:12px;">Frame.io Link</label>
+          <input id="frameioNewSyncLinkInput" type="text" autocomplete="off" placeholder="Paste Frame.io link…" />
+
+          <div class="modal-actions">
+            <button id="frameioAddSyncCancelBtn" class="modal-btn ghost" type="button">Cancel</button>
+            <button id="frameioAddSyncSaveBtn" class="modal-btn primary" type="button">Add</button>
+          </div>
+        </div>
+        <div id="frameioAddSyncStatus" class="copy-status"></div>
+      </div>
+
+      <div id="frameioTabAccount" class="modal-tab-panel hidden">
+        <div class="modal-actions">
+          <span id="frameioTestStatus" class="copy-status"></span>
+          <button id="frameioConnectBtn" class="modal-btn primary" type="button">Sign in to Frame.io</button>
+          <button id="frameioDisconnectBtn" class="modal-btn ghost hidden" type="button">Sign Out</button>
+        </div>
+
+        <div id="frameioManualOpenBlock" class="field-block hidden">
+          <div class="helper-text">If your browser didn't open automatically, use this link:</div>
+          <div class="input-with-button">
+            <input id="frameioSigninLinkInput" type="text" readonly />
+            <button id="frameioCopyLinkBtn" class="modal-btn ghost" type="button">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Modal -->
+  <div id="summaryModal" class="modal-backdrop hidden">
+    <div class="modal summary-modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h2>QC Summary</h2>
+        <button class="icon-only close-modal" data-close="summaryModal" aria-label="Close" title="Close">×</button>
+      </div>
+      <textarea id="summaryText" class="summary-text" rows="14"></textarea>
+      <div class="modal-actions">
+        <span id="copyStatus" class="copy-status"></span>
+        <button class="modal-btn ghost" data-close="summaryModal">Close</button>
+        <button id="copySummaryBtn" class="modal-btn primary">Copy</button>
+      </div>
+    </div>
+  </div>
+
+
+
+  <div id="deleteModal" class="modal-backdrop hidden" aria-hidden="true">
+    <div class="modal delete-modal" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+      <div class="modal-header">
+        <h2 id="deleteModalTitle">Delete Comment</h2>
+        <button id="deleteModalClose" class="icon-only close-modal" type="button" title="Close" aria-label="Close">×</button>
+      </div>
+
+      <div class="delete-modal-body">
+        <p>Are you sure you want to delete</p>
+        <p id="deleteModalNoteTitle" class="delete-note-title">“Comment”?</p>
+      </div>
+
+      <div class="modal-actions">
+        <button id="deleteModalCancel" class="modal-btn ghost" type="button">Cancel</button>
+        <button id="deleteModalConfirm" class="modal-btn primary delete-confirm-button" type="button">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="frameioFpsModal" class="modal-backdrop hidden" aria-hidden="true">
+    <div class="modal delete-modal" role="dialog" aria-modal="true" aria-labelledby="frameioFpsModalTitle">
+      <div class="modal-header">
+        <h2 id="frameioFpsModalTitle">Frame Rate Mismatch</h2>
+        <button class="icon-only close-modal" data-close="frameioFpsModal" type="button" title="Close" aria-label="Close">×</button>
+      </div>
+
+      <div class="delete-modal-body">
+        <p id="frameioFpsModalText"></p>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-btn ghost" data-close="frameioFpsModal" type="button">Not Now</button>
+        <button id="frameioFpsModalConfirm" class="modal-btn primary" type="button">Change Frame Rate</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/frameio.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

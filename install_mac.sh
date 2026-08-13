@@ -64,7 +64,37 @@ if [ "$any_ok" -eq 0 ]; then
     echo "blocking 'defaults write'. Try running with sudo, or ask IT to allow it."
 fi
 
+# ── BBQC companion extension ────────────────────────────────────────────────
+# BBQC ships bundled inside this repo (see BBQC_CEP/) but installs as its own
+# separate CEP extension, matching what js/update.js's in-app self-updater
+# does on every Lineup update: silently refresh it if it's already there,
+# otherwise ask before installing it fresh.
+BBQC_SRC="$SCRIPT_DIR/BBQC_CEP"
+BBQC_DEST="$EXT_DIR/BBQC_CEP"
+if [ -d "$BBQC_SRC" ]; then
+    if [ -d "$BBQC_DEST" ]; then
+        echo "Updating BBQC companion extension..."
+        rsync -a "$BBQC_SRC/CSXS/"  "$BBQC_DEST/CSXS/"
+        rsync -a "$BBQC_SRC/certs/" "$BBQC_DEST/certs/"
+        rsync -a "$BBQC_SRC/css/"   "$BBQC_DEST/css/"
+        rsync -a "$BBQC_SRC/js/"    "$BBQC_DEST/js/"
+        rsync -a "$BBQC_SRC/jsx/"   "$BBQC_DEST/jsx/"
+        cp -f "$BBQC_SRC/index.html" "$BBQC_DEST/index.html"
+    else
+        read -r -p "BBQC companion extension not found — install it too? [Y/n] " bbqc_answer || bbqc_answer=""
+        if [[ ! "$bbqc_answer" =~ ^[Nn]$ ]]; then
+            echo "Installing BBQC..."
+            mkdir -p "$BBQC_DEST"
+            rsync -a "$BBQC_SRC/" "$BBQC_DEST/"
+            echo "BBQC installed."
+        fi
+    fi
+fi
+
 echo ""
 echo "Done! Restart After Effects, then open:"
 echo "  Window > Extensions > Lineup"
+if [ -d "$BBQC_DEST" ]; then
+    echo "  Window > Extensions > BBQC"
+fi
 echo ""

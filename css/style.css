@@ -106,23 +106,35 @@ body.high-contrast .tools-search-input { background: #000000; border: 1px solid 
    winning and leaving the bar dark gray instead of high-contrast black. */
 body.high-contrast #toolsSearchInput { background: #000000; border-color: #909090; }
 body.high-contrast .settings-tab-row { background: #000000; border-color: #909090; }
-body.high-contrast .tools-grid-btn { color: #e0e0e0; border-color: #909090; }
+/* background explicit now — the base rule used to rely on var(--bg-btn) (which this override didn't
+   need to touch, since HC redefines that variable itself), but .tools-grid-btn's own background is a
+   hardcoded color now, so HC needs to say so directly to still get true black instead of that color. */
+body.high-contrast .tools-grid-btn { background: #000000; color: #e0e0e0; border-color: #909090; }
 body.high-contrast .tools-filter-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
 body.high-contrast .tools-filter-btn.active { background: #163e73; border-color: #4d9bff; color: #ffffff; }
-body.high-contrast .tools-grid-btn:hover { background: #3a3a3a; color: #ffffff; }
+/* border-color explicit here too — without it, the regular-theme hover rule's own blue (#2470e0)
+   would leak through instead of using HC's own accent blue (#4d9bff, same one .tools-filter-btn.active
+   above uses), since both rules share the same specificity and this one's declared earlier in the
+   file. The glow and icon color get the same swap just below. */
+body.high-contrast .tools-grid-btn:hover {
+    background: #3a3a3a;
+    color: #ffffff;
+    border-color: #4d9bff;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 22px rgba(0,0,0,0.65);
+}
+body.high-contrast .tools-grid-btn:hover svg { color: #4d9bff; }
+body.high-contrast .tools-grid-btn::before {
+    background: radial-gradient(circle 120px at var(--glow-x, -9999px) var(--glow-y, -9999px), rgba(77,155,255,0.28), transparent 70%);
+}
+body.high-contrast .tools-grid-btn.is-favorite { border-color: #7a6320; }
+body.high-contrast .tools-grid-btn.is-favorite:hover { border-color: #ffd75e; }
+body.high-contrast .tools-grid-btn.is-favorite:hover svg { color: #ffd75e; }
+body.high-contrast .tools-grid-btn.is-favorite::before {
+    background: radial-gradient(circle 120px at var(--glow-x, -9999px) var(--glow-y, -9999px), rgba(255,215,94,0.28), transparent 70%);
+}
 /* The drawer's own card backdrop had no high-contrast override at all —
-   stayed the normal dark-gray card regardless of the setting. Scrollbar
-   thumb bumped up too so it's still visible against a now-black track. */
+   stayed the normal dark-gray card regardless of the setting. */
 body.high-contrast .tools-grid { background: #000000; border-color: #909090; }
-/* background (the shorthand) resets EVERY sub-property it covers,
-   including background-clip — without re-declaring padding-box here too,
-   this quietly reverted it to the shorthand's own default (border-box),
-   which let the thumb's color paint straight through the 8px transparent
-   border meant to inset it, filling the whole 24px track instead of just
-   the intended 8px-wide pill. Same class of shorthand-reset bug as
-   border:none clobbering border-width elsewhere in this file. */
-body.high-contrast .tools-grid::-webkit-scrollbar-thumb { background: #909090; background-clip: padding-box; }
-body.high-contrast .tools-grid::-webkit-scrollbar-thumb:hover { background: #ffffff; background-clip: padding-box; }
 /* Home's own top widget section (Anchor/Quick Actions/Favorite's shared
    backdrop) had no override either — same dark-gray-card gap as the Tools
    drawer above. */
@@ -181,6 +193,7 @@ body.high-contrast .props-picker {
 body.high-contrast .shape-sel-ctx-icon-btn {
     color: #e0e0e0;
 }
+body.high-contrast .tools-fav-ctx-divider { background: #909090; }
 body.high-contrast .shape-sel-ctx-icon-btn:hover {
     background: #3a3a3a;
     color: #ffffff;
@@ -238,6 +251,9 @@ body.high-contrast .settings-modal { background: #000000; border-color: #909090;
 body.high-contrast .settings-hdr { border-bottom-color: #909090; }
 body.high-contrast .settings-hdr-icon { color: #e0e0e0; }
 body.high-contrast .settings-title { color: #ffffff; }
+body.high-contrast .bcs-complist { background: #000000; border-color: #909090; }
+body.high-contrast .bcs-resize-handle { color: #a0a0a0; }
+body.high-contrast .bcs-resize-handle:hover, body.high-contrast .bcs-resize-handle.dragging { color: #ffffff; background: #163e73; }
 
 /* Help — search bar, the tile grid, search results, and every detail
    page's back button/header/item text were all hardcoded hex with no
@@ -593,31 +609,64 @@ body.layout-toolbar #enableScoringRow {
     grid-area: body;
     position: relative; /* anchors the bottom-fade overlay below */
 }
-/* Fades the drawer's scrollable tiles into its own card background at the
-   bottom edge, hinting there's more to scroll to. Lives on .tools-body
-   (not .tools-grid itself) on purpose: .tools-grid is a CSS Grid
-   container, so a pseudo-element there would become an unwanted extra
-   grid item instead of a plain overlay — and being outside the actual
-   overflow:auto element is what keeps this fixed in place over the scroll
-   area instead of scrolling away with the tiles underneath it.
-   backdrop-filter blur + a mask-image (fading the blur itself, the same
-   way the gradient below fades its color) is the "blur it more" — a
-   frosted-glass intensifying toward the bottom, not just a flat gradient.
-   Darker end color (#0a0a0a) than .tools-grid's own #101010 background. */
-.tools-body::after {
+/* Fades the drawer's scrollable tiles into its own card background at the top and bottom edges,
+   hinting there's more to scroll to IN THAT DIRECTION specifically — bottom (::after) shows while
+   there's more below the current scroll position, top (::before) while there's more above it, each
+   independently. Live on .tools-body (not .tools-grid itself) on purpose: .tools-grid is a CSS Grid
+   container, so a pseudo-element there would become an unwanted extra grid item instead of a plain
+   overlay — and being outside the actual overflow:auto element is what keeps these fixed in place
+   over the scroll area instead of scrolling away with the tiles underneath them.
+   backdrop-filter blur + a mask-image (fading the blur itself, the same way the gradient fades its
+   color) is the "blur it more" — a frosted-glass intensifying toward the edge, not just a flat
+   gradient. Darker end color (#0a0a0a) than .tools-grid's own #101010 background.
+   Continuous now, not on/off: --fade-top-t/--fade-bottom-t (set every scroll tick by
+   _syncToolsBodyFade in main.js, since CSS alone can't read scrollTop/scrollHeight) are each a 0..1
+   ramp based on actual distance scrolled from that edge, driving both opacity AND a scaleY shrink
+   toward that edge — so a fade visibly retracts into the edge as you approach it, instead of holding
+   full strength right up until scroll hits exactly 0 and then vanishing all at once. A short/filtered
+   list with nothing to scroll to computes 0 for both the whole time, same end result as before. */
+.tools-body::after,
+.tools-body::before {
     content: '';
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
-    height: 40px;
-    border-radius: 0 0 15px 15px;
-    background: linear-gradient(to bottom, transparent, #0a0a0a);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    -webkit-mask-image: linear-gradient(to bottom, transparent, black);
-    mask-image: linear-gradient(to bottom, transparent, black);
+    height: 90px;
+    /* Explicit stacking above the grid's own tiles — .tools-grid-btn is itself position:relative (for
+       its own cursor-glow ::before), which without this would tie these on paint order: ::after,
+       being the LAST generated box, happened to still land on top, but ::before (the FIRST one) landed
+       BEHIND the tiles instead of over them. z-index sidesteps that DOM-order dependency entirely. */
+    z-index: 2;
     pointer-events: none;
+    /* --fade-top-t/--fade-bottom-t update in discrete steps (once per 'scroll' event, main.js) — wheel
+       scrolling in particular tends to jump in large chunks rather than smooth per-pixel increments,
+       so without this the opacity/scale below would snap straight to each new value instead of
+       reading as a continuous ramp. This is what actually supplies the "gradual" feel between ticks. */
+    transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+}
+.tools-body::after {
+    bottom: 0;
+    border-radius: 0 0 15px 15px;
+    background: linear-gradient(to bottom, transparent, rgba(16,16,16,0.55) 55%, #151515);
+    backdrop-filter: blur(11px);
+    -webkit-backdrop-filter: blur(11px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 75%);
+    mask-image: linear-gradient(to bottom, transparent, black 75%);
+    opacity: var(--fade-bottom-t, 0);
+    transform: scaleY(var(--fade-bottom-t, 0));
+    transform-origin: bottom;
+}
+.tools-body::before {
+    top: 0;
+    border-radius: 15px 15px 0 0;
+    background: linear-gradient(to top, transparent, rgba(16,16,16,0.55) 55%, #151515);
+    backdrop-filter: blur(11px);
+    -webkit-backdrop-filter: blur(11px);
+    -webkit-mask-image: linear-gradient(to top, transparent, black 75%);
+    mask-image: linear-gradient(to top, transparent, black 75%);
+    opacity: var(--fade-top-t, 0);
+    transform: scaleY(var(--fade-top-t, 0));
+    transform-origin: top;
 }
 
 /* Column count adapts to the panel's width instead of the tiles shrinking
@@ -637,7 +686,7 @@ body.layout-toolbar #enableScoringRow {
     max-height: calc(100vh - 220px);
     min-height: 100px;
     overflow-y: auto;
-    padding: 8px; /* even on all sides — the default, whenever nothing actually overflows to scroll */
+    padding: 8px; /* even on all sides now that there's no scrollbar thumb to leave room for */
     /* Same card look as .home-top-group (Home tab's own widget backdrop),
        so this "drawer" of tool tiles reads as its own distinct surface
        instead of floating directly on the page background. */
@@ -645,20 +694,11 @@ body.layout-toolbar #enableScoringRow {
     border: 1px solid #262626;
     border-radius: 15px;
 }
-/* Only while the tool list actually overflows (toggled by
-   _syncToolsGridScrollGap in main.js, since CSS alone can't detect
-   overflow) does the right side drop to 0 — that's what centers the
-   scrollbar thumb in the tile-to-card-edge gap (see the thumb comment
-   below). Reserving that same 0px unconditionally (the previous attempt,
-   via scrollbar-gutter:stable to keep the gap from jumping) traded the
-   asymmetry for an oversized empty gutter on the right whenever there was
-   nothing to scroll — worse than the original bug, since now it happened
-   every time the list was short instead of only sometimes. Toggling this
-   class is what actually keeps both wrong states from ever showing:
-   even padding with nothing to scroll, centered thumb once there is. */
-.tools-grid.tools-grid-scrollable {
-    padding-right: 0;
-}
+/* No visible scrollbar at all — overflow still scrolls (wheel/trackpad/drag), just without a track or
+   thumb rendered; .tools-body::after's own bottom fade (below) is the sole "there's more below" cue,
+   an implied-scroll affordance instead of a literal scrollbar. */
+.tools-grid::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.tools-grid { scrollbar-width: none; -ms-overflow-style: none; }
 /* Three tiers — the filter column beside this only takes 1/3 of
    #tab-tools' width normally, and shrinks further to 1/5 once it goes
    icon-only (see #tab-tools.compact), so the drawer has room to step all
@@ -673,30 +713,6 @@ body.layout-toolbar #enableScoringRow {
 @media (min-width: 400px) {
     .tools-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-/* Centering the thumb in the full tile-to-card-edge gap, worked out from
-   scratch: the scrollbar track always sits flush against the border (no
-   CSS lever moves it), so the ONLY gap on the card-edge side of the thumb
-   is whatever the thumb's own border eats on that side. For the gap on
-   the tile side to match it, .tools-grid's padding-right has to be 0 (see
-   above) — any nonzero value there only ever adds to the tile-side gap,
-   with nothing to balance it against on the card-edge side. With
-   padding-right at 0, a SYMMETRIC border on the thumb is what then makes
-   both gaps equal by construction. Track widened from 12px to 28px (and
-   the border from 2px to 10px each side) to land on the same total gap
-   size as before (28px) while actually centering the 8px-visible thumb
-   within it, instead of shrinking the gap down to keep the old 12px
-   track. Still symmetric, not asymmetric — asymmetric border+radius on
-   this pseudo-element is what caused the rounding to look cut off
-   earlier, so that constraint stands regardless of the width numbers. */
-.tools-grid::-webkit-scrollbar           { display: block; width: 24px; } /* track only — thumb itself stays 8px visible (24 - 8x2 border) */
-.tools-grid::-webkit-scrollbar-track     { background: transparent; }
-.tools-grid::-webkit-scrollbar-thumb {
-    background: #2a2a2a;
-    background-clip: padding-box;
-    border: 8px solid transparent; /* -20% from 10px — less gap each side, thumb width unaffected since it's still symmetric */
-    border-radius: 20px;
-}
-.tools-grid::-webkit-scrollbar-thumb:hover { background: #444; background-clip: padding-box; }
 
 /* Base (smallest breakpoint, 1 column — see .tools-grid above) is a
    rectangular row, icon on the left and the label on the right, same
@@ -705,7 +721,15 @@ body.layout-toolbar #enableScoringRow {
    would just waste that width on empty side padding instead of using it
    to show the label. From 350px (2 columns) up, it switches to the
    square icon-only-with-caption tile instead — see the media query below. */
+/* Own hardcoded background/radius rather than the shared var(--bg-btn) other buttons use — darker
+   fill against the drawer's own #101010 backdrop (was the lighter var(--bg-btn) #252525, which read
+   as a flat, un-outlined light chip) plus a slightly more visible stroke now that it actually shows
+   up against the darker fill, and a tighter corner radius (14px -> 10px) for a less rounded tile.
+   position:relative anchors ::before (the cursor-follow glow below); the hover transform used to be
+   off-limits here — it used to interact badly with the native scrollbar's own compositing layer — but
+   that scrollbar is gone now (.tools-grid, above), so it's safe. */
 .tools-grid-btn {
+    position: relative;
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -713,33 +737,69 @@ body.layout-toolbar #enableScoringRow {
     gap: 10px;
     min-width: 0;
     padding: 10px 14px;
-    background: var(--bg-btn);
-    border: 1px solid #323232;
-    border-radius: 14px;
+    background: #161616;
+    border: 1px solid #333333;
+    border-radius: 10px;
     color: #a0a0a0;
     cursor: pointer;
     text-align: left;
     overflow: hidden;
-    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+    transform: perspective(600px) rotateX(0deg) translateY(0) scale(1);
+    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear, box-shadow 0.15s ease, transform 0.15s ease;
 }
-/* No hover transform (scale) here — a tile in the rightmost column
-   bulging outward on hover overlapped the native scrollbar's own
-   rendering layer and produced a visible white-box glitch, seemingly a
-   Chromium/CEF compositing quirk between CSS transforms and native
-   scrollbar overlays rather than something fixable with a small tweak. */
-.tools-grid-btn:hover  { background: var(--bg-btn-h); border-color: var(--border-h); color: #F9F9F4; }
+/* Cursor-follow spotlight IN the tile's own fill — same recipe as the Anchor Point grid's own glow
+   (.anchor-grid::before / _anchorGlowTick in main.js), just scoped to one tile instead of the whole
+   grid (see _initToolsGridGlow, which tracks whichever single tile is currently hovered). overflow:
+   hidden above clips it to this tile's own rounded rect, so it reads as light glowing up through the
+   fill rather than a border ring around it. */
+.tools-grid-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(circle 120px at var(--glow-x, -9999px) var(--glow-y, -9999px), rgba(36,112,224,0.24), transparent 70%);
+    filter: blur(16px);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+}
+.tools-grid-btn:hover::before {
+    opacity: 1;
+    transition: opacity 0.12s ease;
+}
+/* The "3D card" lift: a slight forward tilt plus a rise off the drawer's background, sold by the
+   shadow growing/dropping further beneath it. --tilt-x/--tilt-y are updated continuously by
+   _toolsGlowTick (main.js) from the cursor's own position within the tile — the fallback values here
+   (5deg/0deg) only ever show for the first frame or so, before the first mousemove tick lands. */
+.tools-grid-btn:hover {
+    background: #1e1e1e;
+    border-color: #2470e0;
+    color: #F9F9F4;
+    transform: perspective(600px) rotateX(var(--tilt-x, 5deg)) rotateY(var(--tilt-y, 0deg)) translateY(-3px) scale(1.02);
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.07),
+        0 12px 22px rgba(0,0,0,0.55);
+}
 .tools-grid-btn:active { background: var(--bg-btn-act); border-color: var(--accent); color: #fff; }
+/* Favorited tiles (sorted to the top by _sortToolsGrid) get a warm-tinted resting
+   fill and swap the hover accent from blue to gold, so the pinned group reads as
+   visually distinct at a glance instead of relying solely on the small corner badge. */
+.tools-grid-btn.is-favorite { background: #1c1a12; border-color: #3a3020; }
+.tools-grid-btn.is-favorite:hover { background: #221f14; border-color: #e8c140; }
+.tools-grid-btn.is-favorite:hover svg { color: #e8c140; }
+.tools-grid-btn.is-favorite::before {
+    background: radial-gradient(circle 120px at var(--glow-x, -9999px) var(--glow-y, -9999px), rgba(232,193,64,0.24), transparent 70%);
+}
 .tools-grid-btn svg {
     width: 18px;
     height: 18px;
     flex-shrink: 0;
     pointer-events: none;
-    transition: transform 0.1s ease;
+    transition: transform 0.15s ease, color 0.05s linear;
 }
-/* Scales the icon, not the button — the button's own box stays a fixed
-   size (that's the actual fix for the scrollbar glitch above), and this
-   still reads as the button reacting to hover. */
-.tools-grid-btn:hover svg { transform: scale(1.15); }
+/* color set explicitly here, not just inherited from the button's own hover color (#F9F9F4, still
+   used by the label span next to it) — the icon specifically goes accent-blue on hover instead. */
+.tools-grid-btn:hover svg { transform: scale(1.15); color: #2470e0; }
 .tools-grid-btn span {
     min-width: 0; /* lets it actually shrink/ellipsize in the row layout above, instead of the default min-width:auto (its own text's full width) forcing the button wider */
     font-size: 12px;
@@ -3340,19 +3400,20 @@ body.toolbar-dragging-active, body.toolbar-dragging-active * {
     min-height: calc(var(--home-anchor-unit) * 1.2727);
 }
 
-/* Organize quick actions — 3x2 grid of icon-only tiles. */
+/* Organize quick actions — 3-wide grid of icon-only tiles, auto-growing rows (same pattern as
+   .quick-actions-grid) so adding/removing a tile never needs a hardcoded row count kept in sync. */
 .organize-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: repeat(2, 1fr);
+    grid-auto-rows: 1fr;
     gap: 6px;
     width: 100%;
     flex: 1;
 }
-/* Full-width state: single row of 6 instead of 3x2. */
+/* Full-width state: single row instead of 3-wide. */
 .tool-box[data-block-id="organize"][data-span="6"] .organize-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    grid-template-rows: repeat(1, 1fr);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-auto-rows: 1fr;
 }
 
 .organize-btn {
@@ -3710,8 +3771,8 @@ body.toolbar-dragging-active, body.toolbar-dragging-active * {
 }
 
 /* Grab strip for Quick Actions bars specifically (see the isQa branch in
-   _blInitControls) — same dot-grip look as Classic's own reorder handles
-   (.settings-drag-handle/.bcs-drag-handle), so a whole-box mousedown
+   _blInitControls) — same dot-grip look as Classic's own reorder handle
+   (.settings-drag-handle), so a whole-box mousedown
    doesn't fight with actually clicking a tile. Hidden outside board-editing
    since there's nothing to drag otherwise. */
 .bl-drag-handle {
@@ -4433,7 +4494,6 @@ body.bl-drag-active {
     box-sizing: border-box;
 }
 .vectools-edit-body { gap: 8px; }
-/* Same two-tab visual language as Batch Comp Settings' .bcs-ui-tab. */
 .vectools-edit-tabs {
     display: flex;
     flex-shrink: 0;
@@ -6125,6 +6185,28 @@ input[type="checkbox"]:checked::after {
 .anchor-btn:active { background: var(--bg-btn-act); color: #fff; }
 .anchor-btn svg    { width: 70%; height: 70%; pointer-events: none; }
 
+/* Held-Alt 5x5 tier (Compact only — toggled via body.anchor-alt-5x5, see
+   _syncAnchorAltGrid in main.js): same square footprint/frame as the 3x3
+   above (both are width:100% aspect-ratio:1/1 inside .anchor-row, so
+   swapping which one is visible never reflows anything around it), just
+   more/smaller cells. Only one of the two is ever in the box tree as
+   display:grid at a time, so .anchor-grid::before's glow and
+   _anchorNaturalHeight's measurement both still only ever see one. */
+.anchor-grid-5x5 { display: none; }
+body.anchor-alt-5x5 .anchor-grid-3x3 { display: none; }
+body.anchor-alt-5x5 .anchor-grid-5x5 { display: grid; }
+/* No CSS pop-in here — _syncAnchorAltGrid (main.js) drives the whole transition per button via WAAPI:
+   the corners/edges/center FLIP (translate+scale) from their old screen rect to their new one, and only
+   the 5x5's 16 in-between cells (no 3x3 counterpart to move from) fall back to a plain opacity fade. A
+   blanket CSS animation here would double up on top of that (both touching opacity/transform). */
+.anchor-grid-5x5 {
+    grid-template-columns: repeat(5, 1fr);
+    grid-template-rows: repeat(5, 1fr);
+    gap: 3%;
+}
+.anchor-grid-5x5 .anchor-btn { border-radius: 5px; }
+.anchor-grid-5x5 .anchor-btn svg { width: 60%; height: 60%; }
+
 /* The icon's own slide/scale (toward whichever edge/corner it represents
    on hover, further out to the edge on click) is animated entirely in JS
    now (_anchorAnimateIconTo/_animateAnchorClick in main.js), not a CSS
@@ -7185,6 +7267,8 @@ body.layout-classic .classic-trophy-btn { width: 28px; opacity: 1; pointer-event
    during that window, not just once it's fully gone. */
 .update-confirm-hidden { display: none !important; }
 #updateConfirmOverlay { z-index: 1001; }
+/* Same stacking need as #updateConfirmOverlay above, and same fix. */
+#bbqcConfirmOverlay { z-index: 1001; }
 
 .update-confirm-text {
     font-size: 11px;
@@ -7410,7 +7494,10 @@ body.layout-classic .classic-trophy-btn { width: 28px; opacity: 1; pointer-event
 /* The panel itself defaults to 280px wide (220px minimum, per the manifest) and
    html/body clip overflow — a fixed-width modal wider than that would render
    content outside the reachable viewport. Scale to whatever width is actually
-   available instead, capping at 404px for when the panel is floated wider. */
+   available instead, capping at 404px for when the panel is floated wider.
+   No resize of its own — the drag handle lives on .bcs-complist below (see
+   .bcs-resize-handle), not out here on the modal shell. This has no explicit
+   height, so growing that inner list just grows this to fit, up to the cap here. */
 .bcs-modal {
     width: calc(100vw - 20px);
     max-width: 404px;
@@ -8200,9 +8287,20 @@ input.find-input::placeholder { color: #3e3e3e; }
     gap: 5px;
 }
 
-/* Selected-comps list — scrollable when there are more than fit */
+/* Wraps .bcs-complist + .bcs-resize-handle as siblings — position:relative here (not on the list
+   itself) is what anchors the handle, since anchoring it to the list directly would make it a
+   descendant of that element's own overflow:auto and scroll away with the row content instead of
+   staying pinned in the visible corner. This wrapper has no size/overflow of its own, so it just
+   grows to match whatever height the list inside it currently has. */
+.bcs-complist-wrap { position: relative; }
+/* Selected-comps list — shrinks to fit its content up to 138px (50% taller than the original 92px),
+   then scrolls. Dragging the handle (see _bcsResizeStart in main.js) lifts max-height and sets an
+   explicit height directly on this element — nothing else in the modal has a height of its own, so
+   growing this one box is what grows the whole modal around it. Padding-bottom clears room so the
+   handle (which overlaps the wrapper's corner, not this element's own scrolling content) never
+   visually sits on top of the last row. */
 .bcs-complist {
-    max-height: 92px;
+    max-height: 138px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -8210,10 +8308,30 @@ input.find-input::placeholder { color: #3e3e3e; }
     background: #131313;
     border: 1px solid #272727;
     border-radius: 8px;
-    padding: 5px;
+    padding: 5px 5px 14px;
     scrollbar-width: thin;
     scrollbar-color: #343434 #161616;
 }
+/* Bottom-right drag-to-resize grip — a hand-drawn handle instead of the plain native resize glyph,
+   so it can sit right on the list "screen" itself and match this app's own icon language elsewhere
+   instead of relying on the browser's corner widget. ns-resize cursor since this only ever drags
+   vertically (_bcsResizeStart in main.js clamps the delta to Y). */
+.bcs-resize-handle {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 16px;
+    height: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: ns-resize;
+    color: #4a4a4a;
+    border-radius: 3px;
+    transition: color 0.1s linear, background 0.1s linear;
+}
+.bcs-resize-handle svg { width: 100%; height: 100%; pointer-events: none; }
+.bcs-resize-handle:hover, .bcs-resize-handle.dragging { color: #7aaaff; background: rgba(36,112,224,0.16); }
 .bcs-comp-row {
     display: flex;
     align-items: center;
@@ -8233,8 +8351,49 @@ input.find-input::placeholder { color: #3e3e3e; }
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+/* Bulk Replace only — the small card standing in for this row's replacement file, inset on the
+   row's right side rather than a plain text span like the other .bcs-complist users' rows. It's the
+   thing you actually pick up and drag (see _brlDragStart in main.js) — items never move, so only
+   this file half of the pairing needs to be draggable, not the whole row. Plain mouse events drive
+   the drag (mousedown here, mousemove/mouseup on document), matching .bcs-resize-handle above and
+   elsewhere in this app, rather than the browser's own harder-to-style/animate-mid-drag HTML5
+   drag-and-drop API. flex-shrink:0 plus its own max-width keep it a compact "card" instead of
+   stretching to fill the row — .bcs-comp-name's flex:1 (generic .bcs-comp-row span rule) is what
+   absorbs the row's remaining space and pushes this + the two buttons after it to the right edge. */
+.brl-file-card {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    max-width: 130px;
+    padding: 2px 6px;
+    background: #1a1a1a;
+    border: 1px solid #2c2c2c;
+    border-radius: 6px;
+    cursor: grab;
+}
+.brl-file-card:hover { border-color: #3a3a3a; background: #202020; }
+.brl-file-name { font-size: 10.5px; color: #a8a8a8; }
+/* The picked-up card: lifted out of the flow visually (shadow, brightened) while _brlDragMove
+   translates it to follow the cursor; the row underneath is untouched since nothing else in the list
+   reflows during a drag — this is a straight two-card swap, not a reorder. */
+.brl-file-card.brl-dragging {
+    position: relative;
+    z-index: 2;
+    background: #232323;
+    border-color: #3a3a3a;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.55);
+    cursor: grabbing;
+}
+/* Whichever other row's card the cursor is currently over — dashed outline reads as "drop here"
+   without needing the dragged card to actually move into this one's slot first. */
+.brl-file-card.brl-drop-target {
+    background: rgba(36,112,224,0.22);
+    outline: 1px dashed #4d9bff;
+    outline-offset: -1px;
+}
+
 .bcs-comp-remove {
-    margin-left: auto;
     flex-shrink: 0;
     width: 16px; height: 16px;
     display: flex; align-items: center; justify-content: center;
@@ -8247,7 +8406,7 @@ input.find-input::placeholder { color: #3e3e3e; }
 }
 .bcs-comp-remove:hover { background: rgba(192,50,50,0.2); color: #e07070; }
 
-/* Original name, shown dim once the rename pattern actually changes it */
+/* Original name, shown dim once find/replace actually changes it */
 .bcs-comp-row .bcs-comp-orig {
     flex: 0 1 auto;
     color: #585858;
@@ -8255,26 +8414,6 @@ input.find-input::placeholder { color: #3e3e3e; }
     margin-left: 4px;
 }
 
-/* Drag-to-reorder handle (Batch Rename only — changes numbering order) */
-.bcs-drag-handle {
-    flex-shrink: 0;
-    width: 12px; height: 16px;
-    display: flex; align-items: center; justify-content: center;
-    background: none;
-    border: none;
-    padding: 0;
-    color: #3a3a3a;
-    cursor: grab;
-}
-.bcs-drag-handle:hover  { color: #787878; }
-.bcs-drag-handle:active { cursor: grabbing; }
-.bcs-drag-handle svg    { width: 8px; height: 12px; color: inherit; }
-
-.bcs-comp-drag-ghost {
-    opacity: 0.7;
-    background: #1c1c1c;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.55);
-}
 .bcs-comp-remove svg { width: 8px; height: 8px; pointer-events: none; }
 .bcs-complist-empty {
     font-size: 11px;
@@ -8282,6 +8421,31 @@ input.find-input::placeholder { color: #3e3e3e; }
     text-align: center;
     padding: 10px 4px;
 }
+
+/* Bulk Replace's skipped/mismatched-count callout, shown under the paired list (see _brlRenderList in main.js). Empty and collapsed via :empty until there's actually something to say. */
+.brl-note {
+    font-size: 10.5px;
+    color: #a08a4a;
+    padding: 0 2px;
+}
+.brl-note:empty { display: none; }
+
+/* Batch Rename's inline help — the native title tooltip carries the actual
+   explanation (^ / $ anchors, [#]/[A] enumeration), this is just the hit target. */
+.brn-help-btn {
+    flex-shrink: 0;
+    width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-btn);
+    border: 1px solid #323232;
+    border-radius: 50%;
+    color: #787878;
+    font-size: 10px;
+    font-family: inherit;
+    cursor: default;
+    padding: 0;
+}
+.brn-help-btn:hover { color: #c8c8c8; border-color: #454545; }
 
 /* Grouped control boxes */
 .bcs-group {
@@ -8356,49 +8520,6 @@ input.find-input::placeholder { color: #3e3e3e; }
 }
 .chain-btn:not(.locked) .chain-a { transform: translate(-1.6px, -1.2px) rotate(-14deg); }
 .chain-btn:not(.locked) .chain-b { transform: translate(1.6px, 1.2px) rotate(-14deg); }
-
-/* ── Batch Comp Settings tabs (Settings / Rename) ─────────────────────────────
-   Same two-tab pattern as Find and Replace's Basic/Advanced (.find-ui-tab*),
-   kept as its own feature-prefixed copy rather than reused directly since
-   it's a different modal — see switchBcsTab in main.js. */
-.bcs-ui-tabs {
-    display: flex;
-    flex-shrink: 0;
-    background: #131313;
-    border-bottom: 1px solid #252525;
-    padding: 5px 8px 0 0;
-    gap: 2px;
-}
-
-.bcs-ui-tab {
-    position: relative;
-    background: #131313;
-    border: 1px solid #252525;
-    border-bottom: 1px solid #252525;
-    border-radius: 5px 5px 0 0;
-    color: #3e3e3e;
-    font-family: inherit;
-    font-size: 11px;
-    padding: 5px 12px 5px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: color 0.1s, background 0.1s;
-    margin-bottom: -1px;
-}
-.bcs-ui-tab:hover { color: #666; background: #1a1a1a; }
-.bcs-ui-tab.active {
-    background: #1e1e1e;
-    border-color: #313131;
-    border-bottom-color: #1e1e1e;
-    color: #c8c8c8;
-}
-
-/* .bcs-tab-panel also always carries .settings-body (display:flex; column;
-   gap:8px) — .active needs to restore flex specifically, not block, or its
-   higher specificity (two classes vs .settings-body's one) would silently
-   collapse that stacking back to normal block flow whenever a panel's shown. */
-.bcs-tab-panel { display: none; }
-.bcs-tab-panel.active { display: flex; }
 
 /* ── Comp Export overlay ──────────────────────────────────────────────────── */
 
@@ -8829,6 +8950,16 @@ input[type="range"].scale-slider::-webkit-slider-thumb:hover {
     padding: 0;
 }
 .shape-sel-ctx.compact .shape-sel-ctx-lbl { display: none; }
+
+/* Favorite row folded into a tile's own mode-picker flyout (see _syncFavRowInCtx
+   in main.js) rather than stacking a second popup — divider just separates it
+   from the real mode options above it. */
+.tools-fav-ctx-divider {
+    height: 1px;
+    margin: 2px 4px;
+    background: #333;
+}
+.shape-sel-ctx.compact .tools-fav-ctx-divider { margin: 2px 3px; }
 
 /* ── Star button inside existing picker popups ──────────────────────────────── */
 

@@ -83,8 +83,41 @@ function _applyTabPanels(name) {
         var panel = document.getElementById(n === 'home' ? 'panel-content' : 'tab-' + n);
         if (panel) panel.classList.toggle('active', n === name);
     });
-    // .compact no longer needs re-sync here; .tools-grid's scroll-gap class still does since it can go stale while hidden.
-    if (name === 'tools') _syncToolsGridScrollGap();
+    // .tools-body's bottom fade can go stale while hidden (e.g. panel resized on another tab), so re-check on arrival.
+    if (name === 'tools') {
+        _syncToolsBodyFade();
+        _animateToolsGridIn();
+    }
+}
+
+// Distance (px) of scroll over which a fade ramps from 0 to full strength — matches the fade band's
+// own height, so it's fully gone by the time that band would otherwise have started overlapping
+// content past the edge.
+var TOOLS_FADE_DISTANCE = 90;
+
+// Which edge(s) still have more content to scroll to, and how MUCH, can only be read from the DOM
+// (scrollTop/scrollHeight/clientHeight) — each fade is a continuous 0..1 ramp off actual distance
+// scrolled from that edge (not just an on/off "does it overflow at all"), so it visibly retracts as
+// you approach an edge instead of holding full strength right up until scroll hits exactly 0/max and
+// then vanishing all at once. A short/filtered list with no overflow at all computes 0 for both.
+function _syncToolsBodyFade() {
+    var grid = document.querySelector('.tools-grid');
+    var body = document.querySelector('.tools-body');
+    if (!grid || !body) return;
+    var maxScroll = grid.scrollHeight - grid.clientHeight;
+    var topT = 0, bottomT = 0;
+    if (maxScroll > 0) {
+        topT    = Math.max(0, Math.min(1, grid.scrollTop / TOOLS_FADE_DISTANCE));
+        bottomT = Math.max(0, Math.min(1, (maxScroll - grid.scrollTop) / TOOLS_FADE_DISTANCE));
+    }
+    body.style.setProperty('--fade-top-t', topT.toFixed(3));
+    body.style.setProperty('--fade-bottom-t', bottomT.toFixed(3));
+}
+
+function _initToolsBodyFadeScroll() {
+    var grid = document.querySelector('.tools-grid');
+    if (!grid) return;
+    grid.addEventListener('scroll', _syncToolsBodyFade);
 }
 
 function restoreActiveTab() {
@@ -236,7 +269,10 @@ function _initAnchorTiers() {
 }
 
 // Cursor-follow spotlight on the anchor grid — runs its own eased-position loop only while the pointer is over the grid.
+// The 3x3 and 5x5 grids (see _buildAnchor5x5Grid) each need their own listeners since only one is ever
+// visible at a time, so _anchorGlowActiveGrid tracks whichever one the pointer most recently entered.
 var _anchorGlowRAF = null;
+var _anchorGlowActiveGrid = null;
 var _anchorGlowRawX = -9999, _anchorGlowRawY = -9999;
 var _anchorGlowX = -9999, _anchorGlowY = -9999;
 
@@ -246,7 +282,7 @@ function _anchorGlowMove(e) {
 }
 
 function _anchorGlowTick() {
-    var grid = document.querySelector('.anchor-grid');
+    var grid = _anchorGlowActiveGrid;
     if (!grid) { _anchorGlowRAF = null; return; }
     var dx = _anchorGlowRawX - _anchorGlowX, dy = _anchorGlowRawY - _anchorGlowY;
     _anchorGlowX += dx * 0.12;
@@ -258,19 +294,24 @@ function _anchorGlowTick() {
 }
 
 function _initAnchorGridGlow() {
-    var grid = document.querySelector('.anchor-grid');
-    if (!grid) return;
-    grid.addEventListener('mouseenter', function(e) {
-        // Snap the eased position to the cursor immediately instead of easing in from off-screen.
-        _anchorGlowRawX = _anchorGlowX = e.clientX;
-        _anchorGlowRawY = _anchorGlowY = e.clientY;
-        document.addEventListener('mousemove', _anchorGlowMove);
-        if (!_anchorGlowRAF) _anchorGlowRAF = requestAnimationFrame(_anchorGlowTick);
-    });
-    grid.addEventListener('mouseleave', function() {
-        document.removeEventListener('mousemove', _anchorGlowMove);
-        if (_anchorGlowRAF) { cancelAnimationFrame(_anchorGlowRAF); _anchorGlowRAF = null; }
-    });
+    var grids = document.querySelectorAll('.anchor-row .anchor-grid');
+    for (var i = 0; i < grids.length; i++) {
+        (function(grid) {
+            grid.addEventListener('mouseenter', function(e) {
+                // Snap the eased position to the cursor immediately instead of easing in from off-screen.
+                _anchorGlowActiveGrid = grid;
+                _anchorGlowRawX = _anchorGlowX = e.clientX;
+                _anchorGlowRawY = _anchorGlowY = e.clientY;
+                document.addEventListener('mousemove', _anchorGlowMove);
+                if (!_anchorGlowRAF) _anchorGlowRAF = requestAnimationFrame(_anchorGlowTick);
+            });
+            grid.addEventListener('mouseleave', function() {
+                document.removeEventListener('mousemove', _anchorGlowMove);
+                if (_anchorGlowRAF) { cancelAnimationFrame(_anchorGlowRAF); _anchorGlowRAF = null; }
+                _anchorGlowActiveGrid = null;
+            });
+        })(grids[i]);
+    }
 }
 
 // Align/Distribute/Sort's header row drops its label first, then Align/Distribute
@@ -332,6 +373,56 @@ function _overlayMouseUp(e, closeFn) {
     var wasDown = _overlayBackdropDown === e.currentTarget;
     _overlayBackdropDown = null;
     if (wasDown && e.target === e.currentTarget) closeFn();
+}
+
+// ── Resizable modal "screens" ─────────────────────────────────────────────────
+// Drag-to-resize for the scrollable item list inside Batch Comp Settings, Batch Rename, Bulk
+// Replace, and Comp Export (any .bcs-complist, wired up generically via .bcs-resize-handle's
+// data-resize-target — see the markup in index.html). The handle lives on the list itself, not the
+// modal shell around it: the modal has no explicit height of its own, so growing the list directly
+// is what makes the whole modal grow to fit it, rather than resizing a fixed-size shell around a
+// still-tiny list.
+var BCS_LIST_MIN_HEIGHT = 60;
+var BCS_LIST_MAX_HEIGHT = 640;
+
+function _bcsResizeStart(e, handle) {
+    var list = document.getElementById(handle.getAttribute('data-resize-target'));
+    if (!list) return;
+    e.preventDefault();
+    var startY = e.clientY;
+    // getBoundingClientRect() reports real/rendered pixels (already multiplied by the modal's own
+    // zoom — see _uiZoom), but the height this sets below is read in LOCAL px inside that zoomed
+    // modal, where 1 local px renders as _uiZoom real px. Dividing here converts back to local units
+    // before combining with the (still-real-pixel) mouse delta below — skip it and the list would
+    // grow/shrink faster or slower than the cursor itself whenever the panel scale isn't 1.
+    var startHeight = list.getBoundingClientRect().height / _uiZoom;
+    // CSS caps this list at 92px by default (see .bcs-complist) so short lists shrink to fit instead
+    // of leaving dead space — that same cap would otherwise clamp any drag right back down to 92px,
+    // so lifting it here (once, on first drag) is what actually lets the list grow past it.
+    list.style.maxHeight = BCS_LIST_MAX_HEIGHT + 'px';
+    handle.classList.add('dragging');
+
+    function onMove(ev) {
+        var h = startHeight + (ev.clientY - startY) / _uiZoom;
+        h = Math.max(BCS_LIST_MIN_HEIGHT, Math.min(BCS_LIST_MAX_HEIGHT, h));
+        list.style.height = h + 'px';
+    }
+    function onUp() {
+        handle.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+}
+
+function _initBcsResizeHandles() {
+    var handles = document.querySelectorAll('.bcs-resize-handle');
+    for (var i = 0; i < handles.length; i++) {
+        (function(handle) {
+            handle.addEventListener('mousedown', function(e) { _bcsResizeStart(e, handle); });
+        })(handles[i]);
+    }
 }
 
 // ── Settings popup ────────────────────────────────────────────────────────────
@@ -417,6 +508,13 @@ var WHATS_NEW = {
             title: 'Smart Select',
             body: "Select, Link, and Merge are now one button — click to rerun whichever you used last, right-click to switch between them."
         }
+    ],
+    '1.10.0': [
+        {
+            icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M3.9 4a8.1 8.1 0 0 0 16.2 0Z"/><path d="M8 12L6 21M16 12L18 21M7 16h10"/></svg>',
+            title: 'BBQC Companion Panel',
+            body: "BBQC now ships alongside Lineup and stays updated automatically. If you don't have it installed, this update will offer to set it up — or install it anytime from Settings."
+        }
     ]
 };
 
@@ -480,6 +578,9 @@ function _applyLayoutMode(mode) {
     // Classic/Toolbar both hide the tab bar and Quick Actions edit pencil via CSS off these two classes.
     document.body.classList.toggle('layout-classic', isClassic);
     document.body.classList.toggle('layout-toolbar', isToolbar);
+    // Re-check the held-Alt 5x5 grid (Compact-only) — switching mode via a menu/click doesn't release
+    // Alt, so without this it could stay stuck showing 5x5 after landing on Classic/Toolbar.
+    _syncAnchorAltGrid();
 
     // Toolbar has no composite panels of its own, so this loop never routes anything there — non-Classic always lands back in Compact.
     CLASSIC_BLOCK_IDS.forEach(function(id) {
@@ -625,6 +726,9 @@ function setToolsFilter(name) {
         btns[i].classList.toggle('active', btns[i].getAttribute('data-filter') === name);
     }
     applyToolsFilter();
+    // Only on an actual group switch, not every search keystroke (applyToolsFilter alone handles
+    // that) — retyping a search on every character would make the tiles reflow-animate constantly.
+    _animateToolsGridIn();
 }
 
 function applyToolsFilter() {
@@ -639,16 +743,187 @@ function applyToolsFilter() {
         var matchesSearch = q.length === 0 || title.indexOf(q) !== -1;
         tile.classList.toggle('tools-grid-btn-hidden', !(matchesGroup && matchesSearch));
     }
-    _syncToolsGridScrollGap();
+    _syncToolsBodyFade();
 }
 
-// Whether the list needs to scroll can only be read from the DOM (scrollHeight vs
-// clientHeight); toggled here instead of reserved unconditionally, which left a
-// short filtered list with a big empty gutter instead of even padding.
-function _syncToolsGridScrollGap() {
+// ── Tools favorites + alphabetical ordering ──────────────────────────────────
+// Separate namespace from _favorites/lineup-favorites (the distribute pickers'
+// star buttons) — same star SVGs, different thing being favorited.
+
+var _toolsFavorites = {};
+
+function _loadToolsFavorites() {
+    try { _toolsFavorites = JSON.parse(localStorage.getItem('lineup-tools-favorites') || '{}'); } catch(e) { _toolsFavorites = {}; }
+}
+
+function _saveToolsFavorites() {
+    try { localStorage.setItem('lineup-tools-favorites', JSON.stringify(_toolsFavorites)); } catch(e) {}
+}
+
+function _isToolFavorited(id) {
+    return !!_toolsFavorites[id];
+}
+
+function _toggleToolFavorite(id) {
+    if (_toolsFavorites[id]) { delete _toolsFavorites[id]; } else { _toolsFavorites[id] = 1; }
+    _saveToolsFavorites();
+    _sortToolsGrid();
+}
+
+// Reorders tiles alphabetically by their label (favorites first, alphabetical
+// within each group), and syncs each tile's favorite badge. appendChild on an
+// already-attached node moves it rather than duplicating, so this can safely
+// re-run on every toggle without rebuilding the grid.
+function _sortToolsGrid() {
     var grid = document.querySelector('.tools-grid');
     if (!grid) return;
-    grid.classList.toggle('tools-grid-scrollable', grid.scrollHeight > grid.clientHeight + 1);
+    var tiles = Array.prototype.slice.call(grid.querySelectorAll('.tools-grid-btn[data-tool-id]'));
+    tiles.forEach(function(t) {
+        var fav = _isToolFavorited(t.getAttribute('data-tool-id'));
+        t.classList.toggle('is-favorite', fav);
+    });
+    tiles.sort(function(a, b) {
+        var favA = _isToolFavorited(a.getAttribute('data-tool-id'));
+        var favB = _isToolFavorited(b.getAttribute('data-tool-id'));
+        if (favA !== favB) return favA ? -1 : 1;
+        var labelA = (a.querySelector('span') || {}).textContent || '';
+        var labelB = (b.querySelector('span') || {}).textContent || '';
+        return labelA.toLowerCase().localeCompare(labelB.toLowerCase());
+    });
+    tiles.forEach(function(t) { grid.appendChild(t); });
+    _syncToolsBodyFade();
+}
+
+// Right-click on a tile flips open a single-item "Favorite"/"Remove Favorite"
+// flyout, built on the same generic .fav-ctx shell as _shapeSelCtx.
+var _toolsFavCtx = null;
+var _toolsFavCtxBtn = null;
+var _toolsFavCtxTileId = null;
+
+function _buildToolsFavCtx() {
+    var el = document.createElement('div');
+    el.className = 'fav-ctx';
+    var row = document.createElement('div');
+    row.className = 'shape-sel-ctx-row';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'shape-sel-ctx-icon-btn';
+    btn.addEventListener('click', function() {
+        if (_toolsFavCtxTileId) _toggleToolFavorite(_toolsFavCtxTileId);
+        _closeToolsFavCtx();
+    });
+    row.appendChild(btn);
+    el.appendChild(row);
+    document.body.appendChild(el);
+    _toolsFavCtxBtn = btn;
+    return el;
+}
+
+function _openToolsFavCtx(tile, e) {
+    if (!_toolsFavCtx) _toolsFavCtx = _buildToolsFavCtx();
+    var container = tile.closest('.tab-panel') || document.body;
+    container.appendChild(_toolsFavCtx);
+    _toolsFavCtxTileId = tile.getAttribute('data-tool-id');
+    var active = _isToolFavorited(_toolsFavCtxTileId);
+    _toolsFavCtxBtn.classList.toggle('active', active);
+    _toolsFavCtxBtn.innerHTML = (active ? _FAV_STAR_SVG_FILL : _FAV_STAR_SVG) +
+        '<span class="shape-sel-ctx-lbl">' + (active ? 'Remove Favorite' : 'Favorite') + '</span>';
+
+    var containerRect = container.getBoundingClientRect();
+    var cw = container.clientWidth, ch = container.clientHeight;
+    var cx = e.clientX - containerRect.left;
+    var cy = e.clientY - containerRect.top;
+    var ctxW = _toolsFavCtx.offsetWidth;
+    var ctxH = _toolsFavCtx.offsetHeight;
+    var left = Math.min(Math.max(4, cx), cw - ctxW - 4);
+    var top = (cy + ctxH <= ch) ? cy : Math.max(4, cy - ctxH);
+    _toolsFavCtx.style.left = left + 'px';
+    _toolsFavCtx.style.top = top + 'px';
+    _toolsFavCtx.classList.add('visible');
+    setTimeout(function() {
+        document.addEventListener('mousedown', _toolsFavCtxOutside);
+        document.addEventListener('keydown', _toolsFavCtxKey);
+    }, 0);
+}
+
+function _closeToolsFavCtx() {
+    if (_toolsFavCtx) _toolsFavCtx.classList.remove('visible');
+    _toolsFavCtxTileId = null;
+    document.removeEventListener('mousedown', _toolsFavCtxOutside);
+    document.removeEventListener('keydown', _toolsFavCtxKey);
+}
+
+function _toolsFavCtxOutside(e) {
+    if (_toolsFavCtx && !_toolsFavCtx.contains(e.target)) _closeToolsFavCtx();
+}
+
+function _toolsFavCtxKey(e) {
+    if (e.key === 'Escape') _closeToolsFavCtx();
+}
+
+function _initToolsFavContextMenu() {
+    var grid = document.querySelector('.tools-grid');
+    if (!grid) return;
+    grid.addEventListener('contextmenu', function(e) {
+        var tile = e.target.closest ? e.target.closest('.tools-grid-btn[data-tool-id]') : null;
+        if (!tile) return;
+        // Smart Select/Link/Merge, Select Paths/Fill/Stroke, and Split Text already open
+        // their own mode-picker flyout on right-click — Favorite is folded into that
+        // instead (see _syncFavRowInCtx), so this standalone popup steps aside for them.
+        if (tile.classList.contains('smart-btn') || tile.classList.contains('shape-sel-btn') || tile.classList.contains('split-text-btn')) return;
+        e.preventDefault();
+        _openToolsFavCtx(tile, e);
+    });
+}
+
+// Row-staggered "slide up + subtle 3D tilt" reveal for the tools drawer — plays whenever the visible
+// tile set changes wholesale (arriving on the Tools tab, switching filter groups), not on every
+// hover/interaction. Rows are grouped by matching offsetTop rather than the grid's current column
+// count (which varies by panel width) — more robust than parsing computed grid-template-columns, and
+// naturally correct at any breakpoint since CSS Grid already lays same-row tiles out at identical tops.
+var _toolsTileAnims = new WeakMap();
+var TOOLS_ROW_STAGGER_MS = 60;
+var TOOLS_TILE_INTRO_MS = 320;
+
+function _toolsAnimateTileIn(tile, row) {
+    var prev = _toolsTileAnims.get(tile);
+    if (prev) prev.cancel();
+    var anim = tile.animate(
+        [
+            { opacity: 0, transform: 'perspective(420px) translateY(26px) rotateX(40deg)' },
+            { opacity: 1, transform: 'perspective(420px) translateY(0) rotateX(0deg)' }
+        ],
+        {
+            duration: TOOLS_TILE_INTRO_MS,
+            delay: row * TOOLS_ROW_STAGGER_MS,
+            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+            fill: 'both'
+        }
+    );
+    _toolsTileAnims.set(tile, anim);
+    anim.onfinish = function() {
+        tile.style.opacity = '';
+        tile.style.transform = '';
+        anim.cancel();
+        if (_toolsTileAnims.get(tile) === anim) _toolsTileAnims.delete(tile);
+    };
+}
+
+function _animateToolsGridIn() {
+    var grid = document.querySelector('.tools-grid');
+    if (!grid || typeof grid.animate !== 'function') return;
+    var tiles = Array.prototype.filter.call(grid.querySelectorAll('.tools-grid-btn'), function (t) {
+        return !t.classList.contains('tools-grid-btn-hidden');
+    });
+    if (!tiles.length) return;
+
+    var row = 0, lastTop = null;
+    for (var i = 0; i < tiles.length; i++) {
+        var top = tiles[i].offsetTop;
+        if (lastTop !== null && top !== lastTop) row++;
+        lastTop = top;
+        _toolsAnimateTileIn(tiles[i], row);
+    }
 }
 
 function initToolsSearch() {
@@ -668,13 +943,66 @@ function _syncToolsFilterCompact() {
     var w = bar.getBoundingClientRect().width;
     tab.classList.toggle('compact', w < TOOLS_FILTER_COMPACT_BREAKPOINT);
     // Column count and available height both change with this resize, either of which can flip whether the list overflows.
-    _syncToolsGridScrollGap();
+    _syncToolsBodyFade();
 }
 
 function _initToolsFilterCompact() {
     var bar = document.getElementById('tabBarEl');
     if (!bar || typeof ResizeObserver === 'undefined') return;
     new ResizeObserver(function() { _syncToolsFilterCompact(); }).observe(bar);
+}
+
+// Cursor-follow spotlight per tile — same recipe as the Anchor Point grid's own glow
+// (_anchorGlowTick/_initAnchorGridGlow), but scoped to whichever single tile in the tools drawer is
+// currently hovered rather than one fixed container, since the drawer can hold dozens of tiles and
+// only ever one is ever glowing at a time.
+var _toolsGlowRAF = null;
+var _toolsGlowActiveBtn = null;
+var _toolsGlowRawX = -9999, _toolsGlowRawY = -9999;
+var _toolsGlowX = -9999, _toolsGlowY = -9999;
+
+// Max tilt in either axis for the cursor-driven "3D card" rotation below — a cursor sitting right at
+// a tile's edge maps to exactly this many degrees, center maps to 0.
+var TOOLS_TILT_MAX_DEG = 12;
+
+function _toolsGlowTick() {
+    var btn = _toolsGlowActiveBtn;
+    if (!btn) { _toolsGlowRAF = null; return; }
+    var dx = _toolsGlowRawX - _toolsGlowX, dy = _toolsGlowRawY - _toolsGlowY;
+    _toolsGlowX += dx * 0.16;
+    _toolsGlowY += dy * 0.16;
+    var rect = btn.getBoundingClientRect();
+    var localX = _toolsGlowX - rect.left, localY = _toolsGlowY - rect.top;
+    btn.style.setProperty('--glow-x', localX + 'px');
+    btn.style.setProperty('--glow-y', localY + 'px');
+    // Reuses the same eased local position the glow above just computed, normalized to -1..1 across
+    // the tile, so the tilt settles with the same easing feel as the glow rather than snapping to the
+    // raw cursor. Moving right tilts the tile around Y (right edge recedes); moving down tilts it
+    // around X (bottom edge recedes) — the combination reads as the card tipping toward the cursor.
+    var nx = rect.width  ? Math.max(-1, Math.min(1, (localX / rect.width)  * 2 - 1)) : 0;
+    var ny = rect.height ? Math.max(-1, Math.min(1, (localY / rect.height) * 2 - 1)) : 0;
+    btn.style.setProperty('--tilt-x', (-ny * TOOLS_TILT_MAX_DEG).toFixed(2) + 'deg');
+    btn.style.setProperty('--tilt-y', (nx * TOOLS_TILT_MAX_DEG).toFixed(2) + 'deg');
+    _toolsGlowRAF = requestAnimationFrame(_toolsGlowTick);
+}
+
+function _initToolsGridGlow() {
+    var grid = document.querySelector('.tools-grid');
+    if (!grid) return;
+    grid.addEventListener('mousemove', function(e) {
+        var btn = e.target.closest ? e.target.closest('.tools-grid-btn') : null;
+        if (btn !== _toolsGlowActiveBtn) {
+            // Snap straight to the cursor on entering a new tile instead of easing in from wherever
+            // the glow last sat on the previous one — avoids a "flying" glow crossing the gap between tiles.
+            _toolsGlowActiveBtn = btn;
+            if (btn) { _toolsGlowRawX = _toolsGlowX = e.clientX; _toolsGlowRawY = _toolsGlowY = e.clientY; }
+        } else {
+            _toolsGlowRawX = e.clientX;
+            _toolsGlowRawY = e.clientY;
+        }
+        if (btn && !_toolsGlowRAF) _toolsGlowRAF = requestAnimationFrame(_toolsGlowTick);
+    });
+    grid.addEventListener('mouseleave', function() { _toolsGlowActiveBtn = null; });
 }
 
 // ── Section toggle ────────────────────────────────────────────────────────────
@@ -2481,24 +2809,26 @@ function _initAnchorIgnoreMasksSquare() {
     _anchorIgnoreMasksSquareSync();
 }
 
-// Same 9 directions the icons used to slide via CSS :hover; null at index 4 (Center) since that one scales instead of translating.
-var ANCHOR_HOVER_OFFSETS = [
-    [-4, -4], [0, -4], [4, -4],
-    [-4, 0],  null,    [4, 0],
-    [-4, 4],  [0, 4],  [4, 4]
-];
-// More than double the hover slide — "all the way to the edge" rather than the small hover nudge.
-var ANCHOR_SNAP_OFFSETS = [
-    [-11, -11], [0, -11], [11, -11],
-    [-11, 0],   null,     [11, 0],
-    [-11, 11],  [0, 11],  [11, 11]
-];
+// Generalized past the original fixed 9-direction (3x3) offset tables so the same hover/click animation
+// serves any n x n grid (currently 3 or 5, via the held-Alt tier — see _buildAnchor5x5Grid). loc is a
+// row-major index into the n x n grid; magnitude is the full-scale px offset at a grid's outer edge —
+// interior points (5x5's non-border cells) get a fraction of it based on how far off-center they sit.
+// Returns null for the exact center cell (odd n only), which scales instead of translating.
+function _anchorOffsetFor(loc, n, magnitude) {
+    var col = loc % n, row = Math.floor(loc / n);
+    var mid = (n - 1) / 2;
+    if (col === mid && row === mid) return null;
+    return [(col - mid) / mid * magnitude, (row - mid) / mid * magnitude];
+}
+// Hover nudge vs. "punch to the edge" on click — the latter is more than double, same ratio the original fixed 3x3 tables used.
+var ANCHOR_HOVER_MAGNITUDE = 4;
+var ANCHOR_SNAP_MAGNITUDE = 11;
 // Smooth deceleration, no overshoot (a >1 middle value would bounce past target) — shared by every state change so they all feel like the same motion.
 var ANCHOR_ICON_EASING = 'cubic-bezier(0.33, 1, 0.68, 1)';
 
-function _anchorIconTransform(loc, hovered) {
-    if (loc === 4) return hovered ? 'scale(1.12)' : 'scale(1)';
-    var off = hovered ? ANCHOR_HOVER_OFFSETS[loc] : [0, 0];
+function _anchorIconTransform(loc, hovered, n) {
+    var off = _anchorOffsetFor(loc, n, hovered ? ANCHOR_HOVER_MAGNITUDE : 0);
+    if (!off) return hovered ? 'scale(1.12)' : 'scale(1)';
     return 'translate(' + off[0] + 'px, ' + off[1] + 'px)';
 }
 
@@ -2524,30 +2854,39 @@ function _anchorAnimateIconTo(svg, toTransform, duration) {
 }
 
 // Hover in/out — same easing/mechanism as the click punch below, just two-point instead of three. Replaces the old CSS :hover transition entirely.
-function _anchorHoverIconTo(btn, loc, hovered) {
+function _anchorHoverIconTo(btn, loc, hovered, n) {
     var svg = btn && btn.querySelector('svg');
     if (!svg || typeof svg.animate !== 'function') return;
-    _anchorAnimateIconTo(svg, _anchorIconTransform(loc, hovered), 180);
+    _anchorAnimateIconTo(svg, _anchorIconTransform(loc, hovered, n), 180);
 }
 
+// Reads each grid's own data-grid-size rather than assuming 3 — the 3x3 and 5x5 grids sit side by side
+// in the DOM (see index.html) with only one ever visible (display:grid) at a time.
 function _initAnchorBtnHoverAnim() {
-    var buttons = document.querySelectorAll('.anchor-grid .anchor-btn');
-    for (var i = 0; i < buttons.length; i++) {
-        (function(btn, loc) {
-            btn.addEventListener('mouseenter', function() { _anchorHoverIconTo(btn, loc, true); });
-            btn.addEventListener('mouseleave', function() { _anchorHoverIconTo(btn, loc, false); });
-        })(buttons[i], i);
+    var grids = document.querySelectorAll('.anchor-row .anchor-grid');
+    for (var g = 0; g < grids.length; g++) {
+        var grid = grids[g];
+        var n = parseInt(grid.getAttribute('data-grid-size'), 10) || 3;
+        var buttons = grid.querySelectorAll('.anchor-btn');
+        for (var i = 0; i < buttons.length; i++) {
+            // n passed in explicitly (not just closed over) — it's declared with var in the outer
+            // loop over grids, so without this every handler here would share whatever grid's n
+            // the loop last landed on instead of its own grid's.
+            (function(btn, loc, gridN) {
+                btn.addEventListener('mouseenter', function() { _anchorHoverIconTo(btn, loc, true, gridN); });
+                btn.addEventListener('mouseleave', function() { _anchorHoverIconTo(btn, loc, false, gridN); });
+            })(buttons[i], i, n);
+        }
     }
 }
 
 // Punches the clicked icon out to the edge, then settles back to hover position; if the cursor leaves mid-animation, the mouseleave handler cancels and blends into this one.
-function _animateAnchorClick(loc, btn) {
+function _animateAnchorClick(loc, btn, n) {
     var svg = btn && btn.querySelector('svg');
     if (!svg || typeof svg.animate !== 'function') return;
-    var edgeTransform = loc === 4
-        ? 'scale(1.3)'
-        : 'translate(' + ANCHOR_SNAP_OFFSETS[loc][0] + 'px, ' + ANCHOR_SNAP_OFFSETS[loc][1] + 'px)';
-    var hoverTransform = _anchorIconTransform(loc, true);
+    var snapOff = _anchorOffsetFor(loc, n, ANCHOR_SNAP_MAGNITUDE);
+    var edgeTransform = snapOff ? 'translate(' + snapOff[0] + 'px, ' + snapOff[1] + 'px)' : 'scale(1.3)';
+    var hoverTransform = _anchorIconTransform(loc, true, n);
     var prev = _anchorIconAnims.get(svg);
     var from = getComputedStyle(svg).transform;
     if (prev) prev.cancel();
@@ -2563,9 +2902,199 @@ function _animateAnchorClick(loc, btn) {
     };
 }
 
-function doAnchor(loc, btn) {
-    _animateAnchorClick(loc, btn);
-    run('lineup_anchorMove(' + loc + ',' + _anchorMode + ',' + (_ignoreMasks ? 1 : 0) + ')');
+function doAnchor(loc, btn, gridSize) {
+    var n = gridSize || 3;
+    _animateAnchorClick(loc, btn, n);
+    run('lineup_anchorMove(' + loc + ',' + _anchorMode + ',' + (_ignoreMasks ? 1 : 0) + ',' + n + ')');
+}
+
+// Right-click on any anchor button: create a null at that grid location instead of moving the
+// layer's own anchor point there. Still driven by the same Based-on dropdown (_anchorMode) as a
+// left-click, and reuses left-click's own snap animation as the visual confirmation of where it fired.
+function doAnchorNull(loc, btn, gridSize) {
+    var n = gridSize || 3;
+    _animateAnchorClick(loc, btn, n);
+    run('lineup_createNullAtAnchor(' + loc + ',' + n + ',' + _anchorMode + ',' + (_ignoreMasks ? 1 : 0) + ')');
+}
+
+// ── Held-Alt 5x5 anchor grid (Compact only) ─────────────────────────────────
+// Same icon language as the static 3x3 markup in index.html: corner bracket at the 4 true corners,
+// a straight edge line along the border cells between them, the center square at the exact middle
+// (odd grid sizes only), and a plain dot for every other interior cell — there's no natural
+// corner/edge metaphor for e.g. "25% across, one row down", so those just mark their spot.
+function _anchorBtnIconSvg(row, col, n) {
+    var last = n - 1;
+    var isTop = row === 0, isBottom = row === last, isLeft = col === 0, isRight = col === last;
+    if (isTop && isLeft)     return '<path d="M7,15 L7,9.5 Q7,7 9.5,7 L15,7"/>';
+    if (isTop && isRight)    return '<path d="M17,15 L17,9.5 Q17,7 14.5,7 L9,7"/>';
+    if (isBottom && isLeft)  return '<path d="M7,9 L7,14.5 Q7,17 9.5,17 L15,17"/>';
+    if (isBottom && isRight) return '<path d="M17,9 L17,14.5 Q17,17 14.5,17 L9,17"/>';
+    if (isTop)    return '<line x1="8" y1="8" x2="16" y2="8"/>';
+    if (isBottom) return '<line x1="8" y1="16" x2="16" y2="16"/>';
+    if (isLeft)   return '<line x1="8" y1="8" x2="8" y2="16"/>';
+    if (isRight)  return '<line x1="16" y1="8" x2="16" y2="16"/>';
+    if (row === last / 2 && col === last / 2) return '<rect x="8.5" y="8.5" width="7" height="7" rx="1.8"/>';
+    return '<circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>';
+}
+
+function _buildAnchor5x5Grid() {
+    var grid = document.getElementById('anchorGrid5x5');
+    if (!grid || grid.childElementCount) return;
+    var n = 5, html = '';
+    for (var row = 0; row < n; row++) {
+        for (var col = 0; col < n; col++) {
+            var loc = row * n + col;
+            var pct = Math.round(100 / (n - 1));
+            var title = 'Anchor ' + (col * pct) + '%, ' + (row * pct) + '%';
+            html += '<button class="anchor-btn" title="' + title + '" onclick="doAnchor(' + loc + ', this, ' + n + ')" ' +
+                'oncontextmenu="doAnchorNull(' + loc + ', this, ' + n + '); return false;">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+                _anchorBtnIconSvg(row, col, n) + '</svg></button>';
+        }
+    }
+    grid.innerHTML = html;
+}
+
+// Tracked globally (not just while hovering the grid) so the swap can react the instant Alt is
+// pressed/released anywhere in the panel, matching how modifier-key tool switches behave elsewhere
+// (e.g. host apps' own Alt/Option grid tools) rather than requiring the cursor to already be over it.
+var _anchorAltHeld = false;
+
+function _isCompactLayout() {
+    return !document.body.classList.contains('layout-classic') && !document.body.classList.contains('layout-toolbar');
+}
+
+// The 4 corners, 4 edge midpoints, and center sit at the exact same fractional position in both grids
+// (loc%3/2 and loc%5/4 both resolve to 0, 0.5, or 1 — see anchorLocToPoint in host.jsx), which is why
+// they already share the same corner/edge/center icons. Keyed by 3x3 loc, valued by its coincident 5x5 loc.
+var ANCHOR_5X5_LOC_FROM_3X3 = { 0:0, 1:2, 2:4, 3:10, 4:12, 5:14, 6:20, 7:22, 8:24 };
+var ANCHOR_3X3_LOC_FROM_5X5 = (function() {
+    var out = {};
+    for (var k in ANCHOR_5X5_LOC_FROM_3X3) out[ANCHOR_5X5_LOC_FROM_3X3[k]] = parseInt(k, 10);
+    return out;
+})();
+
+// loc === DOM order, same convention _initAnchorBtnHoverAnim already relies on.
+function _anchorGridButtonRects(grid) {
+    var buttons = grid.querySelectorAll('.anchor-btn');
+    var out = {};
+    for (var i = 0; i < buttons.length; i++) out[i] = buttons[i].getBoundingClientRect();
+    return out;
+}
+
+// One Animation per button at a time — same cancel-and-continue pattern as _anchorIconAnims, so a
+// rapid double-tap of Alt (or a click landing mid-swap) blends into whatever's currently running
+// instead of the two fighting over the same transform/opacity.
+var _anchorBtnSwapAnims = new WeakMap();
+
+function _anchorRunBtnAnim(btn, keyframes, duration) {
+    var prev = _anchorBtnSwapAnims.get(btn);
+    if (prev) prev.cancel();
+    var anim = btn.animate(keyframes, { duration: duration, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both' });
+    _anchorBtnSwapAnims.set(btn, anim);
+    anim.onfinish = function() {
+        btn.style.transform = '';
+        btn.style.opacity = '';
+        btn.style.transformOrigin = '';
+        anim.cancel();
+        if (_anchorBtnSwapAnims.get(btn) === anim) _anchorBtnSwapAnims.delete(btn);
+    };
+    return anim;
+}
+
+// FLIP: rects were captured from the outgoing grid BEFORE it was hidden, so this plays each surviving
+// button (corners/edges/center) moving/scaling from its old screen position to its new one, instead of
+// the old cross-fade — reads as the same button relocating, not one disappearing and another appearing
+// in its place. Buttons with no counterpart in the outgoing grid split into two treatments:
+// - Interior ring cells (the 5x5's 8 non-border, non-center dots) bloom in from the grid's own center
+//   point: transform-origin is set per-button to that shared center (rather than each button's own
+//   center, the default), so a plain scale-down-to-1 reads as contracting into place from the middle of
+//   the grid. Looks clean here since these sit well clear of the grid's own edge.
+// - Border cells (the 8 remaining edge-line buttons flanking each side's FLIP-mapped midpoint) sit right
+//   at the grid's own frame, where that same off-center scale instead read as an odd slide/clip against
+//   it — those just get a plain, slower fade instead.
+function _flipAnchorGridButtons(toGrid, fromRects, mapToFromLoc) {
+    var buttons = toGrid.querySelectorAll('.anchor-btn');
+    var n = parseInt(toGrid.getAttribute('data-grid-size'), 10) || Math.round(Math.sqrt(buttons.length));
+    var gridRect = toGrid.getBoundingClientRect();
+    var gcx = gridRect.left + gridRect.width / 2, gcy = gridRect.top + gridRect.height / 2;
+    for (var loc = 0; loc < buttons.length; loc++) {
+        var btn = buttons[loc];
+        if (typeof btn.animate !== 'function') continue;
+        var fromLoc = mapToFromLoc[loc];
+        var fromRect = fromLoc !== undefined ? fromRects[fromLoc] : null;
+        if (fromRect && fromRect.width && fromRect.height) {
+            var toRect = btn.getBoundingClientRect();
+            var dx = (fromRect.left + fromRect.width / 2) - (toRect.left + toRect.width / 2);
+            var dy = (fromRect.top + fromRect.height / 2) - (toRect.top + toRect.height / 2);
+            var sx = fromRect.width / toRect.width, sy = fromRect.height / toRect.height;
+            _anchorRunBtnAnim(btn, [
+                { transform: 'translate(' + dx + 'px, ' + dy + 'px) scale(' + sx + ', ' + sy + ')', opacity: 1 },
+                { transform: 'none', opacity: 1 }
+            ], 240);
+            continue;
+        }
+        var col = loc % n, row = Math.floor(loc / n);
+        var onBorder = row === 0 || row === n - 1 || col === 0 || col === n - 1;
+        if (onBorder) {
+            _anchorRunBtnAnim(btn, [{ opacity: 0 }, { opacity: 1 }], 420);
+        } else {
+            var btnRect = btn.getBoundingClientRect();
+            btn.style.transformOrigin = (gcx - btnRect.left) + 'px ' + (gcy - btnRect.top) + 'px';
+            _anchorRunBtnAnim(btn, [
+                { transform: 'scale(1.08)', opacity: 0 },
+                { transform: 'scale(1)', opacity: 1 }
+            ], 380);
+        }
+    }
+}
+
+function _syncAnchorAltGrid() {
+    var showAlt = _anchorAltHeld && _isCompactLayout();
+    var wasAlt = document.body.classList.contains('anchor-alt-5x5');
+    if (showAlt === wasAlt) return;
+
+    var grid3 = document.querySelector('.anchor-grid-3x3');
+    var grid5 = document.getElementById('anchorGrid5x5');
+    if (!grid3 || !grid5) { document.body.classList.toggle('anchor-alt-5x5', showAlt); return; }
+
+    // Measure the outgoing grid while it's still visible, THEN swap, THEN measure/animate the incoming
+    // one — getBoundingClientRect() forces a synchronous layout, so no rAF is needed between these steps.
+    var fromGrid = showAlt ? grid3 : grid5;
+    var fromRects = _anchorGridButtonRects(fromGrid);
+    document.body.classList.toggle('anchor-alt-5x5', showAlt);
+    var toGrid = showAlt ? grid5 : grid3;
+    var mapToFromLoc = showAlt ? ANCHOR_3X3_LOC_FROM_5X5 : ANCHOR_5X5_LOC_FROM_3X3;
+    _flipAnchorGridButtons(toGrid, fromRects, mapToFromLoc);
+}
+
+// Alt released via keyup while the panel has focus is the common case, but Alt can also go missing
+// with no keyup at all (Alt-Tab away, or the OS/host app intercepting it for its own menu) — window
+// blur and visibilitychange both force it back off so the grid never gets stuck on 5x5.
+//
+// preventDefault() on both is required, not cosmetic: a bare Alt tap left unhandled is the Windows
+// accelerator for toggling the host app's own menu-mnemonic focus (After Effects' menu bar), which
+// steals keyboard focus away from this CEP panel's webview entirely — every Alt press after the first
+// would then go to After Effects instead of here, until the user clicked back into the panel. Blocking
+// the default here keeps the key event (and focus) inside the panel.
+function _initAnchorAltGrid() {
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Alt') return;
+        e.preventDefault();
+        if (_anchorAltHeld) return;
+        _anchorAltHeld = true;
+        _syncAnchorAltGrid();
+    });
+    document.addEventListener('keyup', function(e) {
+        if (e.key !== 'Alt') return;
+        e.preventDefault();
+        _anchorAltHeld = false;
+        _syncAnchorAltGrid();
+    });
+    window.addEventListener('blur', function() { _anchorAltHeld = false; _syncAnchorAltGrid(); });
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) { _anchorAltHeld = false; _syncAnchorAltGrid(); }
+    });
 }
 
 function doAnchorCopy() {
@@ -4762,6 +5291,38 @@ function _buildShapeSelCtx() {
     return el;
 }
 
+// Some Tools tab tiles (Smart Select/Link/Merge, Select Paths/Fill/Stroke, Split
+// Text) already own a right-click mode-picker flyout, built on this same .fav-ctx
+// shell — rather than stack a second favorite-only popup on top of theirs, Favorite
+// is folded in as a trailing row (see the 3 call sites below and
+// _initToolsFavContextMenu's exclusion of these tiles' own classes). Only appears
+// when btn is the Tools tab's own tile (has data-tool-id) — the Home widget's copy
+// of the same button, which shares this flyout, has nothing to favorite.
+function _syncFavRowInCtx(ctxEl, btn, closeFn) {
+    var row = ctxEl.querySelector('.shape-sel-ctx-row');
+    var oldDivider = ctxEl.querySelector('.tools-fav-ctx-divider');
+    var oldBtn = ctxEl.querySelector('.tools-fav-ctx-btn');
+    if (oldDivider) oldDivider.parentNode.removeChild(oldDivider);
+    if (oldBtn) oldBtn.parentNode.removeChild(oldBtn);
+    if (!(btn.classList.contains('tools-grid-btn') && btn.hasAttribute('data-tool-id'))) return;
+    var id = btn.getAttribute('data-tool-id');
+    var active = _isToolFavorited(id);
+    var divider = document.createElement('div');
+    divider.className = 'tools-fav-ctx-divider';
+    row.appendChild(divider);
+    var favBtn = document.createElement('button');
+    favBtn.type = 'button';
+    favBtn.className = 'shape-sel-ctx-icon-btn tools-fav-ctx-btn';
+    favBtn.classList.toggle('active', active);
+    favBtn.innerHTML = (active ? _FAV_STAR_SVG_FILL : _FAV_STAR_SVG) +
+        '<span class="shape-sel-ctx-lbl">' + (active ? 'Remove Favorite' : 'Favorite') + '</span>';
+    favBtn.addEventListener('click', function() {
+        _toggleToolFavorite(id);
+        closeFn();
+    });
+    row.appendChild(favBtn);
+}
+
 // Anchored to the click's clientX/Y (not gBCR, which CSS zoom can distort here). Measured before .visible (opacity:0 base is already laid out) to test-fit labeled vs .compact.
 // Re-parented into the button's own .tab-panel so the popup scales along with that subtree's Panel Scale/zoom, same fix as _openAnchorModeCtx.
 function _openShapeSelCtx(btn, e) {
@@ -4772,6 +5333,7 @@ function _openShapeSelCtx(btn, e) {
     for (var i = 0; i < items.length; i++) {
         items[i].classList.toggle('active', items[i].getAttribute('data-mode') === _shapeSelMode);
     }
+    _syncFavRowInCtx(_shapeSelCtx, btn, _closeShapeSelCtx);
     // A CEP panel's own width IS the viewport width, so "horizontally compressed" means the panel itself isn't wide enough for icon+text.
     var cw = container.clientWidth, ch = container.clientHeight;
     _shapeSelCtx.classList.remove('compact');
@@ -4920,6 +5482,7 @@ function _openSplitTextCtx(btn, e) {
     for (var i = 0; i < items.length; i++) {
         items[i].classList.toggle('active', items[i].getAttribute('data-mode') === _splitTextMode);
     }
+    _syncFavRowInCtx(_splitTextCtx, btn, _closeSplitTextCtx);
     var cw = container.clientWidth, ch = container.clientHeight;
     _splitTextCtx.classList.remove('compact');
     var wideFits = (_splitTextCtx.offsetWidth + 8) <= cw;
@@ -5064,6 +5627,7 @@ function _openSmartCtx(btn, e) {
     for (var i = 0; i < items.length; i++) {
         items[i].classList.toggle('active', items[i].getAttribute('data-mode') === _smartMode);
     }
+    _syncFavRowInCtx(_smartCtx, btn, _closeSmartCtx);
     var cw = container.clientWidth, ch = container.clientHeight;
     _smartCtx.classList.remove('compact');
     var wideFits = (_smartCtx.offsetWidth + 8) <= cw;
@@ -8216,14 +8780,24 @@ function applyProjectStructure() {
 // Bumped ~30% up from [0.65, 0.8, 0.95] — reads too small at real size inside AE. zoom scales the whole Home tab as one unit without disturbing flex/grid proportions.
 var SCALE_FACTORS = [0.85, 1.05, 1.25];
 
+// Kept in sync by applyScale — every drag interaction inside a .settings-modal (the resize handle,
+// Bulk Replace's card swap) needs this to convert real/rendered mouse-pixel deltas into the LOCAL
+// CSS px values those zoomed modals expect; see the comments in _bcsResizeStart/_brlDragMove below
+// for why skipping the division would make a drag track faster or slower than the cursor.
+var _uiZoom = 1;
+
 function applyScale(val) {
     var f = SCALE_FACTORS[Math.max(0, Math.min(2, val))];
+    _uiZoom = f;
     var content = document.getElementById('panel-content');
     if (content) content.style.zoom = String(f);
 
-    // Overlay modals live outside #panel-content, so the zoom above doesn't reach them — scale each with a CSS transform instead, which doesn't affect layout.
+    // Overlay modals live outside #panel-content, so the zoom above doesn't reach them. This used to
+    // match it with transform:scale() instead — which stretches the modal's already-rasterized
+    // pixels rather than re-laying it out, and reads visibly soft/blurry at any non-1 factor. zoom
+    // re-lays-out and re-rasterizes at the target size, same as #panel-content above, so it stays crisp.
     document.querySelectorAll('.settings-modal').forEach(function (m) {
-        m.style.transform = 'scale(' + f + ')';
+        m.style.zoom = String(f);
     });
 }
 
@@ -8534,16 +9108,6 @@ var _bcsStartField  = null;
 var _bcsDirty       = false;
 var _bcsCompNames   = []; // every comp selected when the panel was opened
 var _bcsExcluded    = {}; // index (into _bcsCompNames) -> true, removed from the batch
-var _bcsActiveTab   = 'settings'; // 'settings' | 'rename' — Batch Rename lives here as a second tab
-
-function switchBcsTab(tab) {
-    _bcsActiveTab = tab;
-    document.querySelectorAll('.bcs-ui-tab').forEach(function (btn) {
-        btn.classList.toggle('active', btn.dataset.tab === tab);
-    });
-    document.getElementById('bcsTabSettings').classList.toggle('active', tab === 'settings');
-    document.getElementById('bcsTabRename').classList.toggle('active',   tab === 'rename');
-}
 
 function _bcsParIndexForValue(v) {
     var best = 0, bestDiff = Infinity;
@@ -8775,8 +9339,7 @@ function _bcsRenderCompList() {
     }
 }
 
-// initialTab lets a caller land directly on 'rename' (see openBatchRename, kept for the Classic-mode "Batch Rename" button) — defaults to Settings otherwise.
-function openBatchCompSettings(initialTab) {
+function openBatchCompSettings() {
     cs.evalScript('lineup_getBatchCompSettingsSeed()', function (result) {
         if (!result || result === 'undefined') {
             // No live ExtendScript bridge (e.g. previewing in a browser) — fall back to mock data so the panel can still be opened and tested visually.
@@ -8820,22 +9383,12 @@ function openBatchCompSettings(initialTab) {
 
         _bcsClearDirty();
 
-        // Rename tab shares the exact same "selected comps" source as Settings above, so it's seeded from `names` instead of a redundant evalScript round-trip.
-        _brnCompNames = names;
-        _brnOrder = names.map(function (_, i) { return i; });
-        document.getElementById('brnPattern').value = '';
-        document.getElementById('brnStart').value   = '1';
-        _brnRenderCompList();
-        _brnClearDirty();
-
-        switchBcsTab(initialTab === 'rename' ? 'rename' : 'settings');
         document.getElementById('bcsOverlay').classList.remove('bcs-hidden');
     });
 }
 
 function closeBatchCompSettings() {
     document.getElementById('bcsOverlay').classList.add('bcs-hidden');
-    _brnClearDirty();
     _bcsClearDirty();
 }
 
@@ -8911,12 +9464,24 @@ function applyBatchCompSettings() {
 }
 
 // ── Batch Rename ─────────────────────────────────────────────────────────────
+// Targets the active comp's selected layers when any are selected, else the
+// comps selected in the Project panel — same "layers first, else comps" rule
+// the host applies when it actually performs the rename (see
+// lineup_getBatchRenameSeed/lineup_batchRenameApply in host.jsx).
 
-var _brnCompNames = [];   // every comp selected when the panel was opened (stable, by original index)
-var _brnOrder     = [];   // original indices in current (draggable) numbering order — removing a comp just splices its index out
-var _brnDirty     = false;
+var _brnNames      = [];     // every target's current name when the panel was opened (stable, by original index)
+var _brnCompMeta   = [];     // parallel to _brnNames — {frameRate,width,height,duration} when targeting comps, else null per entry
+var _brnTargetType = 'comps'; // 'comps' | 'layers', from the seed — gates the comp-info Replace tokens
+var _brnExcluded   = {};     // index (into _brnNames) -> true, removed from the batch
+var _brnDirty      = false;
 
-// Replaces [#]/[##]/[###]… with the zero-padded index, and the semi-secret [A] token with a spreadsheet letter based on position alone (ignores Start-at, by design).
+// Wraps a user-typed string as a safely-escaped ExtendScript string literal
+// for embedding directly into an evalScript() call.
+function _esQuote(str) {
+    return '"' + String(str).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, '\\n') + '"';
+}
+
+// Spreadsheet-style column letters: 1 -> A, 2 -> B, … 26 -> Z, 27 -> AA, …
 function _brnNumberToLetters(num) {
     var s = '';
     while (num > 0) {
@@ -8926,9 +9491,14 @@ function _brnNumberToLetters(num) {
     }
     return s;
 }
-function _brnApplyPattern(pattern, num, letterPos) {
-    if (!pattern) return '';
-    var out = pattern.replace(/\[#+\]/g, function (m) {
+
+// Replace can enumerate across the batch: every run of [#]/[##]/[###]… becomes
+// a zero-padded counter (width = number of #'s) starting from `num`, and the
+// semi-secret [A] token becomes a letter by position alone (ignores Start at,
+// always starts at A) — same tokens the old numbered-pattern rename used.
+function _brnApplyReplaceTokens(replaceStr, num, letterPos) {
+    if (!replaceStr) return replaceStr;
+    var out = replaceStr.replace(/\[#+\]/g, function (m) {
         var width = m.length - 2;
         var s = String(num);
         while (s.length < width) s = '0' + s;
@@ -8936,6 +9506,65 @@ function _brnApplyPattern(pattern, num, letterPos) {
     });
     out = out.replace(/\[A\]/g, _brnNumberToLetters(letterPos));
     return out;
+}
+
+// Trims floating-point noise (e.g. 23.976 reported as 23.976000000000002) without flattening legitimate NTSC decimals like 29.97/23.976 down to one place.
+function _brnFormatFrameRate(fr) {
+    return String(Math.round(fr * 1000) / 1000);
+}
+
+// Ignores pixel aspect ratio by design — this is the frame's width:height ratio (e.g. 1920x1080 -> "1.8"), not the pixel shape.
+function _brnFormatAspectRatio(width, height) {
+    if (!height) return '';
+    return (Math.round((width / height) * 10) / 10).toFixed(1);
+}
+
+// Largest-unit duration: h:mm:ss.s, m:ss.s, or just s.s — never frames, seconds always carry exactly one decimal.
+function _brnFormatDuration(totalSeconds) {
+    var t = Math.max(0, totalSeconds);
+    var hrs  = Math.floor(t / 3600);
+    var mins = Math.floor((t % 3600) / 60);
+    var secs = Math.round((t - hrs * 3600 - mins * 60) * 10) / 10;
+    if (secs >= 60) { secs -= 60; mins += 1; }
+    if (mins >= 60) { mins -= 60; hrs += 1; }
+
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+    function secStr(s) { return (s < 10 ? '0' : '') + s.toFixed(1); }
+
+    if (hrs > 0)  return hrs + ':' + pad2(mins) + ':' + secStr(secs);
+    if (mins > 0) return mins + ':' + secStr(secs);
+    return secs.toFixed(1);
+}
+
+// Comp-only Replace tokens — meaningless for a layer (no frame rate/dimensions/duration of its own), so callers only pass
+// a non-null meta when _brnTargetType is 'comps'; left untouched otherwise.
+function _brnApplyCompTokens(str, meta) {
+    if (!str || !meta) return str;
+    var w = meta.width, h = meta.height;
+    return str
+        .replace(/\[frameRate\]/g, _brnFormatFrameRate(meta.frameRate))
+        .replace(/\[aspectRatio\]/g, _brnFormatAspectRatio(w, h))
+        .replace(/\[dimension\]/g, w + 'x' + h)
+        .replace(/\[width\]/g, String(w))
+        .replace(/\[height\]/g, String(h))
+        .replace(/\[duration\]/g, _brnFormatDuration(meta.duration));
+}
+
+// Find is a regex, so plain text ("Light") matches that substring anywhere in
+// the name, while ^ / $ match the empty position at the start/end of the name
+// — replacing there effectively prepends/appends the Replace text. Falls back
+// to the original name on an empty or invalid pattern (e.g. unmatched paren)
+// rather than throwing mid-preview; the host performs the same validation
+// before actually applying, so a bad pattern surfaces as a toast on Apply.
+function _brnComputeName(origName, findStr, replaceStr, num, letterPos, meta) {
+    if (!findStr) return origName;
+    try {
+        var repl = _brnApplyCompTokens(replaceStr, meta);
+        repl = _brnApplyReplaceTokens(repl, num, letterPos);
+        return origName.replace(new RegExp(findStr, 'g'), repl);
+    } catch (e) {
+        return origName;
+    }
 }
 
 function _brnMarkDirty() {
@@ -8950,27 +9579,29 @@ function _brnClearDirty() {
     if (btn) btn.classList.remove('dirty');
 }
 
-// Renders a live preview of the resulting names (pattern + index applied in
-// _brnOrder) — re-run on every pattern/start-number edit, removal, and reorder.
-function _brnRenderCompList() {
+// Renders from _brnNames / _brnExcluded — each row has a remove button that
+// excludes that item from the batch without touching the actual AE selection.
+function _brnRenderList() {
     var list    = document.getElementById('brnCompList');
-    var pattern = document.getElementById('brnPattern').value;
+    var findStr = document.getElementById('brnFind').value;
+    var replStr = document.getElementById('brnReplace').value;
     var start   = parseInt(document.getElementById('brnStart').value, 10);
     if (isNaN(start)) start = 1;
 
     list.innerHTML = '';
-    for (var pos = 0; pos < _brnOrder.length; pos++) {
-        var origIdx  = _brnOrder[pos];
-        var origName = _brnCompNames[origIdx];
-        var newName  = _brnApplyPattern(pattern, start + pos, pos + 1) || origName;
+    var shown = 0;
+    var pos   = 0; // 0-based position among kept rows — drives [#]/[A] enumeration
+    for (var i = 0; i < _brnNames.length; i++) {
+        if (_brnExcluded[i]) continue;
+        shown++;
+        var origName = _brnNames[i];
+        var newName  = _brnComputeName(origName, findStr, replStr, start + pos, pos + 1, _brnCompMeta[i]);
+        pos++;
 
         var row = document.createElement('div');
         row.className = 'bcs-comp-row';
         row.title = origName;
         row.innerHTML =
-            '<button class="bcs-drag-handle" title="Drag to reorder">' +
-                '<svg viewBox="0 0 8 12" fill="currentColor"><circle cx="2" cy="1.5" r="1"/><circle cx="6" cy="1.5" r="1"/><circle cx="2" cy="6" r="1"/><circle cx="6" cy="6" r="1"/><circle cx="2" cy="10.5" r="1"/><circle cx="6" cy="10.5" r="1"/></svg>' +
-            '</button>' +
             '<svg viewBox="0 0 14 10" fill="currentColor"><rect x="0.5" y="0.5" width="13" height="9" rx="1.3" fill="none" stroke="currentColor" stroke-width="1"/></svg>' +
             '<span class="bcs-comp-name"></span>' +
             '<span class="bcs-comp-orig"></span>' +
@@ -8978,167 +9609,359 @@ function _brnRenderCompList() {
                 '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/><line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/></svg>' +
             '</button>';
         row.querySelector('.bcs-comp-name').textContent = newName;
-        row.querySelector('.bcs-comp-orig').textContent = origName;
-        row.querySelector('.bcs-comp-remove').addEventListener('click', (function (p) {
+        row.querySelector('.bcs-comp-orig').textContent = (newName !== origName) ? origName : '';
+        row.querySelector('.bcs-comp-remove').addEventListener('click', (function (idx) {
             return function () {
-                _brnOrder.splice(p, 1);
+                _brnExcluded[idx] = true;
                 _brnMarkDirty();
-                _brnRenderCompList();
+                _brnRenderList();
             };
-        })(pos));
+        })(i));
         list.appendChild(row);
     }
-    if (_brnOrder.length === 0) {
+    if (shown === 0) {
         var empty = document.createElement('div');
         empty.className = 'bcs-complist-empty';
-        empty.textContent = 'No comp selected';
+        empty.textContent = 'No comp or layer selected';
         list.appendChild(empty);
     }
-
-    _brnInitDrag();
 }
 
-// Lightweight counterpart to _brnRenderCompList for pattern/start-number edits: only updates displayed names, no rebuild, since row count/order is unchanged.
+// Lightweight counterpart to _brnRenderList for find/replace/start-number
+// edits: only updates displayed names, no rebuild, since row count is unchanged.
 function _brnUpdatePreviewNames() {
     var list    = document.getElementById('brnCompList');
-    var pattern = document.getElementById('brnPattern').value;
+    var findStr = document.getElementById('brnFind').value;
+    var replStr = document.getElementById('brnReplace').value;
     var start   = parseInt(document.getElementById('brnStart').value, 10);
     if (isNaN(start)) start = 1;
 
-    var rows = list.querySelectorAll('.bcs-comp-name');
-    for (var pos = 0; pos < _brnOrder.length && pos < rows.length; pos++) {
-        var origIdx  = _brnOrder[pos];
-        var origName = _brnCompNames[origIdx];
-        rows[pos].textContent = _brnApplyPattern(pattern, start + pos, pos + 1) || origName;
+    var nameEls = list.querySelectorAll('.bcs-comp-name');
+    var origEls = list.querySelectorAll('.bcs-comp-orig');
+    var pos = 0;
+    for (var i = 0; i < _brnNames.length && pos < nameEls.length; i++) {
+        if (_brnExcluded[i]) continue;
+        var origName = _brnNames[i];
+        var newName  = _brnComputeName(origName, findStr, replStr, start + pos, pos + 1, _brnCompMeta[i]);
+        nameEls[pos].textContent = newName;
+        origEls[pos].textContent = (newName !== origName) ? origName : '';
+        pos++;
     }
-}
-
-// Drag-to-reorder, same mechanic as the Settings section list: grab the handle,
-// a ghost row follows the cursor, other rows slide to show the live insertion
-// point, and on release _brnOrder is spliced to match — which changes numbering.
-function _brnInitDrag() {
-    var list = document.getElementById('brnCompList');
-    list.querySelectorAll('.bcs-drag-handle').forEach(function (handle) {
-        handle.addEventListener('mousedown', function (e) {
-            e.preventDefault();
-
-            var row = handle.closest('.bcs-comp-row');
-            if (!row) return;
-
-            var rowEls    = Array.from(list.querySelectorAll('.bcs-comp-row'));
-            var dragIdx   = rowEls.indexOf(row);
-            var origRects = rowEls.map(function (r) { return r.getBoundingClientRect(); });
-            var rowH      = origRects[dragIdx].height;
-            var shiftAmt  = rowH + 2; // matches list gap
-
-            var rect  = origRects[dragIdx];
-            var ghost = row.cloneNode(true);
-            ghost.className = 'bcs-comp-row bcs-comp-drag-ghost';
-            ghost.style.cssText = [
-                'position:fixed',
-                'left:' + rect.left + 'px',
-                'top:'  + rect.top  + 'px',
-                'width:' + rect.width + 'px',
-                'pointer-events:none',
-                'z-index:2000'
-            ].join(';');
-            document.body.appendChild(ghost);
-            row.style.visibility = 'hidden';
-
-            var startY    = e.clientY;
-            var originTop = rect.top;
-
-            function getInsertIdx(ghostCenterY) {
-                var above = 0;
-                for (var i = 0; i < rowEls.length; i++) {
-                    if (i === dragIdx) continue;
-                    if (ghostCenterY > origRects[i].top + origRects[i].height / 2) above++;
-                }
-                var c = 0;
-                for (var i = 0; i < rowEls.length; i++) {
-                    if (i === dragIdx) continue;
-                    if (c++ === above) return i;
-                }
-                return rowEls.length;
-            }
-
-            function applyShifts(insertIdx) {
-                rowEls.forEach(function (r, i) {
-                    if (i === dragIdx) return;
-                    var dy = 0;
-                    if (insertIdx > dragIdx  && i > dragIdx  && i < insertIdx) dy = -shiftAmt;
-                    if (insertIdx <= dragIdx && i >= insertIdx && i < dragIdx)  dy =  shiftAmt;
-                    r.style.transform = dy ? 'translateY(' + dy + 'px)' : '';
-                });
-            }
-
-            function onMove(ev) {
-                var top = originTop + ev.clientY - startY;
-                ghost.style.top = top + 'px';
-                applyShifts(getInsertIdx(top + rowH / 2));
-            }
-
-            function onUp(ev) {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-                ghost.remove();
-
-                var finalIdx  = getInsertIdx(originTop + ev.clientY - startY + rowH / 2);
-                var insertAt  = finalIdx > dragIdx ? finalIdx - 1 : finalIdx;
-                var moved     = _brnOrder.splice(dragIdx, 1)[0];
-                _brnOrder.splice(insertAt, 0, moved);
-
-                _brnMarkDirty();
-                _brnRenderCompList(); // rebuilds rows (clears transforms) and renumbers
-            }
-
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
-        });
-    });
 }
 
 function _brnInit() {
-    document.getElementById('brnPattern').addEventListener('input', function () { _brnUpdatePreviewNames(); _brnMarkDirty(); });
+    document.getElementById('brnFind').addEventListener('input',    function () { _brnUpdatePreviewNames(); _brnMarkDirty(); });
+    document.getElementById('brnReplace').addEventListener('input', function () { _brnUpdatePreviewNames(); _brnMarkDirty(); });
     document.getElementById('brnStart').addEventListener('input',   function () { _brnUpdatePreviewNames(); _brnMarkDirty(); });
 }
 
-// Batch Rename is now the 2nd tab of the Batch Comp Settings modal; this just opens straight to it, kept named so Classic's "Batch Rename" button needs no markup change.
 function openBatchRename() {
-    openBatchCompSettings('rename');
-}
-
-// Wraps a user-typed string as a safely-escaped ExtendScript string literal
-// for embedding directly into an evalScript() call.
-function _esQuote(str) {
-    return '"' + String(str).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, '\\n') + '"';
-}
-
-function applyBatchRename() {
-    var pattern = document.getElementById('brnPattern').value;
-    var start   = parseInt(document.getElementById('brnStart').value, 10);
-    if (isNaN(start)) start = 1;
-
-    if (!pattern) {
-        showToast('Enter a name pattern.');
-        return;
-    }
-    if (_brnOrder.length === 0) {
-        showToast('All compositions were removed from the list — nothing to apply.');
-        return;
-    }
-
-    var script = 'lineup_batchRenameComps(' +
-        _esQuote(pattern) + ',' + start + ',' +
-        _esQuote(_brnOrder.join(',')) + ')';
-
-    cs.evalScript(script, function (result) {
-        if (!result || result === 'undefined') { closeBatchCompSettings(); return; }
+    cs.evalScript('lineup_getBatchRenameSeed()', function (result) {
+        if (!result || result === 'undefined') {
+            // No live ExtendScript bridge (e.g. previewing in a browser) — fall back to mock data so the panel can still be opened and tested visually.
+            result = 'comps|';
+        }
         if (result.indexOf('ERROR:') === 0) {
             showToast(result.replace(/^ERROR:\s*/, ''));
             return;
         }
-        closeBatchCompSettings();
+        var bar = result.split('|');
+        _brnTargetType = bar[0] === 'layers' ? 'layers' : 'comps';
+        var entries = bar.slice(1).filter(function (n) { return n.length > 0; });
+
+        _brnNames    = [];
+        _brnCompMeta = [];
+        for (var i = 0; i < entries.length; i++) {
+            if (_brnTargetType === 'comps') {
+                // name<TAB>frameRate<TAB>width<TAB>height<TAB>duration — see lineup_getBatchRenameSeed in host.jsx.
+                var f = entries[i].split('\t');
+                _brnNames.push(f[0]);
+                _brnCompMeta.push({
+                    frameRate: parseFloat(f[1]) || 0,
+                    width:     parseInt(f[2], 10) || 0,
+                    height:    parseInt(f[3], 10) || 0,
+                    duration:  parseFloat(f[4]) || 0
+                });
+            } else {
+                _brnNames.push(entries[i]);
+                _brnCompMeta.push(null);
+            }
+        }
+        _brnExcluded = {};
+
+        document.getElementById('brnFind').value    = '';
+        document.getElementById('brnReplace').value = '';
+        document.getElementById('brnStart').value   = '1';
+        document.getElementById('brnCompInfoHelpBtn').classList.toggle('bcs-hidden', _brnTargetType !== 'comps');
+        _brnRenderList();
+        _brnClearDirty();
+
+        document.getElementById('brnOverlay').classList.remove('bcs-hidden');
+    });
+}
+
+function closeBatchRename() {
+    document.getElementById('brnOverlay').classList.add('bcs-hidden');
+    _brnClearDirty();
+}
+
+function applyBatchRename() {
+    var findStr = document.getElementById('brnFind').value;
+    var replStr = document.getElementById('brnReplace').value;
+    var start   = parseInt(document.getElementById('brnStart').value, 10);
+    if (isNaN(start)) start = 1;
+
+    if (!findStr) {
+        showToast('Enter a value to find.');
+        return;
+    }
+
+    var excludedIdx = [];
+    for (var i = 0; i < _brnNames.length; i++) {
+        if (_brnExcluded[i]) excludedIdx.push(i);
+    }
+    if (_brnNames.length > 0 && excludedIdx.length === _brnNames.length) {
+        showToast('All items were removed from the list — nothing to apply.');
+        return;
+    }
+
+    var script = 'lineup_batchRenameApply(' +
+        _esQuote(findStr) + ',' + _esQuote(replStr) + ',' +
+        _esQuote(excludedIdx.join(',')) + ',' + start + ')';
+
+    cs.evalScript(script, function (result) {
+        if (!result || result === 'undefined') { closeBatchRename(); return; }
+        if (result.indexOf('ERROR:') === 0) {
+            showToast(result.replace(/^ERROR:\s*/, ''));
+            return;
+        }
+        closeBatchRename();
+    });
+}
+
+// ── Bulk Replace ──────────────────────────────────────────────────────────────
+// Pairs the Project panel's current selection (fixed at open time, in panel order) with a set of
+// files chosen from disk (fixed at pick time, in file-dialog return order) positionally. Neither
+// order is guaranteed to match the order the user actually clicked things in, so nothing is ever
+// sent to lineup_bulkReplaceApply until the paired list below has been shown back to the user —
+// removing a row just drops that pairing from the batch; the underlying AE selection is untouched.
+
+var _brlItems    = []; // [{id, name, ext}] — the valid footage items from the selection, in panel order
+var _brlFiles    = []; // [{path, name}] — the picked replacement files, in file-dialog order
+var _brlExcluded = {}; // index into the paired range (0..min(items,files)-1) -> true, removed from the batch
+var _brlSkipped  = 0;  // non-footage items (comps, folders, solids) present in the selection at open time
+
+function _brlPlural(count, singular) {
+    return count + ' ' + singular + (count === 1 ? '' : 's');
+}
+
+// Three visual categories plus a catch-all, each with their own icon next to the item being replaced
+// (see _brlRenderList) — same image/video/3D groupings host.jsx's STRUCTURE_EXT_MAP uses for project
+// organization, just split back out to three (not collapsed to one "media" bucket) since images and
+// video read as visually distinct things, not two flavors of the same icon.
+var BRL_IMAGE_EXTS = { psd:1, psb:1, ai:1, eps:1, jpg:1, jpeg:1, png:1, gif:1, bmp:1, tif:1, tiff:1, tga:1, webp:1, svg:1, exr:1, dpx:1, hdr:1 };
+var BRL_VIDEO_EXTS = { mov:1, mp4:1, avi:1, mxf:1, mkv:1, wmv:1, m4v:1, webm:1, mpg:1, mpeg:1, m2v:1, r3d:1, braw:1 };
+var BRL_3D_EXTS     = { c4d:1, obj:1, fbx:1, dae:1, abc:1, gltf:1, glb:1 };
+
+// Frame + sun + mountains — the classic "image" glyph.
+var BRL_IMAGE_ICON_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2" width="11" height="10" rx="1.5"/><circle cx="5" cy="5.3" r="1.1"/><path d="M1.5,10.5 L5,7 L7.5,9.2 L9.5,6.8 L12.5,10"/></svg>';
+// Frame + play triangle — plain video glyph, distinct from the image frame above.
+var BRL_VIDEO_ICON_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="11" height="9" rx="1.5"/><path d="M6,5 L9.5,7 L6,9 Z" fill="currentColor" stroke="none"/></svg>';
+// Circle-with-highlight (sphere) — 3D scene files only, not a stand-in for images/video too.
+var BRL_3D_ICON_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="7" cy="7" r="5.3"/><path d="M4.2,4.8 A2.3,2.3 0 0,1 5.6,3.6" fill="none"/></svg>';
+// Plain document with a folded corner — same visual language as Comp Export's own icon elsewhere,
+// scaled down, for every other filetype (audio, anything unrecognized).
+var BRL_FILE_ICON_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5,1.5 H8 L10.5,4 V12.5 H3.5 Z"/><path d="M8,1.5 V4 H10.5"/></svg>';
+
+function _brlItemIconSvg(ext) {
+    var e = (ext || '').toLowerCase();
+    if (BRL_IMAGE_EXTS[e]) return BRL_IMAGE_ICON_SVG;
+    if (BRL_VIDEO_EXTS[e]) return BRL_VIDEO_ICON_SVG;
+    if (BRL_3D_EXTS[e])    return BRL_3D_ICON_SVG;
+    return BRL_FILE_ICON_SVG;
+}
+
+function openBulkReplace() {
+    cs.evalScript('lineup_bulkReplaceGetSelection()', function (result) {
+        if (!result || result === 'undefined') return;
+        if (result.indexOf('ERROR:') === 0) {
+            showToast(result.replace(/^ERROR:\s*/, ''));
+            return;
+        }
+        var data;
+        try { data = JSON.parse(result); } catch (e) { return; }
+        if (!data.items || !data.items.length) {
+            showToast('Select one or more footage items in the Project panel first.');
+            return;
+        }
+
+        _brlItems    = data.items;
+        _brlFiles    = [];
+        _brlExcluded = {};
+        _brlSkipped  = data.skipped || 0;
+
+        _brlRenderList();
+        document.getElementById('brlOverlay').classList.remove('bcs-hidden');
+    });
+}
+
+function closeBulkReplace() {
+    document.getElementById('brlOverlay').classList.add('bcs-hidden');
+}
+
+function _brlPickFiles() {
+    cs.evalScript('lineup_bulkReplacePickFiles()', function (result) {
+        if (!result || result === 'undefined') return;
+        if (result.indexOf('ERROR:') === 0) {
+            showToast(result.replace(/^ERROR:\s*/, ''));
+            return;
+        }
+        var data;
+        try { data = JSON.parse(result); } catch (e) { return; }
+        if (data.canceled) return; // user backed out of the dialog — leave the modal as it was
+
+        _brlFiles    = data.files || [];
+        _brlExcluded = {};
+        _brlRenderList();
+    });
+}
+
+// ── Bulk Replace: drag a row's file card onto another to swap their files ──────
+// Items never move — only the file half of each pairing does — so the draggable unit is just the
+// small file card inset on the row's right side (see .brl-file-card), not the whole row: pick the
+// card up, hover another row's card, drop to trade files with it.
+var _brlDrag = null; // {idx, card, startX, startY, overIdx} while a drag is in progress
+
+function _brlDragMove(e) {
+    if (!_brlDrag) return;
+    // clientX/Y are real/rendered pixels; translate() below is read in LOCAL px inside the modal's
+    // own zoom (see _uiZoom/applyScale) — dividing keeps the card tracking the cursor 1:1 regardless
+    // of panel scale instead of drifting ahead of or behind it.
+    var dx = (e.clientX - _brlDrag.startX) / _uiZoom;
+    var dy = (e.clientY - _brlDrag.startY) / _uiZoom;
+    _brlDrag.card.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';
+
+    var cards = document.getElementById('brlList').querySelectorAll('.brl-file-card');
+    var overCard = null;
+    for (var i = 0; i < cards.length; i++) {
+        if (cards[i] === _brlDrag.card) continue;
+        var r = cards[i].getBoundingClientRect();
+        if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+            overCard = cards[i];
+            break;
+        }
+    }
+    for (var j = 0; j < cards.length; j++) cards[j].classList.toggle('brl-drop-target', cards[j] === overCard);
+    _brlDrag.overIdx = overCard ? parseInt(overCard.getAttribute('data-idx'), 10) : null;
+}
+
+function _brlDragEnd() {
+    if (!_brlDrag) return;
+    document.removeEventListener('mousemove', _brlDragMove);
+    document.removeEventListener('mouseup', _brlDragEnd);
+
+    if (_brlDrag.overIdx !== null && _brlDrag.overIdx !== _brlDrag.idx) {
+        var a = _brlDrag.idx, b = _brlDrag.overIdx;
+        var tmp = _brlFiles[a]; _brlFiles[a] = _brlFiles[b]; _brlFiles[b] = tmp;
+    }
+    _brlDrag = null;
+    _brlRenderList(); // rebuilds every row fresh — clears the dragged card's inline transform/classes for free
+}
+
+function _brlDragStart(e, card, idx) {
+    e.preventDefault();
+    _brlDrag = { idx: idx, card: card, startX: e.clientX, startY: e.clientY, overIdx: null };
+    card.classList.add('brl-dragging');
+    document.addEventListener('mousemove', _brlDragMove);
+    document.addEventListener('mouseup', _brlDragEnd);
+}
+
+// Renders the paired range (0..min(items,files)-1, minus excluded rows) plus a note covering
+// anything that didn't make it into a pair — skipped-at-selection items, or a items/files count
+// mismatch from the file pick.
+function _brlRenderList() {
+    var list     = document.getElementById('brlList');
+    var note     = document.getElementById('brlNote');
+    var applyBtn = document.getElementById('brlApplyBtn');
+    list.innerHTML = '';
+
+    var pairCount = Math.min(_brlItems.length, _brlFiles.length);
+    var shown = 0;
+    for (var i = 0; i < pairCount; i++) {
+        if (_brlExcluded[i]) continue;
+        shown++;
+        var item = _brlItems[i], file = _brlFiles[i];
+
+        var row = document.createElement('div');
+        row.className = 'bcs-comp-row';
+        row.innerHTML =
+            _brlItemIconSvg(item.ext) +
+            '<span class="bcs-comp-name"></span>' +
+            '<div class="brl-file-card">' +
+                '<span class="brl-file-name"></span>' +
+            '</div>' +
+            '<button class="bcs-comp-remove" title="Remove from batch">' +
+                '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/><line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/></svg>' +
+            '</button>';
+        var nameEl = row.querySelector('.bcs-comp-name');
+        nameEl.textContent = item.name;
+        nameEl.title       = item.name; // per-element tooltip — the row no longer carries one combined title, so each abridged name shows its own full text on hover
+        var card = row.querySelector('.brl-file-card');
+        card.setAttribute('data-idx', i);
+        card.title = file.name;
+        row.querySelector('.brl-file-name').textContent = file.name;
+        card.addEventListener('mousedown', (function (idx, cardEl) {
+            return function (e) { _brlDragStart(e, cardEl, idx); };
+        })(i, card));
+        row.querySelector('.bcs-comp-remove').addEventListener('click', (function (idx) {
+            return function () {
+                _brlExcluded[idx] = true;
+                _brlRenderList();
+            };
+        })(i));
+        list.appendChild(row);
+    }
+    if (shown === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'bcs-complist-empty';
+        empty.textContent = _brlFiles.length ? 'Nothing left to replace' : 'Choose replacement files to build the list';
+        list.appendChild(empty);
+    }
+
+    var notes = [];
+    if (_brlSkipped > 0) notes.push(_brlPlural(_brlSkipped, 'item') + " in your selection weren't replaceable footage and were skipped");
+    if (_brlFiles.length && _brlItems.length !== _brlFiles.length) {
+        var extra = _brlItems.length - _brlFiles.length;
+        notes.push(extra > 0
+            ? _brlPlural(extra, 'item') + ' left over with no file chosen — pick again with matching counts, or remove them above'
+            : _brlPlural(-extra, 'file') + ' left over, unused');
+    }
+    note.textContent = notes.join('. ');
+
+    applyBtn.disabled = shown === 0;
+}
+
+function applyBulkReplace() {
+    var ids = [], paths = [];
+    for (var i = 0; i < Math.min(_brlItems.length, _brlFiles.length); i++) {
+        if (_brlExcluded[i]) continue;
+        ids.push(_brlItems[i].id);
+        paths.push(_brlFiles[i].path);
+    }
+    if (!ids.length) {
+        showToast('Nothing to replace.');
+        return;
+    }
+
+    var script = 'lineup_bulkReplaceApply(' + _esQuote(JSON.stringify(ids)) + ',' + _esQuote(JSON.stringify(paths)) + ')';
+    cs.evalScript(script, function (result) {
+        if (!result || result === 'undefined') { closeBulkReplace(); return; }
+        if (result.indexOf('ERROR:') === 0) {
+            showToast(result.replace(/^ERROR:\s*/, ''));
+            return;
+        }
+        closeBulkReplace();
+        showToast(result, 'info');
     });
 }
 
@@ -9924,8 +10747,12 @@ document.addEventListener('DOMContentLoaded', function() {
     _initAnchorTiers();
     _initToolbarResize();
     _initToolbarDragSuppression();
+    _buildAnchor5x5Grid();
+    _initAnchorAltGrid();
     _initAnchorGridGlow();
     _initAnchorBtnHoverAnim();
+    _initBcsResizeHandles();
+    _initToolsGridGlow();
     restoreClassicOrder();
     restoreClassicCollapsed();
     restoreLayoutMode();
@@ -9937,6 +10764,10 @@ document.addEventListener('DOMContentLoaded', function() {
     restoreScoringSetting();
     initToolsSearch();
     _initToolsFilterCompact();
+    _initToolsBodyFadeScroll();
+    _loadToolsFavorites();
+    _sortToolsGrid();
+    _initToolsFavContextMenu();
     restoreCollapsed();
     restoreScale();
     _bcsInit();

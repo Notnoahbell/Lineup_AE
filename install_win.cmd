@@ -57,8 +57,36 @@ if "%ANY_OK%"=="0" (
     echo choosing "Run as Administrator", or ask IT to allow it.
 )
 
+REM ── BBQC companion extension ───────────────────────────────────────────────
+REM BBQC ships bundled inside this repo (see BBQC_CEP\) but installs as its own
+REM separate CEP extension, matching what js/update.js's in-app self-updater
+REM does on every Lineup update: silently refresh it if it's already there,
+REM otherwise ask before installing it fresh.
+set BBQC_SRC=%~dp0BBQC_CEP
+set BBQC_DEST=%EXT_DIR%\BBQC_CEP
+if not exist "%BBQC_SRC%" goto :after_bbqc
+if exist "%BBQC_DEST%" goto :update_bbqc
+
+set /p BBQC_ANSWER=BBQC companion extension not found - install it too? [Y/n]:
+if /i "%BBQC_ANSWER%"=="n" goto :after_bbqc
+echo Installing BBQC...
+xcopy /E /I /Q "%BBQC_SRC%" "%BBQC_DEST%\" >nul
+echo BBQC installed.
+goto :after_bbqc
+
+:update_bbqc
+echo Updating BBQC companion extension...
+xcopy /E /I /Q /Y "%BBQC_SRC%\CSXS"  "%BBQC_DEST%\CSXS"  >nul
+xcopy /E /I /Q /Y "%BBQC_SRC%\certs" "%BBQC_DEST%\certs" >nul
+xcopy /E /I /Q /Y "%BBQC_SRC%\css"   "%BBQC_DEST%\css"   >nul
+xcopy /E /I /Q /Y "%BBQC_SRC%\js"    "%BBQC_DEST%\js"    >nul
+xcopy /E /I /Q /Y "%BBQC_SRC%\jsx"   "%BBQC_DEST%\jsx"   >nul
+copy  /Y          "%BBQC_SRC%\index.html" "%BBQC_DEST%\index.html" >nul
+
+:after_bbqc
 echo.
 echo Done! Restart After Effects, then open:
 echo   Window ^> Extensions ^> Lineup
+if exist "%BBQC_DEST%" echo   Window ^> Extensions ^> BBQC
 echo.
 pause
