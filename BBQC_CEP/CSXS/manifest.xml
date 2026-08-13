@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.jaepsd.bbqc" ExtensionBundleVersion="0.4.0" ExtensionBundleName="BBQC">
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.jaepsd.bbqc" ExtensionBundleVersion="0.5.0" ExtensionBundleName="BBQC">
   <ExtensionList>
-    <Extension Id="com.jaepsd.bbqc.panel" Version="0.4.0" />
+    <Extension Id="com.jaepsd.bbqc.panel" Version="0.5.0" />
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>

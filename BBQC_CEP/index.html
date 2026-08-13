@@ -191,6 +191,7 @@
       <div class="modal-tabs" role="tablist">
         <button class="modal-tab selected" type="button" data-tab="sync" role="tab" aria-selected="true">Composition Syncs</button>
         <button class="modal-tab" type="button" data-tab="account" role="tab" aria-selected="false">Account</button>
+        <button class="modal-tab" type="button" data-tab="settings" role="tab" aria-selected="false">Settings</button>
       </div>
 
       <div id="frameioTabSync" class="modal-tab-panel">
@@ -231,6 +232,30 @@
             <input id="frameioSigninLinkInput" type="text" readonly />
             <button id="frameioCopyLinkBtn" class="modal-btn ghost" type="button">Copy</button>
           </div>
+        </div>
+      </div>
+
+      <div id="frameioTabSettings" class="modal-tab-panel hidden">
+        <div class="field-block">
+          <label class="inline-checkbox" style="margin-top:0;">
+            <span class="check-wrap">
+              <input id="frameioAutoPollCheckbox" class="note-check" type="checkbox" checked />
+              <span class="fake-check"></span>
+            </span>
+            <span>Automatically check for new comments</span>
+          </label>
+        </div>
+        <div id="frameioPollIntervalBlock" class="field-block">
+          <label for="frameioPollIntervalSelect">Check every</label>
+          <select id="frameioPollIntervalSelect">
+            <option value="1">1 minute</option>
+            <option value="2">2 minutes</option>
+            <option value="5" selected>5 minutes</option>
+            <option value="10">10 minutes</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+          </select>
+          <div id="frameioPollStatusText" class="helper-text"></div>
         </div>
       </div>
     </div>

@@ -516,6 +516,40 @@ var BBQC = BBQC || {};
         return '{"ok":true,"syncs":' + frameioSyncsJSON(out) + '}';
     };
 
+    // Called right after a composition's Frame.io link is edited to a
+    // different one — removes whatever was imported from the OLD link
+    // (any comment with a frameioCommentId, since a comp only ever has one
+    // link synced at a time) along with its marker, but leaves manually
+    // added comments (no frameioCommentId) alone. keepShareId is the shareId
+    // the NEW link resolved to; a comment is only "from the other link" if
+    // its own frameioShareId doesn't match that.
+    api.pruneFrameioComments = function (compId, keepShareId) {
+        var id = parseInt(compId, 10);
+        var keep = keepShareId || "";
+        var data = load();
+        var out = [];
+        var removed = 0;
+        app.beginUndoGroup("BBQC Remove Comments From Previous Frame.io Link");
+        try {
+            for (var i = 0; i < data.length; i++) {
+                var item = data[i];
+                var isStale = item.compID === id && item.frameioCommentId && item.frameioShareId !== keep;
+                if (!isStale) { out.push(item); continue; }
+                if (item.linked) {
+                    var comp = findCompByID(item.compID);
+                    if (comp) {
+                        var idx = findMarkerIndex(comp, item);
+                        if (idx > 0) { try { comp.markerProperty.removeKey(idx); } catch (e) {} }
+                    }
+                }
+                removed++;
+            }
+        } catch (e2) {}
+        app.endUndoGroup();
+        save(out);
+        return String(removed);
+    };
+
     // Used by the background poll to check for new Frame.io comments
     // without importing them — comment ids are Frame.io UUIDs, so a plain
     // comma join/split is safe (never contains a comma itself).

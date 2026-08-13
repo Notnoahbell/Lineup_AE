@@ -72,6 +72,10 @@
   var frameioTabButtons = document.querySelectorAll('.modal-tab');
   var frameioTabSync = document.getElementById('frameioTabSync');
   var frameioTabAccount = document.getElementById('frameioTabAccount');
+  var frameioTabSettings = document.getElementById('frameioTabSettings');
+  var frameioAutoPollCheckbox = document.getElementById('frameioAutoPollCheckbox');
+  var frameioPollIntervalSelect = document.getElementById('frameioPollIntervalSelect');
+  var frameioPollStatusText = document.getElementById('frameioPollStatusText');
   var frameioTestStatus = document.getElementById('frameioTestStatus');
   var frameioConnectBtn = document.getElementById('frameioConnectBtn');
   var frameioDisconnectBtn = document.getElementById('frameioDisconnectBtn');
@@ -215,6 +219,7 @@
   // and imports immediately) rather than surfacing yellow and requiring
   // a second click.
   function updateFrameioSyncIndicator() {
+    _updateFrameioPollStatusText();
     if (!frameioSyncIndicator) return;
     var connected = !!(window.BBQCFrameIO && window.BBQCFrameIO.isConnected());
     var hasSyncs = (state.frameioSyncs || []).length > 0;
@@ -261,6 +266,7 @@
         frameioSyncBusy = false;
         frameioLastSyncAt = Date.now();
         updateFrameioSyncIndicator();
+        _scheduleFrameioPoll(); // just checked by hand — push the next automatic check back out a full interval
         return;
       }
       importFoundFrameioItems(found, function () {
@@ -268,6 +274,7 @@
         frameioLastSyncAt = Date.now();
         updateFrameioSyncIndicator();
         refresh(true);
+        _scheduleFrameioPoll();
       });
     });
   });
@@ -985,6 +992,12 @@
     });
   }
 
+  // Set while editing an existing sync, to whatever link it had when the
+  // form opened — saveNewSync compares against this to tell "link actually
+  // changed" (prune the old link's imported comments) from "just hit Save
+  // with the same link" (nothing to prune). Null while adding a fresh sync.
+  var _editingSyncOldLink = null;
+
   // Pass an existing sync to edit its link (and optionally reassign its
   // composition) instead of adding a new one — addFrameioSync upserts by
   // compId either way, so Save just works for both cases.
@@ -996,6 +1009,7 @@
     frameioAddSyncStatus.textContent = '';
     frameioAddSyncForm.classList.remove('hidden');
     frameioAddSyncBtn.classList.add('hidden');
+    _editingSyncOldLink = existingSync ? existingSync.link : null;
   }
 
   function closeAddSyncForm() {
@@ -1011,6 +1025,10 @@
     if (!compId) { frameioAddSyncStatus.textContent = 'Create or open a composition first.'; return; }
     if (!link) { frameioNewSyncLinkInput.focus(); return; }
 
+    // Captured now, not read again later — openAddSyncForm could in theory
+    // be called again (a new edit) before this save's async chain resolves.
+    var linkChanged = !!(_editingSyncOldLink && _editingSyncOldLink !== link);
+
     frameioAddSyncSaveBtn.disabled = true;
     frameioAddSyncStatus.textContent = 'Saving…';
 
@@ -1025,14 +1043,27 @@
       refresh(false);
       frameioAddSyncStatus.textContent = 'Syncing…';
 
-      syncComposition(compId, link, function (added, updated, skipped, err, assetFrameRate) {
+      syncComposition(compId, link, function (added, updated, skipped, err, assetFrameRate, shareId) {
         frameioAddSyncSaveBtn.disabled = false;
         closeAddSyncForm();
         if (err) { updateFrameioSyncIndicator(); return; }
-        frameioLastSyncAt = Date.now();
-        updateFrameioSyncIndicator();
-        refresh(true);
-        maybePromptFrameRateMismatch(compId, assetFrameRate);
+
+        function finishSync() {
+          frameioLastSyncAt = Date.now();
+          updateFrameioSyncIndicator();
+          refresh(true);
+          maybePromptFrameRateMismatch(compId, assetFrameRate);
+        }
+
+        // The link was swapped for a different one on the same composition —
+        // whatever comments got imported under the old link are no longer
+        // relevant now that its comments have been imported instead. Comments
+        // added manually here in BBQC (no frameioCommentId) are untouched.
+        if (linkChanged) {
+          host('BBQC.pruneFrameioComments(' + esc(compId) + ',' + esc(shareId || '') + ')', function () { finishSync(); });
+        } else {
+          finishSync();
+        }
       });
     });
   }
@@ -1089,11 +1120,84 @@
     });
     frameioTabSync.classList.toggle('hidden', tabName !== 'sync');
     frameioTabAccount.classList.toggle('hidden', tabName !== 'account');
+    if (frameioTabSettings) frameioTabSettings.classList.toggle('hidden', tabName !== 'settings');
   }
 
   frameioTabButtons.forEach(function (btn) {
     btn.addEventListener('click', function () { setFrameioTab(btn.getAttribute('data-tab')); });
   });
+
+  // ---------------------------------------------------------
+  // Frame.io auto-poll settings — how often the background poll (further
+  // below) checks synced links for new comments, and whether it runs at all.
+  // ---------------------------------------------------------
+
+  var FRAMEIO_POLL_STORAGE_ENABLED = 'bbqc-frameio-autopoll-enabled';
+  var FRAMEIO_POLL_STORAGE_MINUTES = 'bbqc-frameio-autopoll-minutes';
+  var FRAMEIO_POLL_DEFAULT_MINUTES = 5;
+
+  function _loadFrameioPollEnabled() {
+    try {
+      var v = localStorage.getItem(FRAMEIO_POLL_STORAGE_ENABLED);
+      return v === null ? true : v === '1'; // absent (fresh install) defaults to on
+    } catch (e) { return true; }
+  }
+  function _saveFrameioPollEnabled(enabled) {
+    try { localStorage.setItem(FRAMEIO_POLL_STORAGE_ENABLED, enabled ? '1' : '0'); } catch (e) {}
+  }
+  function _loadFrameioPollMinutes() {
+    try {
+      var v = parseInt(localStorage.getItem(FRAMEIO_POLL_STORAGE_MINUTES), 10);
+      return v > 0 ? v : FRAMEIO_POLL_DEFAULT_MINUTES;
+    } catch (e) { return FRAMEIO_POLL_DEFAULT_MINUTES; }
+  }
+  function _saveFrameioPollMinutes(minutes) {
+    try { localStorage.setItem(FRAMEIO_POLL_STORAGE_MINUTES, String(minutes)); } catch (e) {}
+  }
+
+  var _frameioPollTimer = null;
+
+  function _clearFrameioPollTimers() {
+    if (_frameioPollTimer) { clearInterval(_frameioPollTimer); _frameioPollTimer = null; }
+  }
+
+  // (Re)starts the background poll on the current enabled/interval settings —
+  // called on load and any time either setting changes, so a change takes
+  // effect immediately instead of waiting for the old interval to finish.
+  function _scheduleFrameioPoll() {
+    _clearFrameioPollTimers();
+    _updateFrameioPollStatusText();
+    if (!_loadFrameioPollEnabled()) return;
+
+    var ms = _loadFrameioPollMinutes() * 60 * 1000;
+    _frameioPollTimer = setInterval(function () { pollFrameioSyncs(); }, ms);
+  }
+
+  // Same "X ago" wording as the sync indicator (formatRelativeSyncTime) —
+  // called from updateFrameioSyncIndicator below so it always reflects the
+  // same frameioLastSyncAt, whether that came from a manual or automatic check.
+  function _updateFrameioPollStatusText() {
+    if (!frameioPollStatusText) return;
+    if (!_loadFrameioPollEnabled()) { frameioPollStatusText.textContent = 'Auto-check is off.'; return; }
+    frameioPollStatusText.textContent = frameioLastSyncAt ? ('Last checked ' + formatRelativeSyncTime(frameioLastSyncAt)) : 'Not checked yet.';
+  }
+
+  if (frameioAutoPollCheckbox) {
+    frameioAutoPollCheckbox.checked = _loadFrameioPollEnabled();
+    frameioAutoPollCheckbox.addEventListener('change', function () {
+      _saveFrameioPollEnabled(frameioAutoPollCheckbox.checked);
+      if (frameioPollIntervalSelect) frameioPollIntervalSelect.disabled = !frameioAutoPollCheckbox.checked;
+      _scheduleFrameioPoll();
+    });
+  }
+  if (frameioPollIntervalSelect) {
+    frameioPollIntervalSelect.value = String(_loadFrameioPollMinutes());
+    frameioPollIntervalSelect.disabled = !_loadFrameioPollEnabled();
+    frameioPollIntervalSelect.addEventListener('change', function () {
+      _saveFrameioPollMinutes(parseInt(frameioPollIntervalSelect.value, 10) || FRAMEIO_POLL_DEFAULT_MINUTES);
+      _scheduleFrameioPoll();
+    });
+  }
 
   function updateFrameioConnectionUI() {
     var connected = !!(window.BBQCFrameIO && window.BBQCFrameIO.isConnected());
@@ -1186,30 +1290,34 @@
   }
 
   // Fetches one composition's Frame.io link and imports/corrects whatever
-  // comments need it. done(added, updated, skipped, err, assetFrameRate) —
-  // err is set only on failure; added/updated/skipped all 0 with no err
-  // just means nothing changed. assetFrameRate is null on failure.
+  // comments need it. done(added, updated, skipped, err, assetFrameRate,
+  // shareId) — err is set only on failure; added/updated/skipped all 0 with
+  // no err just means nothing changed. assetFrameRate/shareId are null on
+  // failure. shareId identifies which Frame.io share this link resolved to —
+  // callers use it to tell "comments from this link" apart from comments
+  // imported under a since-replaced link on the same composition.
   function syncComposition(compId, link, done) {
     if (!window.BBQCFrameIO || !window.BBQCFrameIO.isConnected()) {
-      done(0, 0, 0, new Error('Connect to Frame.io first.'), null);
+      done(0, 0, 0, new Error('Connect to Frame.io first.'), null, null);
       return;
     }
     window.BBQCFrameIO.syncShareLink(link).then(function (result) {
-      if (!result.items.length) { done(0, 0, 0, null, result.assetFrameRate); return; }
+      if (!result.items.length) { done(0, 0, 0, null, result.assetFrameRate, result.shareId); return; }
       importFrameioItemsSequentially(result.items.slice(0), compId, function (added, updated, skipped) {
-        done(added, updated, skipped, null, result.assetFrameRate);
+        done(added, updated, skipped, null, result.assetFrameRate, result.shareId);
       });
     }).catch(function (err) {
-      done(0, 0, 0, err, null);
+      done(0, 0, 0, err, null, null);
     });
   }
 
   // ---------------------------------------------------------
-  // Frame.io background poll — checks every 20 seconds (for testing;
-  // meant to be every 5 minutes normally) for new comments on each
-  // synced composition's link. scanFrameioSyncs() only checks; it never
-  // imports on its own, so the background poll can't silently rewrite
-  // the timeline — it just flags the indicator yellow with a count.
+  // Frame.io background poll — checks (on the interval set in Frame.io
+  // Settings, default 5 minutes; can be turned off entirely) for new
+  // comments on each synced composition's link. scanFrameioSyncs() only
+  // checks; it never imports on its own, so the background poll can't
+  // silently rewrite the timeline — it just flags the indicator yellow
+  // with a count.
   // ---------------------------------------------------------
 
   var pendingFrameioChanges = [];
@@ -1272,11 +1380,15 @@
       frameioLastSyncAt = Date.now();
       updateFrameioSyncIndicator();
       refresh(true);
+      _scheduleFrameioPoll(); // just checked everything by hand — push the next automatic check back out a full interval
     });
   }
 
-  setTimeout(function () { pollFrameioSyncs(); }, 20 * 1000);
-  setInterval(function () { pollFrameioSyncs(); }, 20 * 1000); // TODO: back to 5 * 60 * 1000 after testing
+  // A quick first check shortly after opening the panel, separate from the
+  // recurring interval below (which, at the 5-minute default, would
+  // otherwise leave a fresh sync with a stale-looking indicator for a while).
+  if (_loadFrameioPollEnabled()) setTimeout(function () { pollFrameioSyncs(); }, 20 * 1000);
+  _scheduleFrameioPoll();
   setInterval(updateFrameioSyncIndicator, 20 * 1000);
 
   window.addEventListener('focus', function () { refresh(false); });

@@ -1,4 +1,4 @@
-BBQC CEP v0.4
+BBQC CEP v0.5
 ==============
 
 UI/UX polish pass for the BBQC CEP prototype, plus Frame.io comment sync.
