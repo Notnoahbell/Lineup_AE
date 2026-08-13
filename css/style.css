@@ -6231,17 +6231,17 @@ input[type="checkbox"]:checked::after {
 .anchor-btn:active { background: var(--bg-btn-act); color: #fff; }
 .anchor-btn svg    { width: 70%; height: 70%; pointer-events: none; }
 
-/* Held-Alt 5x5 tier (Compact only — toggled via body.anchor-alt-5x5, see
-   _syncAnchorAltGrid in main.js): same square footprint/frame as the 3x3
+/* Scroll-triggered 5x5 tier (Compact only — toggled via body.anchor-5x5-active, see
+   _syncAnchorGridTier in main.js): same square footprint/frame as the 3x3
    above (both are width:100% aspect-ratio:1/1 inside .anchor-row, so
    swapping which one is visible never reflows anything around it), just
    more/smaller cells. Only one of the two is ever in the box tree as
    display:grid at a time, so .anchor-grid::before's glow and
    _anchorNaturalHeight's measurement both still only ever see one. */
 .anchor-grid-5x5 { display: none; }
-body.anchor-alt-5x5 .anchor-grid-3x3 { display: none; }
-body.anchor-alt-5x5 .anchor-grid-5x5 { display: grid; }
-/* No CSS pop-in here — _syncAnchorAltGrid (main.js) drives the whole transition per button via WAAPI:
+body.anchor-5x5-active .anchor-grid-3x3 { display: none; }
+body.anchor-5x5-active .anchor-grid-5x5 { display: grid; }
+/* No CSS pop-in here — _syncAnchorGridTier (main.js) drives the whole transition per button via WAAPI:
    the corners/edges/center FLIP (translate+scale) from their old screen rect to their new one, and only
    the 5x5's 16 in-between cells (no 3x3 counterpart to move from) fall back to a plain opacity fade. A
    blanket CSS animation here would double up on top of that (both touching opacity/transform). */

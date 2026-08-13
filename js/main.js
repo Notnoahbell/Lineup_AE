@@ -269,17 +269,13 @@ function _initAnchorTiers() {
 }
 
 // Cursor-follow spotlight on the anchor grid — runs its own eased-position loop only while the pointer is over the grid.
-// The 3x3 and 5x5 grids (see _buildAnchor5x5Grid) each need their own listeners since only one is ever
-// visible at a time, so _anchorGlowActiveGrid tracks whichever one the pointer most recently entered.
+// The 3x3 and 5x5 grids (see _buildAnchor5x5Grid) share one #anchorRow listener (_initAnchorGridGlow)
+// that re-checks which of the two (if either) is actually under the cursor on every move, so
+// _anchorGlowActiveGrid always reflects whichever one is currently hovered.
 var _anchorGlowRAF = null;
 var _anchorGlowActiveGrid = null;
 var _anchorGlowRawX = -9999, _anchorGlowRawY = -9999;
 var _anchorGlowX = -9999, _anchorGlowY = -9999;
-
-function _anchorGlowMove(e) {
-    _anchorGlowRawX = e.clientX;
-    _anchorGlowRawY = e.clientY;
-}
 
 function _anchorGlowTick() {
     var grid = _anchorGlowActiveGrid;
@@ -287,31 +283,40 @@ function _anchorGlowTick() {
     var dx = _anchorGlowRawX - _anchorGlowX, dy = _anchorGlowRawY - _anchorGlowY;
     _anchorGlowX += dx * 0.12;
     _anchorGlowY += dy * 0.12;
-    var rect = grid.getBoundingClientRect();
-    grid.style.setProperty('--glow-x', (_anchorGlowX - rect.left) + 'px');
-    grid.style.setProperty('--glow-y', (_anchorGlowY - rect.top) + 'px');
+    // grid.getBoundingClientRect() used to sit here, but this panel's UI Scale (CSS zoom on
+    // #panel-content, see applyScale) makes gBCR unreliable in this CEF build — error grows with
+    // distance from the element's origin, so the glow tracked fine near the top-left corner and fell
+    // increasingly short toward the bottom-right. _blOffsetFromAncestor (offsetLeft/Top up through
+    // grid's offsetParent chain to <body>, which sits outside the zoomed subtree) is the same
+    // zoom-safe alternative already used for this exact issue elsewhere (_blOffsetRect etc.).
+    var origin = _blOffsetFromAncestor(grid, document.body);
+    grid.style.setProperty('--glow-x', (_anchorGlowX - origin.x) + 'px');
+    grid.style.setProperty('--glow-y', (_anchorGlowY - origin.y) + 'px');
     _anchorGlowRAF = requestAnimationFrame(_anchorGlowTick);
 }
 
+// mouseenter/mouseleave per grid element used to drive this, but that only ever starts tracking off
+// a genuine "enter" transition — if the cursor is already resting over the grid at the moment these
+// listeners attach (e.g. right after the panel reloads while the mouse hasn't moved away), mouseenter
+// never fires and the glow stays dormant until some incidental leave+re-enter wakes it up. Detecting
+// hover via mousemove + closest() instead (same recipe _initToolsGridGlow already uses, just above)
+// sidesteps that entirely — every move re-checks what's actually under the cursor right now.
 function _initAnchorGridGlow() {
-    var grids = document.querySelectorAll('.anchor-row .anchor-grid');
-    for (var i = 0; i < grids.length; i++) {
-        (function(grid) {
-            grid.addEventListener('mouseenter', function(e) {
-                // Snap the eased position to the cursor immediately instead of easing in from off-screen.
-                _anchorGlowActiveGrid = grid;
-                _anchorGlowRawX = _anchorGlowX = e.clientX;
-                _anchorGlowRawY = _anchorGlowY = e.clientY;
-                document.addEventListener('mousemove', _anchorGlowMove);
-                if (!_anchorGlowRAF) _anchorGlowRAF = requestAnimationFrame(_anchorGlowTick);
-            });
-            grid.addEventListener('mouseleave', function() {
-                document.removeEventListener('mousemove', _anchorGlowMove);
-                if (_anchorGlowRAF) { cancelAnimationFrame(_anchorGlowRAF); _anchorGlowRAF = null; }
-                _anchorGlowActiveGrid = null;
-            });
-        })(grids[i]);
-    }
+    var row = document.getElementById('anchorRow');
+    if (!row) return;
+    row.addEventListener('mousemove', function(e) {
+        var grid = e.target.closest ? e.target.closest('.anchor-grid') : null;
+        if (grid !== _anchorGlowActiveGrid) {
+            // Snap the eased position to the cursor immediately instead of easing in from off-screen.
+            _anchorGlowActiveGrid = grid;
+            if (grid) { _anchorGlowRawX = _anchorGlowX = e.clientX; _anchorGlowRawY = _anchorGlowY = e.clientY; }
+        } else {
+            _anchorGlowRawX = e.clientX;
+            _anchorGlowRawY = e.clientY;
+        }
+        if (grid && !_anchorGlowRAF) _anchorGlowRAF = requestAnimationFrame(_anchorGlowTick);
+    });
+    row.addEventListener('mouseleave', function() { _anchorGlowActiveGrid = null; });
 }
 
 // Align/Distribute/Sort's header row drops its label first, then Align/Distribute
@@ -657,9 +662,10 @@ function _applyLayoutMode(mode) {
     // Classic/Toolbar both hide the tab bar and Quick Actions edit pencil via CSS off these two classes.
     document.body.classList.toggle('layout-classic', isClassic);
     document.body.classList.toggle('layout-toolbar', isToolbar);
-    // Re-check the held-Alt 5x5 grid (Compact-only) — switching mode via a menu/click doesn't release
-    // Alt, so without this it could stay stuck showing 5x5 after landing on Classic/Toolbar.
-    _syncAnchorAltGrid();
+    // Re-check the scroll-triggered 5x5 grid (Compact-only) — the 5x5 tier has no
+    // representation outside Compact, so this keeps it from staying stuck showing
+    // 5x5 after landing on Classic/Toolbar and not resuming correctly on return.
+    _syncAnchorGridTier();
 
     // Toolbar has no composite panels of its own, so this loop never routes anything there — non-Classic always lands back in Compact.
     CLASSIC_BLOCK_IDS.forEach(function(id) {
@@ -2889,7 +2895,7 @@ function _initAnchorIgnoreMasksSquare() {
 }
 
 // Generalized past the original fixed 9-direction (3x3) offset tables so the same hover/click animation
-// serves any n x n grid (currently 3 or 5, via the held-Alt tier — see _buildAnchor5x5Grid). loc is a
+// serves any n x n grid (currently 3 or 5, via the scroll-triggered tier — see _buildAnchor5x5Grid). loc is a
 // row-major index into the n x n grid; magnitude is the full-scale px offset at a grid's outer edge —
 // interior points (5x5's non-border cells) get a fraction of it based on how far off-center they sit.
 // Returns null for the exact center cell (odd n only), which scales instead of translating.
@@ -2996,7 +3002,7 @@ function doAnchorNull(loc, btn, gridSize) {
     run('lineup_createNullAtAnchor(' + loc + ',' + n + ',' + _anchorMode + ',' + (_ignoreMasks ? 1 : 0) + ')');
 }
 
-// ── Held-Alt 5x5 anchor grid (Compact only) ─────────────────────────────────
+// ── Scroll-triggered 5x5 anchor grid (Compact only) ──────────────────────────
 // Same icon language as the static 3x3 markup in index.html: corner bracket at the 4 true corners,
 // a straight edge line along the border cells between them, the center square at the exact middle
 // (odd grid sizes only), and a plain dot for every other interior cell — there's no natural
@@ -3034,10 +3040,11 @@ function _buildAnchor5x5Grid() {
     grid.innerHTML = html;
 }
 
-// Tracked globally (not just while hovering the grid) so the swap can react the instant Alt is
-// pressed/released anywhere in the panel, matching how modifier-key tool switches behave elsewhere
-// (e.g. host apps' own Alt/Option grid tools) rather than requiring the cursor to already be over it.
-var _anchorAltHeld = false;
+// Toggled by scrolling over the grid itself (_initAnchorScrollGrid) rather than a held modifier key —
+// a wheel event carries no cross-platform ambiguity the way a bare Alt/Option keydown did (that never
+// reliably reached the panel's webview on macOS CEP builds), and a toggle-per-direction-change also
+// reads more naturally for a mouse gesture than a "hold to preview" key would.
+var _anchor5x5Active = false;
 
 function _isCompactLayout() {
     return !document.body.classList.contains('layout-classic') && !document.body.classList.contains('layout-toolbar');
@@ -3128,52 +3135,46 @@ function _flipAnchorGridButtons(toGrid, fromRects, mapToFromLoc) {
     }
 }
 
-function _syncAnchorAltGrid() {
-    var showAlt = _anchorAltHeld && _isCompactLayout();
-    var wasAlt = document.body.classList.contains('anchor-alt-5x5');
+function _syncAnchorGridTier() {
+    var showAlt = _anchor5x5Active && _isCompactLayout();
+    var wasAlt = document.body.classList.contains('anchor-5x5-active');
     if (showAlt === wasAlt) return;
 
     var grid3 = document.querySelector('.anchor-grid-3x3');
     var grid5 = document.getElementById('anchorGrid5x5');
-    if (!grid3 || !grid5) { document.body.classList.toggle('anchor-alt-5x5', showAlt); return; }
+    if (!grid3 || !grid5) { document.body.classList.toggle('anchor-5x5-active', showAlt); return; }
 
     // Measure the outgoing grid while it's still visible, THEN swap, THEN measure/animate the incoming
     // one — getBoundingClientRect() forces a synchronous layout, so no rAF is needed between these steps.
     var fromGrid = showAlt ? grid3 : grid5;
     var fromRects = _anchorGridButtonRects(fromGrid);
-    document.body.classList.toggle('anchor-alt-5x5', showAlt);
+    document.body.classList.toggle('anchor-5x5-active', showAlt);
     var toGrid = showAlt ? grid5 : grid3;
     var mapToFromLoc = showAlt ? ANCHOR_3X3_LOC_FROM_5X5 : ANCHOR_5X5_LOC_FROM_3X3;
     _flipAnchorGridButtons(toGrid, fromRects, mapToFromLoc);
+
+    // _initAnchorGridGlow re-checks what's under the cursor on every mousemove, so this swap alone
+    // would self-correct on the next move regardless — but retargeting immediately here means the
+    // glow keeps following without waiting on one, in case the swap happens with no further movement.
+    if (_anchorGlowActiveGrid === fromGrid) _anchorGlowActiveGrid = toGrid;
 }
 
-// Alt released via keyup while the panel has focus is the common case, but Alt can also go missing
-// with no keyup at all (Alt-Tab away, or the OS/host app intercepting it for its own menu) — window
-// blur and visibilitychange both force it back off so the grid never gets stuck on 5x5.
-//
-// preventDefault() on both is required, not cosmetic: a bare Alt tap left unhandled is the Windows
-// accelerator for toggling the host app's own menu-mnemonic focus (After Effects' menu bar), which
-// steals keyboard focus away from this CEP panel's webview entirely — every Alt press after the first
-// would then go to After Effects instead of here, until the user clicked back into the panel. Blocking
-// the default here keeps the key event (and focus) inside the panel.
-function _initAnchorAltGrid() {
-    document.addEventListener('keydown', function(e) {
-        if (e.key !== 'Alt') return;
+// Scrolling over the grid takes over the role Alt/Option-hold used to have — a bare modifier
+// keydown/keyup turned out not to reliably reach this panel's webview in every CEP/CEF build on
+// every platform (fine on Windows, silent on at least one macOS build), whereas a wheel event has
+// no such ambiguity. Scroll down over the grid for the finer 5x5 tier, back up for the plain 3x3 —
+// a toggle-per-direction-change rather than a continuous zoom, and it captures the scroll entirely
+// (preventDefault) so it never also scrolls the panel behind the grid.
+function _initAnchorScrollGrid() {
+    var row = document.getElementById('anchorRow');
+    if (!row) return;
+    row.addEventListener('wheel', function(e) {
+        if (!_isCompactLayout()) return; // no 5x5 tier to switch to outside Compact — let the panel scroll normally
         e.preventDefault();
-        if (_anchorAltHeld) return;
-        _anchorAltHeld = true;
-        _syncAnchorAltGrid();
-    });
-    document.addEventListener('keyup', function(e) {
-        if (e.key !== 'Alt') return;
-        e.preventDefault();
-        _anchorAltHeld = false;
-        _syncAnchorAltGrid();
-    });
-    window.addEventListener('blur', function() { _anchorAltHeld = false; _syncAnchorAltGrid(); });
-    document.addEventListener('visibilitychange', function() {
-        if (document.hidden) { _anchorAltHeld = false; _syncAnchorAltGrid(); }
-    });
+        var showing5x5 = document.body.classList.contains('anchor-5x5-active');
+        if (e.deltaY > 0 && !showing5x5) { _anchor5x5Active = true; _syncAnchorGridTier(); }
+        else if (e.deltaY < 0 && showing5x5) { _anchor5x5Active = false; _syncAnchorGridTier(); }
+    }, { passive: false });
 }
 
 function doAnchorCopy() {
@@ -10827,7 +10828,7 @@ document.addEventListener('DOMContentLoaded', function() {
     _initToolbarResize();
     _initToolbarDragSuppression();
     _buildAnchor5x5Grid();
-    _initAnchorAltGrid();
+    _initAnchorScrollGrid();
     _initAnchorGridGlow();
     _initAnchorBtnHoverAnim();
     _initBcsResizeHandles();
