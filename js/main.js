@@ -509,11 +509,12 @@ var WHATS_NEW = {
             body: "Select, Link, and Merge are now one button — click to rerun whichever you used last, right-click to switch between them."
         }
     ],
-    '1.10.0': [
+    '1.10.1': [
         {
             icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M3.9 4a8.1 8.1 0 0 0 16.2 0Z"/><path d="M8 12L6 21M16 12L18 21M7 16h10"/></svg>',
+            accent: '#ff8a2a', // BBQC's own accent (BBQC_CEP/css/style.css --accent), not Lineup's blue
             title: 'BBQC Companion Panel',
-            body: "BBQC now ships alongside Lineup and stays updated automatically. If you don't have it installed, this update will offer to set it up — or install it anytime from Settings."
+            body: "BBQC is a companion panel that ships alongside Lineup and stays updated automatically. If you don't already have it, install it below — or skip and grab it anytime from Settings."
         }
     ]
 };
@@ -540,14 +541,39 @@ function _renderWhatsNew(version) {
     (WHATS_NEW[version] || []).forEach(function(item) {
         var row = document.createElement('div');
         row.className = 'whatsnew-item';
+        // item.accent lets an entry override the default blue icon badge with
+        // its own brand color (e.g. BBQC's orange) so it reads as that
+        // feature's own thing rather than just another Lineup update.
+        var iconStyle = item.accent ? ' style="color:' + item.accent + ';background:' + item.accent + '24"' : '';
         row.innerHTML =
-            '<div class="whatsnew-item-icon">' + item.icon + '</div>' +
+            '<div class="whatsnew-item-icon"' + iconStyle + '>' + item.icon + '</div>' +
             '<div class="whatsnew-item-text">' +
                 '<div class="whatsnew-item-title">' + item.title + '</div>' +
                 '<div class="whatsnew-item-body">' + item.body + '</div>' +
             '</div>';
         list.appendChild(row);
     });
+    _renderWhatsNewFooter(version);
+}
+
+// Most versions just get a plain dismiss button. A version whose highlighted
+// feature still has a pending install (right now: 1.10.1's BBQC, while it's
+// not yet installed — see bbqcRowBtn's visibility, toggled by _refreshBBQCUI
+// in update.js) gets Download/Skip instead. This is the ONLY place BBQC's
+// install is ever asked about — there is deliberately no separate confirm
+// modal anywhere else.
+function _renderWhatsNewFooter(version) {
+    var ftr = document.getElementById('whatsNewFooterActions');
+    if (!ftr) return;
+    var bbqcBtn = document.getElementById('bbqcRowBtn');
+    var bbqcPending = version === '1.10.1' && bbqcBtn && !bbqcBtn.classList.contains('settings-hidden');
+    if (bbqcPending) {
+        ftr.innerHTML =
+            '<button class="btn" onclick="closeWhatsNewPopup()">Skip</button>' +
+            '<button class="update-banner-btn whatsnew-download-btn" onclick="installBBQC(); closeWhatsNewPopup();">Download</button>';
+    } else {
+        ftr.innerHTML = '<button class="btn whatsnew-dismiss-btn" onclick="closeWhatsNewPopup()">Got it</button>';
+    }
 }
 
 function openWhatsNewPopup() {

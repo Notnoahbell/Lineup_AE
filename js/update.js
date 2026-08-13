@@ -17,7 +17,6 @@
     // files at <lineup ext dir>/BBQC_CEP (see INSTALL_FOLDERS); whether BBQC is
     // actually a sibling extension is decided separately, per _refreshBBQCUI.
     var BBQC_FOLDER = 'BBQC_CEP';
-    var LS_BBQC_PENDING = 'lineup-bbqc-prompt-pending'; // set right before a reload that just staged a newer BBQC than what's installed (or found it missing); consumed once on the next load
 
     // TEMP TESTING SWITCH — flip to false (or delete this block) once the
     // banner has been eyeballed. Forces the banner on with fake data on every
@@ -498,51 +497,68 @@
         return require('fs').existsSync(paths.installedManifest);
     }
 
+    // Reuses _parseManifestVersion (the same regex the "am I on the latest
+    // Lineup" check uses) against BBQC's own installed manifest, so the
+    // Settings row can show what BBQC version is actually sitting there
+    // rather than just "installed".
+    function _bbqcInstalledVersion() {
+        var paths = _bbqcPaths();
+        if (!paths) return null;
+        try {
+            var xml = require('fs').readFileSync(paths.installedManifest, 'utf8');
+            return _parseManifestVersion(xml);
+        } catch (e) {
+            return null;
+        }
+    }
+
     // Runs inside every successful Lineup update, right after this update's
     // BBQC_CEP files land in the staging folder above. If BBQC is already
     // installed as its own extension, bring it up to date immediately — no
-    // prompt, per the "otherwise just install the update data" behavior.
-    // If it isn't installed at all, there's nothing to copy yet; just leave a
-    // flag for the next load to offer installing it (see _maybeShowBBQCPrompt).
+    // prompt, per the "otherwise just install the update data" behavior. If
+    // it isn't installed, there's nothing to do here — the What's New popup
+    // (main.js) is the only place that offers to install it, driven by
+    // _refreshBBQCUI's live check rather than anything staged here.
     function _syncBBQC() {
         if (!_nodeAvailable()) return;
         var paths = _bbqcPaths();
         if (!paths || !require('fs').existsSync(paths.staged)) return;
-        if (_bbqcInstalled()) {
-            _copyRecursive(paths.staged, paths.installed);
-        } else {
-            try { localStorage.setItem(LS_BBQC_PENDING, '1'); } catch (e) {}
-        }
+        if (_bbqcInstalled()) _copyRecursive(paths.staged, paths.installed);
     }
 
     function _refreshBBQCUI() {
-        var row = document.getElementById('installBBQCRow');
-        if (!row) return;
-        var paths = _bbqcPaths();
-        var canInstall = !!paths && require('fs').existsSync(paths.staged) && !_bbqcInstalled();
-        row.classList.toggle('settings-hidden', !canInstall);
+        var section         = document.getElementById('bbqcSection');
+        var installedActions = document.getElementById('bbqcInstalledActions');
+        var versionLbl       = document.getElementById('bbqcVersionLbl');
+        var installBtn       = document.getElementById('bbqcRowBtn');
+        if (!section) return;
+
+        var paths  = _bbqcPaths();
+        var staged = !!paths && require('fs').existsSync(paths.staged);
+        // Nothing to say about BBQC at all until some Lineup update has
+        // actually staged it — hide the whole section, not just the button.
+        section.classList.toggle('settings-hidden', !staged);
+        if (!staged) return;
+
+        // Right side is either-or: version+Uninstall once installed, plain
+        // Install until then.
+        if (_bbqcInstalled()) {
+            if (versionLbl) {
+                var ver = _bbqcInstalledVersion();
+                versionLbl.textContent = ver ? ('v' + ver) : '';
+            }
+            if (installedActions) installedActions.classList.remove('settings-hidden');
+            if (installBtn) installBtn.classList.add('settings-hidden');
+        } else {
+            if (installedActions) installedActions.classList.add('settings-hidden');
+            if (installBtn) installBtn.classList.remove('settings-hidden');
+        }
     }
 
-    function _showBBQCConfirm() {
-        var overlay = document.getElementById('bbqcConfirmOverlay');
-        if (!overlay) return;
-        // Same reasoning as _showInstallConfirm — Settings shares this dialog's
-        // z-index and is later in the DOM, so it'd otherwise sit on top.
-        if (typeof closeSettingsPopup === 'function') closeSettingsPopup();
-        overlay.classList.remove('update-confirm-hidden');
-    }
-
-    function _hideBBQCConfirm() {
-        var overlay = document.getElementById('bbqcConfirmOverlay');
-        if (overlay) overlay.classList.add('update-confirm-hidden');
-    }
-
-    window.dismissBBQCConfirm = function () {
-        _hideBBQCConfirm();
-    };
-
-    // Shared by both the post-update confirm dialog and the Settings button —
-    // both just copy the already-staged files into place.
+    // Shared by both the What's New popup's Download button (main.js) and the
+    // Settings button — both just copy the already-staged files into place.
+    // There is deliberately no separate confirm dialog for this: What's New
+    // is the only place that asks.
     window.installBBQC = function () {
         if (!_nodeAvailable()) {
             showToast('Installing BBQC needs Node integration — restart After Effects and try again.');
@@ -559,22 +575,36 @@
             showToast('Could not install BBQC — ' + e.message);
             return;
         }
-        _hideBBQCConfirm();
         _refreshBBQCUI();
         showToast('BBQC installed — restart After Effects, then open Window > Extensions > BBQC.', 'info');
     };
 
-    // Consumes the "just staged a BBQC update the user doesn't have installed"
-    // flag _syncBBQC set right before the reload that follows a successful
-    // Lineup update — fires at most once per staging event, on the next load.
-    function _maybeShowBBQCPrompt() {
-        var pending = false;
-        try { pending = localStorage.getItem(LS_BBQC_PENDING) === '1'; } catch (e) {}
-        if (!pending) return;
-        try { localStorage.removeItem(LS_BBQC_PENDING); } catch (e) {}
-        if (_bbqcInstalled()) return;
-        _showBBQCConfirm();
-    }
+    // Removes BBQC from the CEP extensions folder entirely — this is the
+    // "desync" from Lineup: _syncBBQC/_bbqcInstalled both check the live
+    // filesystem rather than any stored flag, so once this folder is gone,
+    // the next Lineup update sees BBQC as not-installed again (flags a fresh
+    // install prompt instead of silently updating it). _refreshBBQCUI flips
+    // the Settings row straight back to Install — no separate modal.
+    window.uninstallBBQC = function () {
+        if (!_nodeAvailable()) {
+            showToast('Uninstalling BBQC needs Node integration — restart After Effects and try again.');
+            return;
+        }
+        var paths = _bbqcPaths();
+        if (!paths || !_bbqcInstalled()) {
+            showToast('BBQC is not installed.');
+            _refreshBBQCUI();
+            return;
+        }
+        try {
+            _removeRecursive(paths.installed);
+        } catch (e) {
+            showToast('Could not uninstall BBQC — ' + e.message);
+            return;
+        }
+        _refreshBBQCUI();
+        showToast('BBQC uninstalled.', 'info');
+    };
 
     // Both CSInterface.openURLInDefaultBrowser and window.open swallow their
     // own failures (the former has an empty catch inside it; the latter just
@@ -644,7 +674,6 @@
     document.addEventListener('DOMContentLoaded', function () {
         checkForUpdates(false);
         _refreshBBQCUI();
-        _maybeShowBBQCPrompt();
     });
 
 })();

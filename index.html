@@ -80,40 +80,6 @@
   </div>
 </div>
 
-<!-- ── BBQC INSTALL PROMPT (shown once after an update stages a BBQC the user doesn't have yet) ── -->
-<div id="bbqcConfirmOverlay" class="settings-overlay update-confirm-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ dismissBBQCConfirm(); })">
-  <div class="settings-modal" onclick="event.stopPropagation()">
-    <div class="settings-hdr">
-      <svg class="settings-hdr-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#6cc0ff">
-        <path d="M8,10.5 V2.5"/>
-        <polyline points="5,7.5 8,10.5 11,7.5"/>
-        <path d="M2.5,10.5 V12.3 A1.2,1.2 0 0,0 3.7,13.5 H12.3 A1.2,1.2 0 0,0 13.5,12.3 V10.5"/>
-      </svg>
-      <span class="settings-title">Install BBQC?</span>
-      <button class="settings-close" onclick="dismissBBQCConfirm()">
-        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
-          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
-        </svg>
-      </button>
-    </div>
-    <div class="settings-body">
-      <p class="update-confirm-text">BBQC is a companion panel that ships alongside Lineup. You don't have it installed yet — install it now?</p>
-      <div class="ctrl-row update-confirm-actions">
-        <button class="btn" onclick="dismissBBQCConfirm()">Not Now</button>
-        <button class="update-banner-btn" onclick="installBBQC()">
-          <svg class="update-banner-btn-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M6,1.5 V7.8"/>
-            <polyline points="3.2,5 6,7.8 8.8,5"/>
-            <path d="M2,9.5 H10"/>
-          </svg>
-          Install
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- ── TAB BAR ──────────────────────────────────────────────────────────────── -->
 <div class="tab-bar" id="tabBarEl">
   <button class="tab-btn tab-btn-icon active" id="tabBtn-home" onclick="switchTab('home')" title="Home">
@@ -2048,19 +2014,34 @@
       <span class="toggle-track"></span>
     </label>
   </div>
-  <!-- Hidden by default (see .settings-hidden); _refreshBBQCUI in update.js shows this only once BBQC's files have been staged by an update and aren't installed as their own extension yet. -->
-  <div class="settings-tab-row settings-hidden" id="installBBQCRow">
-    <span class="lbl settings-row-lbl">
-      <svg class="settings-row-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M3.9 4a8.1 8.1 0 0 0 16.2 0Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
-        <path d="M8 12L6 21M16 12L18 21M7 16h10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
-      </svg>
-      BBQC
-    </span>
-    <button class="btn" onclick="installBBQC()">Install</button>
+  <!-- Its own separated section, not just another settings-tab-row, so BBQC
+       reads as a distinct companion product rather than a Lineup setting.
+       Hidden entirely only if BBQC's files have never been staged by a
+       Lineup update at all (see _refreshBBQCUI in update.js); otherwise
+       always shown — installed (with its version) or not (with Install). -->
+  <div class="settings-bbqc-section settings-hidden" id="bbqcSection">
+    <p class="settings-section-lbl">Companion Panel</p>
+    <div class="settings-tab-row" id="installBBQCRow">
+      <span class="lbl settings-row-lbl">
+        <span class="settings-row-icon-badge">
+          <svg class="settings-row-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3.9 4a8.1 8.1 0 0 0 16.2 0Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+            <path d="M8 12L6 21M16 12L18 21M7 16h10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+          </svg>
+        </span>
+        BBQC
+      </span>
+      <!-- Right side is either-or: version+Uninstall once installed (see
+           _refreshBBQCUI in update.js), plain Install until then. -->
+      <div class="bbqc-installed-actions settings-hidden" id="bbqcInstalledActions">
+        <span class="lbl bbqc-version-lbl" id="bbqcVersionLbl"></span>
+        <button class="btn bbqc-uninstall-btn" onclick="uninstallBBQC()">Uninstall</button>
+      </div>
+      <button class="btn" id="bbqcRowBtn" onclick="installBBQC()">Install</button>
+    </div>
   </div>
   <div class="settings-popup-ftr">
-    <span class="lbl" id="settingsVersionLbl">Version 1.10.0</span>
+    <span class="lbl" id="settingsVersionLbl">Version 1.10.1</span>
     <button class="btn" onclick="checkForUpdates(true)">Check for Updates</button>
   </div>
  </div>
@@ -2084,7 +2065,10 @@
     </button>
   </div>
   <div class="whatsnew-list" id="whatsNewList"></div>
-  <div class="settings-popup-ftr whatsnew-ftr">
+  <!-- Default content here is the fallback for versions with nothing to act
+       on; _renderWhatsNewFooter (main.js) swaps this to Download/Skip for a
+       version whose highlighted feature has a pending install (BBQC). -->
+  <div class="settings-popup-ftr whatsnew-ftr" id="whatsNewFooterActions">
     <button class="btn whatsnew-dismiss-btn" onclick="closeWhatsNewPopup()">Got it</button>
   </div>
  </div>
@@ -2095,7 +2079,7 @@
     <div class="footer-brand">
       <img src="heist_icon_32.png" class="footer-logo" alt="">
       <span class="footer-name">Heist Lineup</span>
-      <span class="footer-version" id="footerVersion">v1.10.0</span>
+      <span class="footer-version" id="footerVersion">v1.10.1</span>
     </div>
     <div class="footer-actions">
     <!-- Classic hides the tab bar entirely (see body.layout-classic .tab-bar), so this toggles straight to/from Trophy instead (see _toggleClassicTrophyTab in main.js). -->
@@ -3147,7 +3131,7 @@
 <script src="js/main.js?v=1"></script>
 <script src="js/spellcheck.js?v=13"></script>
 <script src="js/find.js?v=1"></script>
-<script src="js/update.js?v=10"></script>
+<script src="js/update.js?v=11"></script>
 <script src="js/leaderboard.js?v=1"></script>
 </body>
 </html>

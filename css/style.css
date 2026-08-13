@@ -2053,6 +2053,52 @@ body.high-contrast .stagger-cancel-btn { border-color: #909090; color: #ffffff; 
 }
 .settings-row-icon { width: 14px; height: 14px; flex-shrink: 0; }
 
+/* BBQC's own section — set apart from the plain toggle rows above with a
+   divider + extra top spacing, so it reads as its own companion product
+   rather than another Lineup setting (its own .settings-section-lbl below
+   matches "Sections"' heading treatment above the Classic list). */
+#bbqcSection {
+    border-top: 1px solid #2c2c2c;
+    margin-top: 4px;
+    padding-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* BBQC's own brand accent (BBQC_CEP/css/style.css --accent) instead of
+   Lineup's neutral row styling — this row is offering someone else's panel,
+   so it should read as clearly "BBQC's" rather than blend into Settings. */
+#installBBQCRow {
+    border-color: rgba(255,138,42,0.4);
+    background: rgba(255,138,42,0.07);
+    padding: 7px; /* uniform on all sides — tighter than .settings-tab-row's default 10px, evenly, so the badge sits closer to every edge rather than just top/bottom */
+}
+#installBBQCRow .settings-row-lbl { color: #ff8a2a; font-weight: 600; }
+#installBBQCRow .btn { border-color: rgba(255,138,42,0.5); color: #ff8a2a; }
+#installBBQCRow .btn:hover { background: rgba(255,138,42,0.18); border-color: #ff8a2a; color: #ffb26b; }
+
+/* Icon-in-a-badge treatment, same idea as .whatsnew-item-icon's tinted
+   rounded square — only used here so BBQC's icon reads as a small logo
+   rather than a plain inline glyph like Smart Stack's above it. */
+.settings-row-icon-badge {
+    width: 30px; height: 30px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: rgba(255,138,42,0.16);
+    display: flex; align-items: center; justify-content: center;
+}
+#installBBQCRow .settings-row-icon-badge .settings-row-icon { width: 18px; height: 18px; color: #ff8a2a; }
+
+/* Right-aligned once installed, replacing the Install button in that same
+   slot (see _refreshBBQCUI in update.js, which toggles .settings-hidden on
+   exactly one of the two at a time). */
+.bbqc-installed-actions { display: flex; align-items: center; gap: 8px; }
+.bbqc-version-lbl { color: #ff8a2a; font-weight: 600; font-size: 11px; }
+/* Neutral by default like any other .btn — only the hover signals "this
+   removes something", same red used by .settings-close:hover. */
+.bbqc-uninstall-btn:hover { background: rgba(192,50,50,0.18); border-color: #b23c3c; color: #e07070; }
+
 /* Compact/Classic/Toolbar — a 3-button segmented control, same neutral (not
    blue) "selected" treatment as the top tab bar. Wraps onto its own full-
    width row below the "Layout" label (see .settings-tab-row-stack) — a
@@ -6880,6 +6926,7 @@ input.gap-inline-input {
 .update-banner-btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 5px;
     background: var(--accent);
     border: 1px solid var(--accent);
@@ -6888,6 +6935,7 @@ input.gap-inline-input {
     padding: 3px 10px;
     font-size: 11px;
     font-weight: 600;
+    height: 26px; /* matches .btn's fixed height — without this, "Not Now" (.btn) and "Install"/"Update" (this) sit at different heights side by side */
     cursor: pointer;
     flex-shrink: 0;
     transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
@@ -7267,8 +7315,8 @@ body.layout-classic .classic-trophy-btn { width: 28px; opacity: 1; pointer-event
    during that window, not just once it's fully gone. */
 .update-confirm-hidden { display: none !important; }
 #updateConfirmOverlay { z-index: 1001; }
-/* Same stacking need as #updateConfirmOverlay above, and same fix. */
-#bbqcConfirmOverlay { z-index: 1001; }
+.whatsnew-download-btn { background: #ff8a2a; border-color: #ff8a2a; }
+.whatsnew-download-btn:hover { background: #ffa04d; border-color: #ffa04d; }
 
 .update-confirm-text {
     font-size: 11px;
