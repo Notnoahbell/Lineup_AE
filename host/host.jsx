@@ -71,8 +71,33 @@ function setZ(posProp, targetZ) {
 
 // ── Bounds / anchor helpers ───────────────────────────────────────────────────
 
+// A TextLayer with "Enable Per-character 3D" on (which any animator using a 3D property — Position
+// Z, X/Y/Z Rotation, etc. — turns on automatically) makes sourceRectAtTime() return incorrect/stale
+// bounds: AE's classic sourceRectAtTime is fundamentally a flat 2D box and can't represent characters
+// an animator has moved off-plane through a camera, so it silently falls back to a wrong box instead
+// of throwing — no exception for Anchor Point/Align/Distribute's own try/catch to ever see. Measuring
+// with per-character 3D temporarily switched off sidesteps that broken fallback; the property is always
+// restored, on both the success and error paths, so this never leaves the layer altered.
+function sourceRectAtTimeSafe(layer, t, extents) {
+    var forcedFlat = false;
+    try {
+        if ((layer instanceof TextLayer) && layer.threeDPerChar) {
+            layer.threeDPerChar = false;
+            forcedFlat = true;
+        }
+    } catch (e) { forcedFlat = false; }
+    try {
+        var r = layer.sourceRectAtTime(t, extents);
+        if (forcedFlat) layer.threeDPerChar = true;
+        return r;
+    } catch (err) {
+        if (forcedFlat) { try { layer.threeDPerChar = true; } catch (e2) {} }
+        throw err;
+    }
+}
+
 function getLayerCompBounds(layer, comp) {
-    var r = layer.sourceRectAtTime(comp.time, false);
+    var r = sourceRectAtTimeSafe(layer, comp.time, false);
     var left = r.left, top = r.top, right = left + r.width, bottom = top + r.height;
     var p1 = LST.toComp(layer, [left,  top,    0]);
     var p2 = LST.toComp(layer, [right, top,    0]);
@@ -88,13 +113,18 @@ function getLayerCompBounds(layer, comp) {
     };
 }
 
-function anchorLocToPoint(loc, lw, lh, left, top) {
-    return [left + (loc % 3) * lw / 2, top + Math.floor(loc / 3) * lh / 2];
+// loc is a row-major index into an n x n grid (n defaults to 3 for the original 9-cell grid's
+// callers, which never pass it). Dividing by (n - 1) rather than a literal 2 is what generalizes
+// this beyond 3x3 — 2 only happened to be correct there because n-1 === 2 for a 3-wide grid.
+function anchorLocToPoint(loc, lw, lh, left, top, n) {
+    n = n || 3;
+    var denom = n - 1 || 1;
+    return [left + (loc % n) * lw / denom, top + Math.floor(loc / n) * lh / denom];
 }
 
 function getSourceRect(layer, t, ignoreMasks) {
-    if (ignoreMasks) return layer.sourceRectAtTime(t, false);
-    var fullRect = layer.sourceRectAtTime(t, false);
+    if (ignoreMasks) return sourceRectAtTimeSafe(layer, t, false);
+    var fullRect = sourceRectAtTimeSafe(layer, t, false);
     var mp;
     try { mp = layer.property("ADBE Mask Parade"); } catch(e) { return fullRect; }
     if (!mp || mp.numProperties === 0) return fullRect;
@@ -2834,7 +2864,7 @@ function lineup_pathDistribute(distMode, spacing, rotate) {
         app.beginUndoGroup("Path Distribute");
 
         for (var ai=1; ai<=m; ai++) {
-            try { var ar=layers[ai].sourceRectAtTime(comp.time,false); applyAnchorShift(layers[ai],anchorLocToPoint(4,ar.width,ar.height,ar.left,ar.top)); } catch(e) {}
+            try { var ar=sourceRectAtTimeSafe(layers[ai],comp.time,false); applyAnchorShift(layers[ai],anchorLocToPoint(4,ar.width,ar.height,ar.left,ar.top)); } catch(e) {}
             clearPositionKeys(layers[ai]);
         }
 
@@ -2871,6 +2901,357 @@ function lineup_pathDistribute(distMode, spacing, rotate) {
     }
 }
 
+// ── PATH RIG ──────────────────────────────────────────────────────────────────
+// Live, expression-driven distribute-along-path. Unlike lineup_pathDistribute
+// (which bakes static positions once), members here stay linked forever: each
+// carries an "ADBE Layer Control" effect pointing at the controller (robust to
+// renaming/reordering), and Position/Scale/Opacity expressions that re-scan the
+// comp every frame for how many OTHER layers reference that same controller.
+// Deleting or adding a member therefore redistributes everyone automatically —
+// no re-run of this function needed except to add a brand-new member.
+
+var PATHRIG_CONTROLLER_EFFECT     = "Path Rig Controller";
+var PATHRIG_OFFSET_EFFECT         = "Path Rig Offset";
+var PATHRIG_LAYER_OFFSET_EFFECT   = "Path Rig Layer Offset";
+var PATHRIG_TAPER_SCALE_EFFECT    = "Path Rig Taper Scale";
+var PATHRIG_TAPER_OPACITY_EFFECT  = "Path Rig Taper Opacity";
+var PATHRIG_PATH_GROUP            = "Path Rig Path";
+var PATHRIG_PATH_SHAPE            = "Path Rig Shape";
+
+function pathRig_hasEffect(layer, name) {
+    var fx;
+    try { fx = layer.property("ADBE Effect Parade"); } catch (e) { return false; }
+    if (!fx) return false;
+    try { return !!fx.property(name); } catch (e) { return false; }
+}
+
+function pathRig_isController(layer) {
+    if (!layer || !(layer instanceof ShapeLayer)) return false;
+    return pathRig_hasEffect(layer, PATHRIG_OFFSET_EFFECT);
+}
+
+// True if `layer` already carries a "Path Rig Controller" Layer Control effect pointing at `controller`.
+// Loops every effect (rather than a single named lookup) so a layer that's already a member of a
+// DIFFERENT Path Rig — which would also have an effect with this exact name — isn't misread as a match.
+function pathRig_isMemberOf(layer, controller) {
+    var fx;
+    try { fx = layer.property("ADBE Effect Parade"); } catch (e) { return false; }
+    if (!fx) return false;
+    for (var i = 1; i <= fx.numProperties; i++) {
+        try {
+            var e = fx.property(i);
+            if (e.name === PATHRIG_CONTROLLER_EFFECT && e.property(1).value === controller.index) return true;
+        } catch (e2) {}
+    }
+    return false;
+}
+
+// Depth-first search for the first bezier path ("ADBE Vector Shape - Group") anywhere under a shape
+// layer's content tree, mirroring lineup_pathDistribute's own findShape — but returning the PROPERTY
+// (so its name/ancestry can be walked) instead of just its baked Shape value.
+function pathRig_findPathShapeProp(pg) {
+    for (var i = 1; i <= pg.numProperties; i++) {
+        try {
+            var p = pg.property(i);
+            if (p.matchName === "ADBE Vector Shape - Group") return p;
+            if (p.matchName === "ADBE Vector Group") {
+                var f = pathRig_findPathShapeProp(p.property("ADBE Vectors Group"));
+                if (f) return f;
+            }
+        } catch (e) {}
+    }
+    return null;
+}
+
+// Resolves the controller's path property into a chain of content() names an expression can use to
+// re-find it — e.g. ["Shape 1", "Path 1"] for content("Shape 1").content("Path 1").path — at any
+// nesting depth, reusing lineup_ancestorVectorGroups (innermost ancestor first; reversed here).
+function pathRig_getPathChain(controller) {
+    var rootVecs;
+    try { rootVecs = controller.property("ADBE Root Vectors Group"); } catch (e) { return null; }
+    var shapeProp = pathRig_findPathShapeProp(rootVecs);
+    if (!shapeProp) return null;
+    var ancestors = lineup_ancestorVectorGroups(shapeProp);
+    var chain = [];
+    for (var i = ancestors.length - 1; i >= 0; i--) chain.push(ancestors[i].name);
+    chain.push(shapeProp.name);
+    return chain;
+}
+
+function pathRig_contentChainExpr(chain) {
+    var s = "";
+    for (var i = 0; i < chain.length; i++) s += '.content("' + String(chain[i]).replace(/"/g, '\\"') + '")';
+    return s;
+}
+
+// Shared setup every Path Rig expression needs: resolve the controller, turn its Offset angle into a
+// 0..1 cyclic phase (wrapping every 360°, so spinning the angle control endlessly cycles items along
+// the path), read thisLayer's OWN individual "Path Rig Layer Offset" angle the same way (so each member
+// can be nudged along the path independently of the shared rig placement), then live-count how many
+// OTHER layers reference this same controller and rank thisLayer among them — this live count/rank, not
+// anything baked at script time, is what makes deleting or adding a member redistribute everyone else
+// automatically.
+//
+// On a CLOSED path, t=0 and t=1 are the same point, so spreading n items across
+// rank/(n-1) — correct for an open path — would stack the first and last item on
+// top of each other at that seam. Closed paths instead use rank/n, spacing every
+// item evenly around the loop with no duplicated point.
+//
+// The wrap below (for the Offset control's cyclic phase) intentionally is NOT a
+// plain "% 1": with the Offset control left at its default of 0, an open path's
+// last member lands at t=1 exactly, and 1 % 1 === 0 in JS — which silently
+// snapped the last member onto the first member's spot even with no offset
+// applied at all. Rounding down instead (t - floor(t)) and only remapping an
+// exact whole number to 1 (never to 0, unless it truly IS 0) keeps t=0 and t=1
+// distinct at baseline while still wrapping correctly once the offset is used.
+function pathRig_preamble(chain) {
+    return [
+        'var ctrl = effect("' + PATHRIG_CONTROLLER_EFFECT + '")(1);',
+        'var offsetDeg = ctrl.effect("' + PATHRIG_OFFSET_EFFECT + '")(1);',
+        'var cycleOffset = (((offsetDeg % 360) + 360) % 360) / 360;',
+        'var layerOffsetDeg = effect("' + PATHRIG_LAYER_OFFSET_EFFECT + '")(1);',
+        'var layerOffset = (((layerOffsetDeg % 360) + 360) % 360) / 360;',
+        'var pathProp = ctrl' + pathRig_contentChainExpr(chain) + '.path;',
+        'var pathClosed = pathProp.value.closed;',
+        'var matches = [];',
+        'for (var pi = 1; pi <= thisComp.numLayers; pi++) {',
+        '    var L = thisComp.layer(pi);',
+        '    try {',
+        '        if (L.effect("' + PATHRIG_CONTROLLER_EFFECT + '")(1).index == ctrl.index) matches.push(L.index);',
+        '    } catch (e) {}',
+        '}',
+        'matches.sort(function (a, b) { return a - b; });',
+        'var n = matches.length;',
+        'var rank = 0;',
+        'for (var pk = 0; pk < n; pk++) { if (matches[pk] == thisLayer.index) { rank = pk; break; } }',
+        'var t = pathClosed ? (n > 0 ? rank / n : 0) : (n > 1 ? rank / (n - 1) : 0.5);',
+        'var tRaw = t + cycleOffset + layerOffset;',
+        't = tRaw - Math.floor(tRaw);',
+        'if (t === 0 && tRaw !== 0) t = 1;'
+    ].join('\n');
+}
+
+function pathRig_positionExpression(chain) {
+    return pathRig_preamble(chain) + '\n' +
+        'var localPt = pathProp.pointOnPath(t, time);\n' +
+        'var compPt = ctrl.toComp(localPt);\n' +
+        'thisLayer.hasParent ? thisLayer.parent.fromComp(compPt) : compPt;';
+}
+
+// Symmetric falloff: unaffected at path center (t=0.5), most affected at the path's two ends —
+// shared by both Taper Scale and Taper Opacity, just multiplying a different base property's value.
+// A closed path has no real "ends" to taper toward, so tapering is a no-op there (edge stays 0).
+function pathRig_taperExpression(chain, taperEffectName) {
+    return pathRig_preamble(chain) + '\n' +
+        'var edge = pathClosed ? 0 : Math.abs(t - 0.5) * 2;\n' +
+        'var taper = Math.max(0, Math.min(1, ctrl.effect("' + taperEffectName + '")(1) / 100));\n' +
+        'var factor = 1 - taper * edge;\n' +
+        'value * factor;';
+}
+
+function pathRig_addControllerEffects(layer) {
+    var effects = layer.property("ADBE Effect Parade");
+    if (!pathRig_hasEffect(layer, PATHRIG_OFFSET_EFFECT)) {
+        var offset = effects.addProperty("ADBE Angle Control");
+        offset.name = PATHRIG_OFFSET_EFFECT;
+    }
+    if (!pathRig_hasEffect(layer, PATHRIG_TAPER_SCALE_EFFECT)) {
+        var taperScale = effects.addProperty("ADBE Slider Control");
+        taperScale.name = PATHRIG_TAPER_SCALE_EFFECT;
+        taperScale.property(1).setValue(0);
+    }
+    if (!pathRig_hasEffect(layer, PATHRIG_TAPER_OPACITY_EFFECT)) {
+        var taperOpacity = effects.addProperty("ADBE Slider Control");
+        taperOpacity.name = PATHRIG_TAPER_OPACITY_EFFECT;
+        taperOpacity.property(1).setValue(0);
+    }
+}
+
+// Builds the default guide layer used when nothing path-like was selected: a thin horizontal red
+// stroke, sized relative to the comp, centered — just a starting shape for the user to reshape/move.
+function pathRig_createDefaultController(comp) {
+    var shapeLayer = comp.layers.addShape();
+    shapeLayer.name = "Path Rig Controller";
+    shapeLayer.guideLayer = true;
+
+    var w = Math.min(comp.width, comp.height) * 0.6;
+    var rootVecs = shapeLayer.property("ADBE Root Vectors Group");
+    var grp = rootVecs.addProperty("ADBE Vector Group");
+    grp.name = PATHRIG_PATH_GROUP;
+    var gc = grp.property("ADBE Vectors Group");
+
+    var pathItem = gc.addProperty("ADBE Vector Shape - Group");
+    pathItem.name = PATHRIG_PATH_SHAPE;
+    var lineShape = new Shape();
+    lineShape.vertices = [[-w / 2, 0], [w / 2, 0]];
+    lineShape.inTangents = [[0, 0], [0, 0]];
+    lineShape.outTangents = [[0, 0], [0, 0]];
+    lineShape.closed = false;
+    pathItem.property("ADBE Vector Shape").setValue(lineShape);
+
+    var stroke = gc.addProperty("ADBE Vector Graphic - Stroke");
+    stroke.property("ADBE Vector Stroke Color").setValue([1, 0, 0]);
+    stroke.property("ADBE Vector Stroke Width").setValue(2);
+
+    shapeLayer.position.setValue([comp.width / 2, comp.height / 2]);
+
+    pathRig_addControllerEffects(shapeLayer);
+    return shapeLayer;
+}
+
+// An already-selected shape layer becomes the controller in place: marked as a guide layer (so it
+// never renders) and renamed so it reads clearly as part of the rig, but its path content is left
+// exactly as the user drew it — only pathRig_getPathChain needs to know how to re-find it.
+function pathRig_convertExistingToController(layer) {
+    layer.guideLayer = true;
+    if (!/\(Path Rig\)$/.test(layer.name)) layer.name = layer.name + " (Path Rig)";
+    pathRig_addControllerEffects(layer);
+    return layer;
+}
+
+function pathRig_attachMember(layer, controller) {
+    var chain = pathRig_getPathChain(controller);
+    if (!chain) throw new Error("Path Rig controller has no usable path.");
+
+    var effects = layer.property("ADBE Effect Parade");
+    var lc = effects.addProperty("ADBE Layer Control");
+    lc.name = PATHRIG_CONTROLLER_EFFECT;
+    lc.property(1).setValue(controller.index);
+
+    // Each member gets its own Angle Control so it can be nudged along the path independently of the
+    // shared rig placement — same "degrees / 360 = fraction of the path" convention as the controller's
+    // own Offset control, just scoped to this one layer instead of shifting everyone at once.
+    var layerOffset = effects.addProperty("ADBE Angle Control");
+    layerOffset.name = PATHRIG_LAYER_OFFSET_EFFECT;
+
+    collapsePosition(layer);
+    var transform = layer.property("ADBE Transform Group");
+    transform.property("ADBE Position").expression = pathRig_positionExpression(chain);
+    transform.property("ADBE Scale").expression = pathRig_taperExpression(chain, PATHRIG_TAPER_SCALE_EFFECT);
+    transform.property("ADBE Opacity").expression = pathRig_taperExpression(chain, PATHRIG_TAPER_OPACITY_EFFECT);
+}
+
+// Every layer in the comp currently wired to `controller`, regardless of what's selected right now.
+function pathRig_getAllMembers(comp, controller) {
+    var out = [];
+    for (var i = 1; i <= comp.numLayers; i++) {
+        var L = comp.layer(i);
+        if (L !== controller && pathRig_isMemberOf(L, controller)) out.push(L);
+    }
+    return out;
+}
+
+function pathRig_sameLayerSet(a, b) {
+    if (a.length !== b.length) return false;
+    var idxA = {};
+    for (var i = 0; i < a.length; i++) idxA[a[i].index] = true;
+    for (var i = 0; i < b.length; i++) if (!idxA[b[i].index]) return false;
+    return true;
+}
+
+function pathRig_teardownMember(layer) {
+    try {
+        var transform = layer.property("ADBE Transform Group");
+        transform.property("ADBE Position").expression = "";
+        transform.property("ADBE Scale").expression = "";
+        transform.property("ADBE Opacity").expression = "";
+    } catch (e) {}
+    try {
+        var fx = layer.property("ADBE Effect Parade");
+        for (var i = fx.numProperties; i >= 1; i--) {
+            var nm = fx.property(i).name;
+            if (nm === PATHRIG_CONTROLLER_EFFECT || nm === PATHRIG_LAYER_OFFSET_EFFECT) fx.property(i).remove();
+        }
+    } catch (e) {}
+}
+
+// A controller still named exactly "Path Rig Controller" is one this tool created from scratch (never
+// renamed by the user) — safe to delete outright, since it only ever existed as rig scaffolding. Any
+// other name means it was the user's own shape layer before being converted, so it's kept: effects are
+// stripped, guideLayer is cleared, and the " (Path Rig)" suffix this tool added is peeled back off.
+function pathRig_teardownController(controller) {
+    var wasCreatedByUs = (controller.name === "Path Rig Controller");
+    if (wasCreatedByUs) {
+        controller.remove();
+        return;
+    }
+    try {
+        var fx = controller.property("ADBE Effect Parade");
+        for (var i = fx.numProperties; i >= 1; i--) {
+            var nm = fx.property(i).name;
+            if (nm === PATHRIG_OFFSET_EFFECT || nm === PATHRIG_TAPER_SCALE_EFFECT || nm === PATHRIG_TAPER_OPACITY_EFFECT) {
+                fx.property(i).remove();
+            }
+        }
+    } catch (e) {}
+    controller.guideLayer = false;
+    if (/ \(Path Rig\)$/.test(controller.name)) controller.name = controller.name.replace(/ \(Path Rig\)$/, "");
+}
+
+function pathRig_teardown(controller, members) {
+    for (var i = 0; i < members.length; i++) pathRig_teardownMember(members[i]);
+    pathRig_teardownController(controller);
+}
+
+function lineup_pathRigDistribute() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition.";
+        var sel = comp.selectedLayers;
+        if (!sel || sel.length < 1) return "ERROR: Select a path (or the Path Rig controller plus layers to add) first.";
+
+        app.beginUndoGroup("Path Rig Distribute");
+
+        // An already-selected controller (from a prior run) always wins — everything else selected
+        // alongside it is a candidate to ADD to that existing rig, not a fresh setup.
+        var controller = null;
+        for (var i = 0; i < sel.length; i++) {
+            if (pathRig_isController(sel[i])) { controller = sel[i]; break; }
+        }
+
+        var candidates = [];
+        if (controller) {
+            for (var i = 0; i < sel.length; i++) if (sel[i] !== controller) candidates.push(sel[i]);
+
+            // Selecting the controller plus EXACTLY its full current member set (no more, no fewer,
+            // no un-attached extras) clears the rig instead of adding — the teardown counterpart to
+            // building one up one layer at a time.
+            var allMembers = pathRig_getAllMembers(comp, controller);
+            if (pathRig_sameLayerSet(candidates, allMembers)) {
+                pathRig_teardown(controller, allMembers);
+                app.endUndoGroup();
+                return "ok";
+            }
+        } else {
+            var first = sel[0];
+            var usableExisting = (first instanceof ShapeLayer) && pathRig_getPathChain(first);
+            if (usableExisting) {
+                controller = pathRig_convertExistingToController(first);
+                for (var i = 1; i < sel.length; i++) candidates.push(sel[i]);
+            } else {
+                controller = pathRig_createDefaultController(comp);
+                for (var i = 0; i < sel.length; i++) candidates.push(sel[i]);
+            }
+        }
+
+        var added = 0;
+        for (var i = 0; i < candidates.length; i++) {
+            var L = candidates[i];
+            if (!(L instanceof AVLayer) || L === controller) continue;
+            if (pathRig_isMemberOf(L, controller)) continue;
+            pathRig_attachMember(L, controller);
+            added++;
+        }
+
+        app.endUndoGroup();
+        if (added === 0) return "ERROR: Select the Path Rig controller plus at least one other layer to add.";
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
 function lineup_radialDistribute(distMode, spacing, radius, rotate) {
     try {
         var comp = app.project.activeItem;
@@ -2883,7 +3264,7 @@ function lineup_radialDistribute(distMode, spacing, radius, rotate) {
         app.beginUndoGroup("Radial Distribute");
 
         for (var ai=0; ai<m; ai++) {
-            try { var ar=layers[ai].sourceRectAtTime(comp.time,false); applyAnchorShift(layers[ai],anchorLocToPoint(4,ar.width,ar.height,ar.left,ar.top)); } catch(e) {}
+            try { var ar=sourceRectAtTimeSafe(layers[ai],comp.time,false); applyAnchorShift(layers[ai],anchorLocToPoint(4,ar.width,ar.height,ar.left,ar.top)); } catch(e) {}
             clearPositionKeys(layers[ai]);
         }
 
@@ -3074,7 +3455,7 @@ function lineup_sizeMatch(mode, sizeMode, crop, move) {
                     shiftPosition(layer.position, targetCenterX - ccx, targetCenterY - ccy, layer.threeDLayer);
                 }
 
-                var rect = layer.sourceRectAtTime(t, false);
+                var rect = sourceRectAtTimeSafe(layer, t, false);
                 if (!(rect.width > 0) || !(rect.height > 0)) continue;
 
                 var scaleProp = layer.scale;
@@ -3124,15 +3505,18 @@ function lineup_sizeMatch(mode, sizeMode, crop, move) {
 }
 
 // ── ANCHOR POINT ─────────────────────────────────────────────────────────────
-// loc: 0-8 (TL,TC,TR, ML,C,MR, BL,BC,BR). anchorMode: 0=object 1=selection 2=comp
+// loc: row-major index into an n x n grid (n=3: TL,TC,TR, ML,C,MR, BL,BC,BR — n=5 for the
+// scroll-triggered fine grid, see _buildAnchor5x5Grid in main.js). anchorMode: 0=object 1=selection 2=comp
 
-function lineup_anchorMove(loc, anchorMode, ignoreMasks) {
+function lineup_anchorMove(loc, anchorMode, ignoreMasks, gridSize) {
     try {
         var comp = app.project.activeItem;
         if (!(comp && comp instanceof CompItem && comp.selectedLayers.length > 0)) return "ERROR: No layers selected";
-        var labels=["Top Left","Top Center","Top Right","Middle Left","Center","Middle Right","Bottom Left","Bottom Center","Bottom Right"];
-        app.beginUndoGroup("Set Anchor: " + labels[loc]);
+        var n = gridSize || 3;
         var layers = comp.selectedLayers;
+
+        var labels=["Top Left","Top Center","Top Right","Middle Left","Center","Middle Right","Bottom Left","Bottom Center","Bottom Right"];
+        app.beginUndoGroup("Set Anchor: " + (labels[loc] || "Custom"));
 
         // Pre-compute combined selection bounding box for Selection mode
         var selMinX, selMinY, selMaxX, selMaxY;
@@ -3152,13 +3536,13 @@ function lineup_anchorMove(loc, anchorMode, ignoreMasks) {
             if (anchorMode === 0) {
                 // Object: snap within each layer's own source bounds
                 var r=getSourceRect(layer, t, !!ignoreMasks);
-                applyAnchorShift(layer, anchorLocToPoint(loc,r.width,r.height,r.left,r.top));
+                applyAnchorShift(layer, anchorLocToPoint(loc,r.width,r.height,r.left,r.top,n));
             } else if (anchorMode === 1) {
                 // Selection: snap to position within combined bounding box of all selected layers
-                pasteAnchor(layer, anchorLocToPoint(loc, selMaxX-selMinX, selMaxY-selMinY, selMinX, selMinY));
+                pasteAnchor(layer, anchorLocToPoint(loc, selMaxX-selMinX, selMaxY-selMinY, selMinX, selMinY, n));
             } else {
                 // Composition: snap to comp bounds
-                pasteAnchor(layer, anchorLocToPoint(loc,comp.width,comp.height,0,0));
+                pasteAnchor(layer, anchorLocToPoint(loc,comp.width,comp.height,0,0,n));
             }
         }
         app.endUndoGroup();
@@ -3206,6 +3590,94 @@ function lineup_anchorPaste() {
 
 function lineup_anchorClear() { _anchorClipboard = null; return "ok"; }
 
+// Single layer: its name plus " Null" (e.g. "Charlie" -> "Charlie Null"). Multiple: the longest name
+// prefix they all share, trimmed of a trailing separator (" ", "_", "-", ":", "."), plus " Null" —
+// e.g. "Arm_L01"/"Arm_R01" -> "Arm Null" — since that's almost always the meaningful "what is this a
+// group of" part; anything too short to be meaningful (or no shared prefix at all, e.g. wholly
+// unrelated layer names) falls back to a plain layer count, still suffixed the same way.
+function summarizeLayerNames(names) {
+    if (names.length === 0) return "Null";
+    if (names.length === 1) return names[0] + " Null";
+    var prefix = names[0];
+    for (var i = 1; i < names.length && prefix.length > 0; i++) {
+        var other = names[i], j = 0;
+        while (j < prefix.length && j < other.length && prefix.charAt(j) === other.charAt(j)) j++;
+        prefix = prefix.substring(0, j);
+    }
+    prefix = prefix.replace(/[\s_\-:.]+$/, "");
+    return (prefix.length >= 2) ? (prefix + " Null") : (names.length + " Layers Null");
+}
+
+// Creates an empty shape layer standing in for a null at (x,y), placed just above the topmost of
+// `layers`, and reparents all of `layers` onto it — inserting it INTO the existing chain rather than
+// replacing it. A real Null Object is its own special layer type tied to the project it was created
+// in, which is why it can't be copied into a different project; a ShapeLayer with a Rect path but no
+// Fill/Stroke (same technique the Void plugin uses) is just a regular layer, so it copies/pastes
+// across projects like anything else while behaving identically for parenting/transforms/expressions.
+// The unpainted Rect gives it a real, centered bounding box to grab in the Composition viewport —
+// without any geometry at all, AE has nothing to show/drag there, which is what made the very first
+// version of this (truly empty, zero content) awkward to move by hand. Marked as a guide layer so it
+// still renders nothing despite having geometry, same as a real null, and so this codebase's own
+// existing null/guide-layer skip filters elsewhere (e.g. decompose) keep treating it as non-content.
+//
+// The new layer also adopts whatever the topmost layer was already parented to (layer -> oldParent
+// becomes layer -> empty -> oldParent), unless that parent is itself one of the layers being
+// reparented, which would create a cyclic parenting relationship AE won't allow — in that case the
+// empty is just left unparented. It also takes its tag color from the topmost selected layer, its name
+// from the selection (see summarizeLayerNames), and its in/out points from the earliest-in/latest-out
+// of the selection, so it spans exactly the combined timeline range of what it's about to parent.
+var NULL_STAND_IN_BOUNDS_RATIO = 0.1; // of the comp's shorter dimension, so it stays a square on non-square comps
+
+function createNullInChain(comp, layers, x, y) {
+    var nl = comp.layers.addShape();
+    nl.guideLayer = true;
+
+    var rootVecs = nl.property("ADBE Root Vectors Group");
+    var boundsGroup = rootVecs.addProperty("ADBE Vector Group");
+    boundsGroup.name = "Bounds";
+    var rect = boundsGroup.property("ADBE Vectors Group").addProperty("ADBE Vector Shape - Rect");
+    var boundsSize = Math.min(comp.width, comp.height) * NULL_STAND_IN_BOUNDS_RATIO;
+    rect.property("ADBE Vector Rect Size").setValue([boundsSize, boundsSize]);
+    rect.property("ADBE Vector Rect Position").setValue([0, 0]); // centered on the layer's own anchor/position — no Fill or Stroke added, so this never renders
+
+    var names = [];
+    for (var ni = 0; ni < layers.length; ni++) names.push(layers[ni].name);
+    nl.name = summarizeLayerNames(names);
+    nl.position.setValue([x, y]);
+
+    if (layers.length > 0) {
+        nl.label = layers[0].label; // layers[0] is the topmost-in-stack selected layer (see lineup_createNull's own Object-mode comment)
+
+        var minIn = Infinity, maxOut = -Infinity;
+        for (var bi = 0; bi < layers.length; bi++) {
+            if (layers[bi].inPoint  < minIn)  minIn  = layers[bi].inPoint;
+            if (layers[bi].outPoint > maxOut) maxOut = layers[bi].outPoint;
+        }
+        if (isFinite(minIn) && isFinite(maxOut) && maxOut > minIn) {
+            // Whichever bound is moving OUTWARD from the null's default (full-comp-duration) span has
+            // to be set first, else the transient in > out (or out < in) state throws.
+            if (maxOut > nl.outPoint) { nl.outPoint = maxOut; nl.inPoint = minIn; }
+            else { nl.inPoint = minIn; nl.outPoint = maxOut; }
+        }
+    }
+
+    var topIdx = 1;
+    for (var i = 0; i < layers.length; i++) { if (layers[i].index < topIdx || topIdx === 1) topIdx = layers[i].index; }
+
+    var originalParent = layers.length > 0 ? layers[0].parent : null;
+    if (originalParent) {
+        for (var oi = 0; oi < layers.length; oi++) {
+            if (layers[oi] === originalParent) { originalParent = null; break; }
+        }
+    }
+
+    nl.moveToBeginning();
+    if (topIdx > 1) nl.moveBefore(comp.layer(topIdx));
+    if (originalParent) nl.parent = originalParent;
+    for (var i = 0; i < layers.length; i++) layers[i].parent = nl;
+    return nl;
+}
+
 function lineup_createNull(anchorMode) {
     try {
         var comp = app.project.activeItem;
@@ -3235,14 +3707,55 @@ function lineup_createNull(anchorMode) {
             x = comp.width/2; y = comp.height/2;
         }
 
-        var nl = comp.layers.addNull();
-        nl.name = "Null";
-        nl.position.setValue([x, y]);
-        var topIdx = 1;
-        for (var i=0; i<layers.length; i++) { if (layers[i].index < topIdx || topIdx===1) topIdx = layers[i].index; }
-        nl.moveToBeginning();
-        if (topIdx > 1) nl.moveBefore(comp.layer(topIdx));
-        for (var i=0; i<layers.length; i++) layers[i].parent = nl;
+        createNullInChain(comp, layers, x, y);
+        app.endUndoGroup();
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch(e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
+// Right-click counterpart to lineup_anchorMove: instead of moving each selected layer's own anchor
+// point to the clicked grid cell, drops a null at that same comp-space point and parents the
+// selection to it — same anchorMode semantics (0=object 1=selection 2=comp), same n x n loc scheme.
+function lineup_createNullAtAnchor(loc, gridSize, anchorMode, ignoreMasks) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition";
+        var layers = comp.selectedLayers;
+        if (!layers || layers.length === 0) return "ERROR: No layers selected";
+
+        var n = gridSize || 3;
+        var x, y;
+        if (anchorMode === 0) {
+            // Object: anchor location within the topmost selected layer's own source bounds
+            // (source-rect space, same as lineup_anchorMove's Object mode — convert to comp space).
+            var layer0 = layers[0];
+            var r = getSourceRect(layer0, comp.time, !!ignoreMasks);
+            var localPt = anchorLocToPoint(loc, r.width, r.height, r.left, r.top, n);
+            var compPt = LST.toComp(layer0, [localPt[0], localPt[1], 0]);
+            x = compPt[0]; y = compPt[1];
+        } else if (anchorMode === 1) {
+            // Selection: anchor location within the combined bounding box of all selected layers.
+            var minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+            for (var i=0; i<layers.length; i++) {
+                var bb = getLayerCompBounds(layers[i], comp);
+                if (bb.left   < minX) minX = bb.left;
+                if (bb.top    < minY) minY = bb.top;
+                if (bb.right  > maxX) maxX = bb.right;
+                if (bb.bottom > maxY) maxY = bb.bottom;
+            }
+            var pt = anchorLocToPoint(loc, maxX-minX, maxY-minY, minX, minY, n);
+            x = pt[0]; y = pt[1];
+        } else {
+            // Composition: anchor location within the comp bounds.
+            var pt2 = anchorLocToPoint(loc, comp.width, comp.height, 0, 0, n);
+            x = pt2[0]; y = pt2[1];
+        }
+
+        app.beginUndoGroup("Create Null At Anchor");
+        createNullInChain(comp, layers, x, y);
         app.endUndoGroup();
         return "ok";
     } catch (err) {

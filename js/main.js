@@ -2706,6 +2706,15 @@ function doDistGrid() {
     run('lineup_gridDistribute(' + mode + ',' + cols + ',' + rows + ',' + alignEdges + ',' + hPadArg + ',' + vPadArg + ')');
 }
 
+// ── PATH RIG (Tools drawer only) ────────────────────────────────────────────
+// Live, expression-driven distribute-along-path — unlike Distribute's own
+// "along path" button (which bakes static positions), this builds a rig that
+// keeps redistributing itself as members are added or deleted. See
+// lineup_pathRigDistribute in host.jsx for the full behavior contract.
+function doPathRig() {
+    run('lineup_pathRigDistribute()');
+}
+
 // Align Edges has no effect once both axes have a manual Gap override — dim it for clarity.
 function _syncAlignEdgesDim() {
     var grp = document.getElementById('alignEdgesGroup');
