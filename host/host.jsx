@@ -6539,6 +6539,270 @@ function lineup_exportReducedProject(exportPath, excludedIndices) {
     }
 }
 
+// ── GIF EXPORT ───────────────────────────────────────────────────────────────
+// Renders each selected comp's work area to a temp PNG sequence via After Effects' own render
+// queue (see lineup_gifRenderQueueSequence below), then js/main.js hands the frames off to a
+// bundled gifski binary to encode. Frame-rate decimation (comp fps -> a lower output fps) happens
+// entirely on the JS side, by keeping only every Nth rendered frame before encoding.
+
+// Cheap up-front check for a usable PNG output module template, run when the GIF Export popup
+// opens so the panel can show a clear "make one first" state instead of only discovering this
+// deep into a render. Output module template info is only exposed off a render queue item, so
+// this probes with a throwaway item (removed immediately, never rendered) against any comp in
+// the project. Returns "yes" / "no", or "unknown" if there's no comp to probe with or something
+// unexpected goes wrong — the panel treats "unknown" as "proceed normally" rather than blocking
+// on an inconclusive check.
+function lineup_gifHasPngTemplate() {
+    var rq = app.project.renderQueue;
+    var rqItem = null;
+    try {
+        var comp = null;
+        for (var n = 1; n <= app.project.numItems; n++) {
+            var item = app.project.item(n);
+            if (item instanceof CompItem) { comp = item; break; }
+        }
+        if (!comp) return "unknown";
+
+        rqItem = rq.items.add(comp);
+        var templates = [];
+        try { templates = rqItem.outputModule(1).templates || []; } catch (eList) {}
+        for (var t = 0; t < templates.length; t++) {
+            if (/png/i.test(templates[t])) return "yes";
+        }
+        return "no";
+    } catch (e) {
+        return "unknown";
+    } finally {
+        try { if (rqItem) rqItem.remove(); } catch (eRemove) {}
+    }
+}
+
+// Always succeeds, even with nothing selected, so the panel can show "No comp selected" instead of being blocked.
+// `preferredBase` is Node's os.tmpdir() (see js/main.js's _gifTempBase) — passed in rather than
+// resolved here because ExtendScript's own Folder.temp is NOT the same directory on macOS: it
+// appends a legacy "TemporaryItems" subfolder that the OS periodically reclaims files from
+// mid-run, independent of whether the file is still "in use" by this script.
+function lineup_getGifExportSeed(preferredBase) {
+    try {
+        lineup_gifSweepStaleTemp(preferredBase); // best-effort; never blocks the seed
+
+        var proj = app.project;
+        var comps = [];
+        for (var i = 0; i < proj.selection.length; i++) {
+            if (proj.selection[i] instanceof CompItem) comps.push(proj.selection[i]);
+        }
+
+        var meta = [], names = [];
+        for (var i = 0; i < comps.length; i++) {
+            var c = comps[i];
+            var workFrames = Math.max(1, Math.round(c.workAreaDuration / c.frameDuration));
+            meta.push([c.id, c.width, c.height, c.frameRate, workFrames].join(":"));
+            names.push(c.name.replace(/\|/g, "/"));
+        }
+
+        var folderPath = proj.file ? proj.file.parent.fsName.replace(/\|/g, "/") : "";
+
+        return folderPath + "|" + meta.join(";") + "|" + names.join("|");
+    } catch (e) { return "ERROR: " + e.toString(); }
+}
+
+// Resolves a comp by its stable .id rather than a selection index, so an export already in
+// progress is immune to the user changing the Project panel selection mid-run.
+function lineup_gifFindCompById(id) {
+    for (var n = 1; n <= app.project.numItems; n++) {
+        var item = app.project.item(n);
+        if ((item instanceof CompItem) && item.id === id) return item;
+    }
+    return null;
+}
+
+// Creates a private per-comp temp folder for rendered PNG frames. `preferredBase` (Node's
+// os.tmpdir(), see js/main.js's _gifTempBase) is tried first — it's the extension's own
+// always-writable scratch space, unlike the project's folder or My Documents, which on modern
+// macOS require the user to have granted After Effects Files-and-Folders (TCC) access; a
+// non-interactive write into either without that grant fails silently on every single frame,
+// not just an occasional one. Folder.temp is tried dead last: on macOS it resolves to a
+// different, legacy "TemporaryItems" subfolder that the OS reclaims files from mid-run.
+function lineup_gifMakeTempFolder(compId, preferredBase) {
+    try {
+        var dirName = "lineup-gif-" + (new Date()).getTime() + "-" + compId;
+        var bases = [];
+        if (preferredBase) bases.push(new Folder(preferredBase));
+        if (app.project.file) bases.push(app.project.file.parent);
+        bases.push(Folder.myDocuments);
+        bases.push(Folder.temp);
+
+        for (var i = 0; i < bases.length; i++) {
+            try {
+                var f = new Folder(bases[i].fsName + "/" + dirName);
+                if (f.create()) return f.fsName;
+            } catch (eInner) {}
+        }
+        return "ERROR: Couldn't create a temp folder to render frames into.";
+    } catch (e) { return "ERROR: " + e.toString(); }
+}
+
+// Renders every native frame of the comp's work area into folderFsName/frame_[#####].png via
+// After Effects' own render queue — the documented, supported rendering path. (An earlier version
+// of this used the undocumented CompItem.saveFrameToPng in a manual per-frame loop; it turned out
+// unreliable in the field — it could silently produce no output at all, even for frame 0,
+// independent of viewer-active-item state or write-timing workarounds — so this replaces it
+// entirely rather than patching around it further.)
+//
+// Renders every frame at the comp's native frame rate rather than a decimated subset — frame-rate
+// decimation for a lower output fps happens afterward on the JS side (see js/main.js's
+// _gifEncode), by keeping only every Nth rendered file, since the render queue doesn't offer a
+// simple per-frame skip control the way a manual frame-by-frame loop did.
+//
+// There is no ExtendScript API to CREATE a new output module template — only to apply an
+// existing one by name, or attempt to directly override an item's own settings (which Adobe's
+// docs say is read-only for "Format", though scripts have long relied on it working anyway).
+// This tries both, and — if neither works — returns a detailed diagnostic (available template
+// names, the current Format value, exactly which step failed) rather than a generic error, since
+// which of those is actually true varies by AE version/install and isn't safe to assume.
+function lineup_gifRenderQueueSequence(compId, folderFsName) {
+    var rq = app.project.renderQueue;
+    var rqItem = null;
+    var requeue = []; // pre-existing render=true items we temporarily disable, so render() only processes ours
+
+    try {
+        var comp = lineup_gifFindCompById(parseInt(compId, 10));
+        if (!comp) return "ERROR: That composition is no longer in the project.";
+        var folder = new Folder(folderFsName);
+        if (!folder.exists) return "ERROR: The temp render folder is missing.";
+
+        // .status is a read-only summary of an item's current state (QUEUED/RENDERING/DONE/...) —
+        // .render is the actual writable boolean that controls whether render() will process it.
+        for (var q = 1; q <= rq.numItems; q++) {
+            var existing = rq.item(q);
+            try {
+                if (existing.render) {
+                    requeue.push(existing);
+                    existing.render = false;
+                }
+            } catch (eUnqueue) {}
+        }
+
+        rqItem = rq.items.add(comp);
+        rqItem.timeSpanStart = comp.workAreaStart;
+        rqItem.timeSpanDuration = comp.workAreaDuration;
+
+        var om = rqItem.outputModule(1);
+        var appliedPng = false;
+        var diag = [];
+
+        var templateNames = [];
+        try { templateNames = om.templates || []; } catch (eList) { diag.push("couldn't list templates: " + eList.toString()); }
+
+        var pngTemplate = null;
+        for (var t = 0; t < templateNames.length; t++) {
+            if (/png/i.test(templateNames[t])) { pngTemplate = templateNames[t]; break; }
+        }
+
+        if (pngTemplate) {
+            try {
+                om.applyTemplate(pngTemplate);
+                om = rqItem.outputModule(1);
+                appliedPng = true;
+            } catch (eApply) {
+                diag.push('applyTemplate("' + pngTemplate + '") threw: ' + eApply.toString());
+            }
+        } else {
+            diag.push('no output module template name contains "png" (available: ' + (templateNames.join(", ") || "none") + ")");
+        }
+
+        if (!appliedPng) {
+            var currentFormat = "";
+            try { currentFormat = om.getSettings(GetSettingsFormat.STRING).Format; } catch (eRead) {}
+            try {
+                var s = om.getSettings(GetSettingsFormat.STRING_SETTABLE);
+                if (!("Format" in s)) {
+                    diag.push('current Format is "' + currentFormat + '"; "Format" is not in the settable-settings set on this AE version');
+                } else {
+                    s["Format"] = "PNG Sequence";
+                    om.setSettings(s);
+                    om = rqItem.outputModule(1); // re-fetch — a settings write invalidates the old reference
+                    var after = om.getSettings(GetSettingsFormat.STRING).Format;
+                    appliedPng = /png/i.test(after || "");
+                    if (!appliedPng) diag.push('set Format to "PNG Sequence" (was "' + currentFormat + '") but it read back as "' + after + '"');
+                }
+            } catch (eSettings) {
+                diag.push('setSettings attempt threw: ' + eSettings.toString());
+            }
+        }
+
+        if (!appliedPng) {
+            return 'ERROR: Couldn\'t configure a PNG Sequence output for "' + comp.name + '" — ' + diag.join("; ") + ".";
+        }
+
+        om.file = new File(folder.fsName + "/frame_[#####].png");
+
+        rq.render();
+
+        if (rqItem.status !== RQItemStatus.DONE) {
+            return 'ERROR: Rendering "' + comp.name + '" didn\'t finish (status: ' + rqItem.status + ').';
+        }
+        return "ok";
+    } catch (e) {
+        return "ERROR: " + e.toString();
+    } finally {
+        try { if (rqItem) rqItem.remove(); } catch (eRemove) {}
+        for (var r = 0; r < requeue.length; r++) {
+            try { requeue[r].render = true; } catch (eRestore) {}
+        }
+    }
+}
+
+// Deletes only the PNGs inside a folder this feature created — guarded by the
+// lineup-gif-<timestamp>-<id> name pattern so a bad path can never remove anything else —
+// then removes the folder itself.
+function lineup_gifCleanupTemp(folderFsName) {
+    try {
+        var folder = new Folder(folderFsName);
+        if (!folder.exists) return "ok";
+        if (!/[\/\\]lineup-gif-\d+-\d+$/.test(folder.fsName)) {
+            return "ERROR: Refusing to delete a folder that doesn't look like a GIF Export temp folder.";
+        }
+        var files = folder.getFiles("*.png");
+        for (var i = 0; i < files.length; i++) { try { files[i].remove(); } catch (eInner) {} }
+        folder.remove();
+        return "ok";
+    } catch (e) { return "ERROR: " + e.toString(); }
+}
+
+// Best-effort cleanup of temp folders left behind by a crashed/force-quit AE session, run
+// whenever the GIF Export panel opens. Failures here are silently ignored.
+function lineup_gifSweepStaleTemp(preferredBase) {
+    try {
+        var DAY_MS = 24 * 60 * 60 * 1000;
+        var now = (new Date()).getTime();
+        var bases = [];
+        if (preferredBase) bases.push(new Folder(preferredBase));
+        if (app.project.file) bases.push(app.project.file.parent);
+        bases.push(Folder.myDocuments);
+        bases.push(Folder.temp);
+
+        for (var b = 0; b < bases.length; b++) {
+            var subs = bases[b].getFiles(function (f) {
+                return (f instanceof Folder) && /^lineup-gif-\d+-\d+$/.test(f.name);
+            });
+            for (var i = 0; i < subs.length; i++) {
+                var m = /^lineup-gif-(\d+)-/.exec(subs[i].name);
+                if (m && (now - parseInt(m[1], 10)) > DAY_MS) lineup_gifCleanupTemp(subs[i].fsName);
+            }
+        }
+    } catch (e) {}
+}
+
+// Folder picker, not a Save dialog — a GIF Export batch writes one .gif per comp into this folder.
+function lineup_pickGifOutputFolder(defaultPath) {
+    try {
+        var picked = Folder.selectDialog("Choose a folder for the exported GIFs");
+        if (!picked) return "";
+        return picked.fsName.replace(/\|/g, "/");
+    } catch (e) { return "ERROR: " + e.toString(); }
+}
+
 // ── Spellcheck ────────────────────────────────────────────────────────────────
 
 function spellcheck_getComps(idsJson) {

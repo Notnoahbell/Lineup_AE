@@ -525,7 +525,14 @@ var WHATS_NEW = {
             body: "Select, Link, and Merge are now one button — click to rerun whichever you used last, right-click to switch between them."
         }
     ],
-    '1.10.1': [BBQC_WHATSNEW_ITEM]
+    '1.10.1': [BBQC_WHATSNEW_ITEM],
+    '1.11.5': [
+        {
+            icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4.5" width="16" height="11" rx="2"/><text x="10" y="12.7" font-family="Arial, Helvetica, sans-serif" font-size="6.8" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">GIF</text></svg>',
+            title: 'GIF Export',
+            body: "Batch-export the comps selected in the Project panel straight to GIF, powered by the bundled gifski encoder for real dithering and palette quality instead of a flat color reduction. Configure quality, motion quality, output FPS, max width, and looping — your last settings and export folder are remembered."
+        }
+    ]
 };
 
 // lastSeen is only absent on a genuinely fresh install — record it silently and
@@ -9254,12 +9261,14 @@ function _bcsMakeSecondsField(inputId, unitId) {
 function _bcsMakeScrub(el, opts) {
     opts = opts || {};
     var min      = (opts.min !== undefined) ? opts.min : 1;
+    var max      = (opts.max !== undefined) ? opts.max : null;
     var onChange = opts.onChange || function () {};
     var dragging = false, moved = false, startX = 0, startVal = 0;
 
     function get() { var v = parseInt(el.textContent, 10); return isNaN(v) ? min : v; }
     function set(v, silent) {
         v = Math.max(min, Math.round(v));
+        if (max !== null) v = Math.min(max, v);
         el.textContent = String(v);
         if (!silent) onChange(v);
         return v;
@@ -10206,6 +10215,525 @@ function applyCompExport() {
     });
 }
 
+// ── GIF Export ───────────────────────────────────────────────────────────────
+// Renders each selected comp's work area to a temp PNG sequence via After Effects' own render
+// queue (host.jsx side — lineup_gifRenderQueueSequence), then hands the frames to a bundled
+// gifski binary via Node's child_process to encode. The render queue always renders every native
+// frame; gifski's --fps only sets playback speed for PNG input (it never resamples), so hitting
+// a lower output fps means keeping only every Nth rendered frame before encoding — see
+// `step`/`outFps` below and _gifEncode's decimation.
+
+var GIF_SETTINGS_KEY = 'lineup-gif-export-v2'; // bumped from -v1 when the UI moved to quality presets/checkbox loop, so old saved values (e.g. an old "High" pick) don't shadow the new defaults
+
+var _gifCompNames    = []; // every comp selected when the panel was opened
+var _gifCompMeta     = []; // parallel to _gifCompNames: {id, w, h, fps, workFrames}
+var _gifExcluded     = {}; // index (into _gifCompNames) -> true, removed from the batch
+var _gifFolder       = ''; // chosen output folder (one .gif per comp is written here)
+var _gifFpsManual    = false; // true once the user has typed into the FPS field this session — stops auto-filling it from the comp selection
+var _gifBinReady     = false; // memoized per panel session — see _gifEnsureBinaryReady
+var _gifRunning      = false;
+var _gifAbort        = false;
+var _gifResults      = []; // {name, ok, msg} per job in the current/last run — see _gifFinishRun
+
+function _gifNodeAvailable() {
+    return typeof require === 'function';
+}
+
+function _gifBinaryPath() {
+    if (!_gifNodeAvailable()) return null;
+    var path = require('path');
+    var extDir = cs.getSystemPath(SystemPath.EXTENSION);
+    if (!extDir) return null;
+    var isWin = (typeof process !== 'undefined' && process.platform === 'win32');
+    return isWin ? path.join(extDir, 'bin', 'gifski', 'win', 'gifski.exe')
+                 : path.join(extDir, 'bin', 'gifski', 'mac', 'gifski');
+}
+
+// Node's own temp dir, handed to ExtendScript as the preferred base for rendered frames.
+// ExtendScript's own Folder.temp is NOT the same directory on macOS — it appends a legacy
+// "TemporaryItems" subfolder that the OS reclaims files from mid-run (the underlying cause of
+// "File couldn't be opened for writing" showing up partway through a frame sequence rather than
+// on the very first frame). This is also outside the Desktop/Documents/Downloads folders macOS
+// requires explicit Files-and-Folders permission for, which a non-interactive write can fail on
+// silently from the very first frame if After Effects was never granted it.
+function _gifTempBase() {
+    if (!_gifNodeAvailable()) return '';
+    try { return require('os').tmpdir(); } catch (e) { return ''; }
+}
+
+// Confirms the bundled gifski binary is present, executable, and (on Mac) cleared of the
+// Gatekeeper quarantine flag that a freshly-installed/updated binary carries. Memoized so this
+// only costs a subprocess spawn once per panel session, not once per export.
+function _gifEnsureBinaryReady(cb) {
+    if (_gifBinReady) { cb(null); return; }
+    if (!_gifNodeAvailable()) { cb('GIF Export needs Node integration — restart After Effects and try again.'); return; }
+
+    var fs  = require('fs');
+    var bin = _gifBinaryPath();
+    if (!bin || !fs.existsSync(bin)) { cb('The gifski encoder is missing from this install — run Check for Updates.'); return; }
+
+    var isWin = (typeof process !== 'undefined' && process.platform === 'win32');
+    if (isWin) { _gifBinReady = true; cb(null); return; }
+
+    try { fs.chmodSync(bin, parseInt('755', 8)); } catch (e) {}
+    var cp = require('child_process');
+    cp.execFile('/usr/bin/xattr', ['-d', 'com.apple.quarantine', bin], function () {
+        _gifBinReady = true;
+        cb(null); // ignore xattr's exit code — it's nonzero whenever the attribute wasn't present, which is normal
+    });
+}
+
+function _gifRenderCompList() {
+    var list = document.getElementById('gifCompList');
+    list.innerHTML = '';
+    var shown = 0;
+    for (var i = 0; i < _gifCompNames.length; i++) {
+        if (_gifExcluded[i]) continue;
+        shown++;
+        var row = document.createElement('div');
+        row.className = 'bcs-comp-row';
+        row.innerHTML =
+            '<svg viewBox="0 0 14 10" fill="currentColor"><rect x="0.5" y="0.5" width="13" height="9" rx="1.3" fill="none" stroke="currentColor" stroke-width="1"/></svg>' +
+            '<span></span>' +
+            '<button class="bcs-comp-remove" title="Remove from batch">' +
+                '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/><line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/></svg>' +
+            '</button>';
+        row.querySelector('span').textContent = _gifCompNames[i];
+        row.querySelector('.bcs-comp-remove').addEventListener('click', (function (idx) {
+            return function () { _gifExcluded[idx] = true; _gifRenderCompList(); };
+        })(i));
+        list.appendChild(row);
+    }
+    if (shown === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'bcs-complist-empty';
+        empty.textContent = 'No comp selected';
+        list.appendChild(empty);
+    }
+    var applyBtn = document.getElementById('gifApplyBtn');
+    if (applyBtn) applyBtn.disabled = shown === 0 || _gifRunning;
+
+    _gifUpdateFpsField();
+}
+
+// The frame rate shared by every currently-included comp, or null if there's more than one
+// distinct rate in the batch (or nothing in it).
+function _gifCommonFps() {
+    var fps = null;
+    for (var i = 0; i < _gifCompNames.length; i++) {
+        if (_gifExcluded[i]) continue;
+        var meta = _gifCompMeta[i];
+        if (!meta) continue;
+        if (fps === null) fps = meta.fps;
+        else if (Math.abs(fps - meta.fps) > 0.001) return null;
+    }
+    return fps;
+}
+
+// Prefills the FPS field with the batch's shared frame rate, or clears it to the "Auto"
+// placeholder if the batch has mixed rates — unless the user has already typed into the field
+// this session, in which case their value is left alone.
+function _gifUpdateFpsField() {
+    if (!_gifFpsManual) {
+        var input = document.getElementById('gifFpsInput');
+        var common = _gifCommonFps();
+        input.value = common !== null ? String(Math.round(common * 100) / 100) : '';
+    }
+    _gifUpdateEstimate();
+}
+
+// Rough, content-independent estimate — actual GIF size is dominated by the footage itself (flat
+// color vs. busy/high-motion content can differ several times over at identical settings), so
+// this can only ever be a wide ballpark, not a real prediction. The genuinely accurate size is
+// only known after gifski has actually produced the file — see _gifFormatBytes/_gifFinishRun.
+function _gifEstimateBytesForComp(meta, quality, resFactor, fpsOverride) {
+    var outFps = (fpsOverride && fpsOverride > 0) ? fpsOverride : meta.fps;
+    var step = Math.max(1, Math.round(meta.fps / outFps));
+    var frameCount = Math.max(1, Math.floor((meta.workFrames - 1) / step) + 1);
+    var w = Math.max(16, Math.round(meta.w * resFactor));
+    var h = Math.max(16, Math.round(meta.h * resFactor));
+    // ~0.08 bytes/pixel/frame is a rough middle-of-the-road figure for gifski at quality ~90 on
+    // typical footage, scaled down faster than linearly as quality drops (fewer palette colors,
+    // less dithering, and lower motion quality all compound together).
+    var baseRate = 0.08 * Math.pow(quality / 90, 1.3);
+    return w * h * frameCount * baseRate;
+}
+
+function _gifUpdateEstimate() {
+    var el = document.getElementById('gifEstimate');
+    if (!el) return;
+
+    var quality = parseInt(document.getElementById('gifQualityPreset').value, 10) || 100;
+    var resFactor = parseFloat(document.getElementById('gifResolutionSelect').value) || 1;
+    var fpsRaw = document.getElementById('gifFpsInput').value.trim();
+    var fpsOverride = fpsRaw ? parseFloat(fpsRaw) : NaN;
+
+    var total = 0, count = 0;
+    for (var i = 0; i < _gifCompNames.length; i++) {
+        if (_gifExcluded[i]) continue;
+        var meta = _gifCompMeta[i];
+        if (!meta) continue;
+        total += _gifEstimateBytesForComp(meta, quality, resFactor, fpsOverride);
+        count++;
+    }
+
+    if (count === 0) { el.textContent = ''; return; }
+    var low = total * 0.35, high = total * 2.5; // wide band — content, not these settings, dominates the real result
+    el.textContent = '~' + _gifFormatBytes(low) + '–' + _gifFormatBytes(high);
+}
+
+function _gifSetPath(path) {
+    _gifFolder = path || '';
+    var el = document.getElementById('gifPath');
+    el.textContent = _gifFolder || '(no folder chosen)';
+    el.title = _gifFolder;
+}
+
+function _gifOnLoopModeChange() {
+    var loopOn = document.getElementById('gifLoopCheck').checked;
+    document.getElementById('gifLoopCount').disabled = !loopOn;
+    _gifUpdateLoopTimesLabel();
+}
+
+// "times" only makes sense once a specific repeat count is actually typed in — an empty field
+// reads as "Forever" via its placeholder, where the word would be misleading.
+function _gifUpdateLoopTimesLabel() {
+    var hasCount = document.getElementById('gifLoopCheck').checked && document.getElementById('gifLoopCount').value.trim().length > 0;
+    document.getElementById('gifLoopTimesLbl').classList.toggle('gif-hidden', !hasCount);
+}
+
+// Unchecked = play once. Checked with an empty count field = Forever (the placeholder text);
+// checked with a number typed in = repeat that many times.
+function _gifReadRepeat() {
+    if (!document.getElementById('gifLoopCheck').checked) return -1;
+    var raw = document.getElementById('gifLoopCount').value.trim();
+    if (!raw) return 0;
+    var n = parseInt(raw, 10);
+    return (isNaN(n) || n < 0) ? 0 : n;
+}
+
+function _gifLoadSettings() {
+    var s = null;
+    try { s = JSON.parse(localStorage.getItem(GIF_SETTINGS_KEY) || 'null'); } catch (e) {}
+    s = s || {};
+
+    document.getElementById('gifQualityPreset').value = String(s.quality !== undefined ? s.quality : 100);
+    document.getElementById('gifResolutionSelect').value = String(s.resolution !== undefined ? s.resolution : 1);
+
+    var loopCheck = document.getElementById('gifLoopCheck');
+    var loopCount = document.getElementById('gifLoopCount');
+    var repeat = s.repeat !== undefined ? s.repeat : 0;
+    if (repeat === -1) { loopCheck.checked = false; loopCount.value = ''; }
+    else { loopCheck.checked = true; loopCount.value = repeat > 0 ? String(repeat) : ''; }
+    _gifOnLoopModeChange();
+
+    if (!_gifFolder && s.folder) _gifSetPath(s.folder);
+    _gifUpdateEstimate(); // recompute now that quality/resolution reflect the restored settings
+}
+
+function _gifSaveSettings() {
+    try {
+        localStorage.setItem(GIF_SETTINGS_KEY, JSON.stringify({
+            quality: parseInt(document.getElementById('gifQualityPreset').value, 10),
+            resolution: parseFloat(document.getElementById('gifResolutionSelect').value),
+            repeat: _gifReadRepeat(),
+            folder: _gifFolder
+        }));
+    } catch (e) {}
+}
+
+// Toggles between the normal export UI and the "no PNG template" empty state — see
+// lineup_gifHasPngTemplate in host.jsx. Only one of the two bodies is ever visible at a time.
+function _gifShowState(noTemplate) {
+    document.getElementById('gifNoTemplateState').classList.toggle('gif-hidden', !noTemplate);
+    document.getElementById('gifNormalBody').classList.toggle('gif-hidden', noTemplate);
+    document.getElementById('gifOverlay').classList.remove('gif-hidden');
+}
+
+function openGifExport() {
+    _gifEnsureBinaryReady(function (err) {
+        if (err) { showToast(err); return; }
+
+        cs.evalScript('lineup_gifHasPngTemplate()', function (pngResult) {
+            if (pngResult === 'no') { _gifShowState(true); return; }
+            _gifOpenNormal();
+        });
+    });
+}
+
+function _gifOpenNormal() {
+    _gifFpsManual = false; // fresh open — let the FPS field auto-fill from the comp selection again
+    cs.evalScript('lineup_getGifExportSeed(' + _esQuote(_gifTempBase()) + ')', function (result) {
+        if (!result || result === 'undefined') result = '||'; // no live ExtendScript bridge — preview with nothing selected
+        if (result.indexOf('ERROR:') === 0) {
+            showToast(result.replace(/^ERROR:\s*/, ''));
+            return;
+        }
+        var bar = result.split('|');
+        var projFolderHint = bar[0];
+        var metaParts = bar[1] ? bar[1].split(';') : [];
+
+        _gifCompNames = bar.slice(2).filter(function (n) { return n.length > 0; });
+        _gifCompMeta = [];
+        for (var i = 0; i < metaParts.length; i++) {
+            var f = metaParts[i].split(':');
+            _gifCompMeta.push({
+                id: parseInt(f[0], 10), w: parseInt(f[1], 10), h: parseInt(f[2], 10),
+                fps: parseFloat(f[3]), workFrames: parseInt(f[4], 10)
+            });
+        }
+        _gifExcluded = {};
+        _gifRenderCompList();
+        _gifLoadSettings();
+        if (!_gifFolder) _gifSetPath(projFolderHint);
+
+        _gifShowState(false);
+    });
+}
+
+function closeGifExport() {
+    if (_gifRunning) {
+        _gifAbort = true;
+        showToast('Stopping after the current frame…');
+        return;
+    }
+    document.getElementById('gifOverlay').classList.add('gif-hidden');
+}
+
+function browseGifExport() {
+    cs.evalScript('lineup_pickGifOutputFolder(' + _esQuote(_gifFolder) + ')', function (result) {
+        if (!result || result === 'undefined') return;
+        if (result.indexOf('ERROR:') === 0) { showToast(result.replace(/^ERROR:\s*/, '')); return; }
+        if (result.length === 0) return; // user canceled the native dialog
+        _gifSetPath(result);
+    });
+}
+
+function _gifShowProgress(show) {
+    var actions = document.getElementById('gifActions');
+    var wrap = document.getElementById('gifProgressWrap');
+    if (show) {
+        actions.classList.add('update-progress-hidden');
+        wrap.classList.remove('update-progress-hidden');
+    } else {
+        actions.classList.remove('update-progress-hidden');
+        wrap.classList.add('update-progress-hidden');
+    }
+}
+
+function _gifSetProgress(pct, text) {
+    var fill   = document.getElementById('gifProgressFill');
+    var pctEl  = document.getElementById('gifProgressPct');
+    var textEl = document.getElementById('gifProgressText');
+    if (fill)   fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    if (pctEl)  pctEl.textContent = Math.round(pct) + '%';
+    if (textEl) textEl.textContent = text || '';
+}
+
+function _gifOutPathFor(name) {
+    var safe = String(name).replace(/[\\\/:*?"<>|]/g, '_');
+    var sep = _gifFolder.indexOf('\\') !== -1 ? '\\' : '/';
+    var base = _gifFolder.charAt(_gifFolder.length - 1) === sep ? _gifFolder : _gifFolder + sep;
+    return base + safe + '.gif';
+}
+
+function _gifBuildJobs() {
+    var jobs = [];
+    for (var i = 0; i < _gifCompNames.length; i++) {
+        if (_gifExcluded[i]) continue;
+        var meta = _gifCompMeta[i];
+        if (!meta) continue;
+        jobs.push({ name: _gifCompNames[i], id: meta.id, compFps: meta.fps, compWidth: meta.w, tempFolder: '' });
+    }
+    return jobs;
+}
+
+function applyGifExport() {
+    if (_gifRunning) return;
+
+    var jobs = _gifBuildJobs();
+    if (jobs.length === 0) {
+        showToast('All compositions were removed from the list — nothing to export.');
+        return;
+    }
+    if (!_gifFolder) {
+        showToast('Choose a folder to save the GIFs into first.');
+        return;
+    }
+
+    // Quality and Motion Quality are independent gifski settings, but not dependent/opposing —
+    // there's no meaningful reason to set them differently for this tool, so one preset drives both.
+    var quality  = parseInt(document.getElementById('gifQualityPreset').value, 10) || 100;
+    var motion   = quality;
+    var resFactor = parseFloat(document.getElementById('gifResolutionSelect').value) || 1;
+    var repeat   = _gifReadRepeat();
+
+    // Empty/invalid FPS field means Auto — each comp keeps its own native frame rate rather than
+    // being forced to a single shared one.
+    var fpsRaw = document.getElementById('gifFpsInput').value.trim();
+    var fpsChoice = fpsRaw ? parseFloat(fpsRaw) : NaN;
+
+    _gifSaveSettings();
+
+    for (var i = 0; i < jobs.length; i++) {
+        var job = jobs[i];
+        var outFps = (!isNaN(fpsChoice) && fpsChoice > 0) ? fpsChoice : job.compFps;
+        var step = Math.max(1, Math.round(job.compFps / outFps));
+        job.step        = step;
+        job.outFps      = job.compFps / step; // recomputed so playback speed is exact, not approximate
+        job.quality       = quality;
+        job.motionQuality = motion;
+        job.maxWidth      = Math.max(16, Math.round(job.compWidth * resFactor));
+        job.repeat        = repeat;
+        job.outPath       = _gifOutPathFor(job.name);
+    }
+
+    _gifRunning = true;
+    _gifAbort = false;
+    _gifResults = [];
+    _gifShowProgress(true);
+    _gifRunJobs(jobs, 0);
+}
+
+function _gifRunJobs(jobs, i) {
+    if (_gifAbort || i >= jobs.length) { _gifFinishRun(jobs.length); return; }
+
+    var job = jobs[i];
+    var total = jobs.length;
+    _gifSetProgress((i / total) * 100, 'Preparing "' + job.name + '" (comp ' + (i + 1) + ' of ' + total + ')');
+
+    cs.evalScript('lineup_gifMakeTempFolder(' + job.id + ',' + _esQuote(_gifTempBase()) + ')', function (result) {
+        if (_gifAbort) { _gifFinishRun(total); return; }
+        if (!result || result.indexOf('ERROR:') === 0) { _gifJobFailed(job, result, jobs, i); return; }
+        job.tempFolder = result;
+        _gifRenderComp(job, jobs, i);
+    });
+}
+
+// The render queue renders a comp's whole work area in one blocking call — no per-frame
+// callback is available the way a manual frame loop had, so progress just jumps from
+// "Preparing" to "Encoding" around this one call rather than showing frame-by-frame ticks.
+function _gifRenderComp(job, jobs, i) {
+    var total = jobs.length;
+    if (_gifAbort) { _gifCleanupAndAdvance(job, jobs, i); return; }
+
+    _gifSetProgress(((i + 0.05) / total) * 100, 'Rendering "' + job.name + '" (comp ' + (i + 1) + ' of ' + total + ')…');
+
+    var script = 'lineup_gifRenderQueueSequence(' + job.id + ',' + _esQuote(job.tempFolder) + ')';
+    cs.evalScript(script, function (result) {
+        if (_gifAbort) { _gifFinishRun(total); return; }
+        if (!result || result.indexOf('ERROR:') === 0) { _gifJobFailed(job, result, jobs, i); return; }
+        _gifSetProgress(((i + 0.85) / total) * 100, 'Encoding "' + job.name + '"…');
+        _gifEncode(job, jobs, i);
+    });
+}
+
+// Explicit sorted relative filenames, not a shell glob — execFile doesn't go through a shell, so
+// "frame*.png" would be passed to gifski as a literal filename rather than expanded. Relative
+// (not absolute) filenames also keep the argv well under Windows' command-line length limit.
+function _gifEncode(job, jobs, i) {
+    if (!_gifNodeAvailable()) { _gifJobFailed(job, 'Node integration is unavailable — cannot run gifski.', jobs, i); return; }
+    var fs = require('fs');
+    var cp = require('child_process');
+
+    var allFrames;
+    try {
+        allFrames = fs.readdirSync(job.tempFolder).filter(function (f) { return /^frame_\d+\.png$/.test(f); }).sort();
+    } catch (e) {
+        _gifJobFailed(job, 'Could not read rendered frames for "' + job.name + '".', jobs, i);
+        return;
+    }
+    if (allFrames.length === 0) { _gifJobFailed(job, 'No frames were rendered for "' + job.name + '".', jobs, i); return; }
+
+    // The render queue always renders every native frame — decimate down to the chosen output
+    // fps here by keeping only every Nth file, since gifski's --fps never resamples PNG input.
+    var files = [];
+    for (var fi = 0; fi < allFrames.length; fi += job.step) files.push(allFrames[fi]);
+
+    var args = [
+        '-o', job.outPath,
+        '--fps', String(job.outFps),
+        '--quality', String(job.quality),
+        '--motion-quality', String(job.motionQuality),
+        '--width', String(job.maxWidth),
+        '--repeat', String(job.repeat),
+        '--quiet'
+    ].concat(files);
+
+    cp.execFile(_gifBinaryPath(), args, { cwd: job.tempFolder, maxBuffer: 4 * 1024 * 1024 }, function (err, stdout, stderr) {
+        if (err) {
+            var detail = stderr ? String(stderr).split('\n')[0] : err.message;
+            _gifJobFailed(job, 'gifski failed on "' + job.name + '" — ' + detail, jobs, i);
+            return;
+        }
+        // gifski exiting 0 without actually producing the file would otherwise look identical
+        // to success — check for real rather than trusting the exit code alone.
+        var size = 0;
+        try { size = fs.statSync(job.outPath).size; } catch (eStat) {}
+        if (!size) {
+            _gifJobFailed(job, 'gifski reported success for "' + job.name + '" but no GIF file appeared at the output path.', jobs, i);
+            return;
+        }
+        _gifResults.push({ name: job.name, ok: true, size: size });
+        _gifCleanupAndAdvance(job, jobs, i);
+    });
+}
+
+// GIF size depends on how much the actual footage compresses (flat color vs. noisy/high-motion
+// content can differ 10x at the same settings), so there's no reliable way to estimate it before
+// the frames exist — this reports the real, exact size once gifski has actually produced the file.
+function _gifFormatBytes(bytes) {
+    if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    if (bytes >= 1024) return Math.round(bytes / 1024) + ' KB';
+    return bytes + ' B';
+}
+
+// Records the failure and moves on to the next comp rather than aborting the whole batch — the
+// actual toast is shown once at the end (_gifFinishRun), from the real per-job outcomes, instead
+// of here: an immediate toast per failure was getting silently clobbered by the unconditional
+// "Exported N GIFs" toast that used to fire at the end regardless of whether anything succeeded.
+function _gifJobFailed(job, result, jobs, i) {
+    var msg = (result || '').replace(/^ERROR:\s*/, '') || ('Failed to export "' + job.name + '".');
+    _gifResults.push({ name: job.name, ok: false, msg: msg });
+    _gifCleanupAndAdvance(job, jobs, i);
+}
+
+function _gifCleanupAndAdvance(job, jobs, i) {
+    if (job.tempFolder) {
+        cs.evalScript('lineup_gifCleanupTemp(' + _esQuote(job.tempFolder) + ')', function () { _gifRunJobs(jobs, i + 1); });
+    } else {
+        _gifRunJobs(jobs, i + 1);
+    }
+}
+
+function _gifFinishRun(total) {
+    _gifRunning = false;
+    var aborted = _gifAbort;
+    _gifAbort = false;
+    _gifShowProgress(false);
+
+    if (aborted) {
+        showToast('GIF export stopped.');
+    } else {
+        var succeeded = _gifResults.filter(function (r) { return r.ok; });
+        var failed    = _gifResults.filter(function (r) { return !r.ok; });
+        if (failed.length === 0 && succeeded.length > 0) {
+            var totalBytes = succeeded.reduce(function (sum, r) { return sum + (r.size || 0); }, 0);
+            showToast('Exported ' + succeeded.length + (succeeded.length === 1 ? ' GIF' : ' GIFs') +
+                ' (' + _gifFormatBytes(totalBytes) + ') to ' + _gifFolder, 'info');
+        } else if (succeeded.length > 0) {
+            showToast('Exported ' + succeeded.length + ' of ' + total + ' GIFs — ' + failed[0].msg);
+        } else if (failed.length > 0) {
+            showToast(failed.length === 1 ? failed[0].msg : (failed[0].msg + ' (+' + (failed.length - 1) + ' more failed)'));
+        }
+    }
+    closeGifExport();
+}
+
+function _gifInit() {
+    _gifOnLoopModeChange();
+}
+
 // ── Activity tracking (Trophy tab) ─────────────────────────────────────────
 // Gamifies AE usage: workday streak + running totals -> score. AE has no events for any of this, so it polls a cheap snapshot (lineup_getActivitySnapshot) and diffs against the previous poll.
 // Undo/curve edits aren't tracked (no reliable way to attribute them). Keyframe counting is scoped to SELECTED layers only, capping poll cost regardless of comp size.
@@ -10866,6 +11394,7 @@ document.addEventListener('DOMContentLoaded', function() {
     restoreCollapsed();
     restoreScale();
     _bcsInit();
+    _gifInit();
     _brnInit();
     _cpInitScrubs();
     _cpDrawHueCanvas();

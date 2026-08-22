@@ -373,10 +373,15 @@
         for (var i = 0; i < entries.length; i++) {
             var srcPath = path.join(srcDir, entries[i]);
             var destPath = path.join(destDir, entries[i]);
-            if (fs.statSync(srcPath).isDirectory()) {
+            var srcStat = fs.statSync(srcPath);
+            if (srcStat.isDirectory()) {
                 _copyRecursive(srcPath, destPath);
             } else {
                 fs.writeFileSync(destPath, fs.readFileSync(srcPath));
+                // writeFileSync creates the file at the umask default, not the source's mode —
+                // without this, a bundled executable (e.g. gifski on Mac) loses its exec bit on
+                // every single self-update.
+                try { fs.chmodSync(destPath, srcStat.mode); } catch (e) {}
             }
         }
     }
@@ -398,8 +403,11 @@
     // allowlist in update_mac.sh / update_win.cmd rather than copying the
     // whole downloaded repo (install scripts, README, etc.) over the live
     // extension. BBQC_CEP rides along here too, purely as staging — see
-    // _syncBBQC below for what (if anything) happens with it.
-    var INSTALL_FOLDERS = ['CSXS', 'host', 'css', 'js', 'data', BBQC_FOLDER];
+    // _syncBBQC below for what (if anything) happens with it. 'bin' carries
+    // the bundled gifski binaries for GIF Export — see _copyRecursive's mode
+    // preservation below, which is what keeps the Mac binary executable
+    // across an update.
+    var INSTALL_FOLDERS = ['CSXS', 'host', 'css', 'js', 'data', 'bin', BBQC_FOLDER];
 
     // onProgress(pct) gets called with a 0-100 milestone as each phase
     // (download/extract/copy) advances; onError(err) fires instead of the

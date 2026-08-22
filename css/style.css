@@ -8581,6 +8581,61 @@ input.find-input::placeholder { color: #3e3e3e; }
     box-sizing: border-box;
 }
 
+.gif-hidden { display: none !important; }
+
+.gif-modal {
+    width: calc(100vw - 20px);
+    max-width: 340px;
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
+    box-sizing: border-box;
+}
+
+/* Quality is a single dropdown + a short size line — Output carries three full rows of
+   controls, so it gets the wider column instead of the generic first-child-is-wider default. */
+.gif-modal .bcs-groups-row .bcs-group:first-child { flex: 0.8; }
+.gif-modal .bcs-groups-row .bcs-group:last-child { flex: 1.3; }
+
+.gif-estimate-text {
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 0 1px;
+}
+
+.gif-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+    padding: 18px 16px 14px;
+}
+
+.gif-empty-state svg { width: 34px; height: 34px; flex-shrink: 0; opacity: 0.9; }
+
+.gif-empty-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.gif-empty-body {
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-dim);
+    text-align: left;
+}
+
+.gif-empty-body ol {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.gif-empty-state .bcs-actions { width: 100%; margin-top: 4px; }
+
 .cex-path {
     flex: 1;
     min-width: 0;

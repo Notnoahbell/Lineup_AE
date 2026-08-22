@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lineup</title>
-  <link rel="stylesheet" href="css/style.css?v=1">
+  <link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
 <div class="panel">
@@ -416,6 +416,13 @@
                 <path d="M12,2.5 V6 H15.5"/>
                 <line x1="9.75" y1="9.5" x2="9.75" y2="14.5"/>
                 <polyline points="7.05,12 9.75,14.7 12.45,12"/>
+              </svg>
+            </button>
+            <!-- GIF Export -->
+            <button class="organize-btn" style="--icon-hover:#e8823c" title="GIF Export" onclick="openGifExport()">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4.5" width="16" height="11" rx="2"/>
+                <text x="10" y="12.7" font-family="Arial, Helvetica, sans-serif" font-size="6.8" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">GIF</text>
               </svg>
             </button>
           </div>
@@ -1361,13 +1368,20 @@
         </svg>
         <span>Export</span>
       </button>
+      <button class="tools-grid-btn" data-group="organize" data-tool-id="gifExport" title="GIF Export" onclick="openGifExport()">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="4.5" width="16" height="11" rx="2"/>
+          <text x="10" y="12.7" font-family="Arial, Helvetica, sans-serif" font-size="6.8" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">GIF</text>
+        </svg>
+        <span>GIF</span>
+      </button>
 
       <!-- Standalone counterpart to Align's Stagger Keyframes; cascades layer start times instead (see openLayerStaggerPopup in main.js). -->
       <button class="tools-grid-btn" data-group="organize" data-tool-id="layerStagger" title="Layer Stagger" onclick="openLayerStaggerPopup()">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-          <line x1="2" y1="5" x2="6" y2="5"/>
-          <line x1="2" y1="10" x2="10" y2="10"/>
-          <line x1="2" y1="15" x2="17" y2="15"/>
+          <line x1="2" y1="5" x2="10" y2="5"/>
+          <line x1="2" y1="10" x2="13" y2="10"/>
+          <line x1="2" y1="15" x2="16" y2="15"/>
         </svg>
         <span>Layer Stagger</span>
       </button>
@@ -1851,9 +1865,9 @@
   <div class="stagger-modal" onclick="event.stopPropagation()">
     <div class="settings-hdr">
       <svg class="settings-hdr-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-        <line x1="2" y1="5" x2="6" y2="5"/>
-        <line x1="2" y1="10" x2="10" y2="10"/>
-        <line x1="2" y1="15" x2="17" y2="15"/>
+        <line x1="2" y1="5" x2="10" y2="5"/>
+        <line x1="2" y1="10" x2="13" y2="10"/>
+        <line x1="2" y1="15" x2="16" y2="15"/>
       </svg>
       <span class="settings-title">Layer Stagger</span>
       <button class="stagger-direction-btn" id="layerStaggerDirectionBtn" onclick="_layerStaggerToggleDirection()" title="Reverse Direction">
@@ -2583,6 +2597,16 @@
               </div>
               <span class="help-desc">Combines Save, Save As, and Reduce Project: saves as-is, duplicates to a new file, and strips the duplicate to just the selected comps (asset links untouched, nothing copied). Suggests ProjectName_CompName (or _reduced for multiple); requires the project already saved once.</span>
             </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="4.5" width="16" height="11" rx="2"/>
+                  <text x="10" y="12.7" font-family="Arial, Helvetica, sans-serif" font-size="6.8" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">GIF</text>
+                </svg>
+                <span class="help-key">GIF Export</span>
+              </div>
+              <span class="help-desc">Batch-exports the comps selected in the Project panel as GIFs, rendering each comp's work area and encoding it with the bundled gifski encoder for high-quality dithering and palette selection. Quality, motion quality, output FPS (decimated from the comp's own frame rate), max width, and loop behavior are all configurable; settings and your last export folder are remembered between sessions.</span>
+            </div>
           </div>
         </div>
       </div>
@@ -3033,6 +3057,115 @@
   </div>
 </div>
 
+<!-- GIF Export Modal -->
+<div id="gifOverlay" class="settings-overlay gif-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ closeGifExport(); })">
+  <div class="settings-modal gif-modal" onclick="event.stopPropagation()">
+    <div class="settings-hdr">
+      <svg class="settings-hdr-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)">
+        <rect x="2" y="4.5" width="16" height="11" rx="2"/>
+        <text x="10" y="12.7" font-family="Arial, Helvetica, sans-serif" font-size="6.8" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">GIF</text>
+      </svg>
+      <span class="settings-title">GIF Export</span>
+      <button class="settings-close" onclick="closeGifExport()">
+        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
+        </svg>
+      </button>
+    </div>
+    <div class="gif-empty-state gif-hidden" id="gifNoTemplateState">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)">
+        <rect x="2" y="3.5" width="16" height="13" rx="2"/>
+        <circle cx="7" cy="8" r="1.6"/>
+        <path d="M3,15 L8,10 L11,12.5 L14,9.5 L18,13.5" stroke-linejoin="round"/>
+      </svg>
+      <div class="gif-empty-title">No PNG Sequence Template Found</div>
+      <div class="gif-empty-body">
+        GIF Export renders frames through an After Effects Output Module template, and this After Effects install doesn't have one that produces a PNG sequence yet.
+        <br><br>
+        To create one:
+        <ol>
+          <li>In After Effects, open <strong>Edit &gt; Templates &gt; Output Module…</strong></li>
+          <li>Click <strong>New…</strong> and set Format to <strong>PNG Sequence</strong></li>
+          <li>Name it so it includes "PNG" (e.g. "PNG Sequence")</li>
+          <li>Click OK, then OK again to save</li>
+        </ol>
+        Then come back and try again.
+      </div>
+      <div class="ctrl-row bcs-actions">
+        <button class="btn" onclick="closeGifExport()">Close</button>
+        <button class="btn" onclick="openGifExport()">Try Again</button>
+      </div>
+    </div>
+    <div class="settings-body bcs-body" id="gifNormalBody">
+      <div class="bcs-complist-wrap">
+        <div class="bcs-complist" id="gifCompList">
+          <div class="bcs-complist-empty">No comp selected</div>
+        </div>
+        <div class="bcs-resize-handle" data-resize-target="gifCompList" title="Drag to resize">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><g transform="rotate(-45 7 7)"><line x1="3" y1="5" x2="11" y2="5"/><line x1="3" y1="9" x2="11" y2="9"/></g></svg>
+        </div>
+      </div>
+
+      <div class="bcs-groups-row">
+        <div class="bcs-group">
+          <span class="bcs-group-title" title="Controls how much detail gifski preserves, both within each frame and across frames over time. Higher looks cleaner and smoother at the cost of a larger file; lower shrinks the file at the cost of banding, noise, and flicker.">Quality</span>
+          <div class="ctrl-row">
+            <select id="gifQualityPreset" onchange="_gifUpdateEstimate()">
+              <option value="100" selected>Best</option>
+              <option value="85">High</option>
+              <option value="65">Medium</option>
+              <option value="40">Low</option>
+              <option value="15">Smallest</option>
+            </select>
+          </div>
+          <div class="gif-estimate-text" id="gifEstimate" title="A rough guess from resolution, frame count, and quality only — actual size depends heavily on the footage itself (flat color vs. busy/high-motion content can differ several times over) and is only known for certain after exporting."></div>
+        </div>
+        <div class="bcs-group">
+          <span class="bcs-group-title">Output</span>
+          <div class="ctrl-row">
+            <span class="lbl">FPS</span>
+            <input type="text" id="gifFpsInput" placeholder="Auto" style="width:44px" oninput="_gifFpsManual = true; _gifUpdateEstimate()">
+          </div>
+          <div class="ctrl-row">
+            <span class="lbl">Resolution</span>
+            <select id="gifResolutionSelect" onchange="_gifUpdateEstimate()" style="width:auto;flex:0 0 auto;">
+              <option value="1">Full</option>
+              <option value="0.5">Half</option>
+              <option value="0.25">Quarter</option>
+            </select>
+          </div>
+          <div class="ctrl-row">
+            <input type="checkbox" id="gifLoopCheck" checked onchange="_gifOnLoopModeChange()">
+            <span class="lbl">Loop</span>
+            <input type="text" id="gifLoopCount" placeholder="Forever" style="width:50px" oninput="_gifUpdateLoopTimesLabel()">
+            <span class="lbl gif-hidden" id="gifLoopTimesLbl">times</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ctrl-row">
+        <span class="lbl">Save to</span>
+        <span class="cex-path" id="gifPath"></span>
+        <button class="btn" id="gifBrowseBtn" onclick="browseGifExport()">Browse…</button>
+      </div>
+
+      <div class="update-progress-wrap update-progress-hidden" id="gifProgressWrap">
+        <div class="update-progress-text-row">
+          <span class="update-progress-text" id="gifProgressText"></span>
+          <span class="update-progress-pct" id="gifProgressPct"></span>
+        </div>
+        <div class="update-progress-bar"><div class="update-progress-bar-fill" id="gifProgressFill"></div></div>
+      </div>
+
+      <div class="ctrl-row bcs-actions" id="gifActions">
+        <button class="btn" onclick="closeGifExport()">Cancel</button>
+        <button class="btn" id="gifApplyBtn" onclick="applyGifExport()">Export</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Spellcheck Modal -->
 <div id="spellOverlay" class="settings-overlay spell-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ closeSpellModal(); })">
   <div class="settings-modal spell-modal" onclick="event.stopPropagation()">
@@ -3145,10 +3278,10 @@
 </div>
 
 <script src="js/CSInterface.js?v=2"></script>
-<script src="js/main.js?v=1"></script>
+<script src="js/main.js?v=18"></script>
 <script src="js/spellcheck.js?v=13"></script>
 <script src="js/find.js?v=1"></script>
-<script src="js/update.js?v=11"></script>
+<script src="js/update.js?v=12"></script>
 <script src="js/leaderboard.js?v=1"></script>
 </body>
 </html>

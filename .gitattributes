@@ -7,3 +7,4 @@
 
 # Binary files — never touch line endings
 *.png binary
+bin/gifski/** binary
