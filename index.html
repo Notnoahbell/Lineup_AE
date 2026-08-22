@@ -1507,6 +1507,14 @@
         </svg>
         <span>Path Rig</span>
       </button>
+      <!-- Adds a freely-draggable reference rect mask + a Corner Radius slider + a second mask whose Mask Shape expression rebuilds it rounded (see lineup_addRoundedMaskRig in host.jsx). -->
+      <button class="tools-grid-btn" data-group="shape" data-tool-id="roundedMaskRig" title="Rounded Mask Rig — adds a rounded-corner mask driven by a Corner Radius slider to the selected layer(s)" onclick="doAddRoundedMaskRig()">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="2" width="11" height="11" opacity="0.45"/>
+          <rect x="7" y="7" width="11" height="11" rx="4"/>
+        </svg>
+        <span>Rounded Mask</span>
+      </button>
     </div>
 
   </div>

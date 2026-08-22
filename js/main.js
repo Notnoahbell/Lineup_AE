@@ -2715,6 +2715,12 @@ function doPathRig() {
     run('lineup_pathRigDistribute()');
 }
 
+// Adds a reference rect mask (freely draggable) + Corner Radius slider + a rounded-mask
+// expression rig to each selected layer (see lineup_addRoundedMaskRig in host.jsx).
+function doAddRoundedMaskRig() {
+    run('lineup_addRoundedMaskRig()');
+}
+
 // Align Edges has no effect once both axes have a manual Gap override — dim it for clarity.
 function _syncAlignEdgesDim() {
     var grp = document.getElementById('alignEdgesGroup');

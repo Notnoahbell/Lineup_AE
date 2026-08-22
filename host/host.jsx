@@ -3252,6 +3252,111 @@ function lineup_pathRigDistribute() {
     }
 }
 
+// ── ROUNDED MASK RIG ─────────────────────────────────────────────────────────
+// Adds a plain reference-rectangle mask (mode None, freely draggable like any normal
+// rect mask) plus a Corner Radius slider, then a second mask whose Mask Shape expression
+// reads the reference rectangle's current bounds and rebuilds it as a rounded rect —
+// so reshaping the reference rectangle keeps the rounded mask in sync.
+
+// Finds the next unused mask name on a layer, appending " 2"/" 3"/... same as
+// smartLink_createUniqueControl does for effect names.
+function roundedMaskRig_uniqueMaskName(maskParade, baseName) {
+    var name = baseName, suffix = 2;
+    while (true) {
+        var existing = null;
+        try { existing = maskParade.property(name); } catch (e) {}
+        if (!existing) return name;
+        name = baseName + " " + suffix++;
+    }
+}
+
+// Mask/effect names are user-editable strings and get embedded verbatim into the
+// generated expression's string literals, so quotes/backslashes must be escaped.
+function roundedMaskRig_buildExpression(refMaskName, sliderName) {
+    var refEsc = refMaskName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    var sliderEsc = sliderName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return [
+        'srcPath = thisLayer.mask("' + refEsc + '").maskPath;',
+        'pts = srcPath.points();',
+        'xs = []; ys = [];',
+        'for (i = 0; i < pts.length; i++){ xs.push(pts[i][0]); ys.push(pts[i][1]); }',
+        'left = Math.min.apply(null, xs);',
+        'right = Math.max.apply(null, xs);',
+        'top = Math.min.apply(null, ys);',
+        'bottom = Math.max.apply(null, ys);',
+        '',
+        'w = right - left;',
+        'h = bottom - top;',
+        'cx = left + w/2;',
+        'cy = top + h/2;',
+        'hw = w/2; hh = h/2;',
+        '',
+        'maxR = Math.min(hw, hh);',
+        'r = Math.max(0, Math.min(effect("' + sliderEsc + '")("Slider"), maxR));',
+        '',
+        'k = 0.5522847498;',
+        'kr = r * k;',
+        '',
+        'pointsArr = [',
+        '  [cx-hw+r, cy-hh],',
+        '  [cx+hw-r, cy-hh],',
+        '  [cx+hw,   cy-hh+r],',
+        '  [cx+hw,   cy+hh-r],',
+        '  [cx+hw-r, cy+hh],',
+        '  [cx-hw+r, cy+hh],',
+        '  [cx-hw,   cy+hh-r],',
+        '  [cx-hw,   cy-hh+r]',
+        '];',
+        '',
+        'inTans = [ [-kr,0],[0,0],[0,-kr],[0,0],[kr,0],[0,0],[0,kr],[0,0] ];',
+        'outTans = [ [0,0],[kr,0],[0,0],[0,kr],[0,0],[-kr,0],[0,0],[0,-kr] ];',
+        '',
+        'createPath(pointsArr, inTans, outTans, true);'
+    ].join('\n');
+}
+
+function lineup_addRoundedMaskRig() {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "ERROR: No active composition.";
+        var layers = comp.selectedLayers;
+        if (!layers || layers.length === 0) return "ERROR: Select at least one layer first.";
+
+        app.beginUndoGroup("Add Rounded Mask Rig");
+        var applied = 0, skipped = 0;
+        for (var i = 0; i < layers.length; i++) {
+            var layer = layers[i];
+            if (!(layer instanceof AVLayer)) { skipped++; continue; }
+
+            var sliderResult = smartLink_createUniqueControl(layer, "slider", "Corner Radius");
+            smartLink_getControlValueProperty(sliderResult.control, "slider").setValue(0);
+
+            var maskParade = layer.property("ADBE Mask Parade");
+
+            var refName = roundedMaskRig_uniqueMaskName(maskParade, "Rect Reference");
+            var refMask = maskParade.addProperty("ADBE Mask Atom");
+            refMask.name = refName;
+            refMask.maskMode = MaskMode.NONE;
+
+            var roundedName = roundedMaskRig_uniqueMaskName(maskParade, "Rounded Mask");
+            var roundedMask = maskParade.addProperty("ADBE Mask Atom");
+            roundedMask.name = roundedName;
+            roundedMask.maskMode = MaskMode.ADD;
+            roundedMask.property("ADBE Mask Shape").expression =
+                roundedMaskRig_buildExpression(refName, sliderResult.name);
+
+            applied++;
+        }
+        app.endUndoGroup();
+
+        if (applied === 0) return "ERROR: Selected layer(s) don't support masks.";
+        return "ok";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
 function lineup_radialDistribute(distMode, spacing, radius, rotate) {
     try {
         var comp = app.project.activeItem;
