@@ -26,7 +26,6 @@ xcopy /E /I /Q /Y "%~dp0host" "%DEST%\host" >nul
 xcopy /E /I /Q /Y "%~dp0css"  "%DEST%\css"  >nul
 xcopy /E /I /Q /Y "%~dp0js"   "%DEST%\js"   >nul
 xcopy /E /I /Q /Y "%~dp0data" "%DEST%\data" >nul
-xcopy /E /I /Q /Y "%~dp0bin"  "%DEST%\bin"  >nul
 copy  /Y          "%~dp0index.html" "%DEST%\index.html" >nul
 REM Re-stage BBQC's files inside Lineup's own folder — same staging spot the
 REM in-app self-updater uses (js/update.js), whether or not BBQC is actually

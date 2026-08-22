@@ -10245,8 +10245,12 @@ function _gifBinaryPath() {
     var extDir = cs.getSystemPath(SystemPath.EXTENSION);
     if (!extDir) return null;
     var isWin = (typeof process !== 'undefined' && process.platform === 'win32');
-    return isWin ? path.join(extDir, 'bin', 'gifski', 'win', 'gifski.exe')
-                 : path.join(extDir, 'bin', 'gifski', 'mac', 'gifski');
+    // Lives under data/ (not its own top-level 'bin' folder) specifically so it rides along with
+    // an existing INSTALL_FOLDERS entry that's been there since before this feature — _copyRecursive
+    // mirrors data/ wholesale regardless of what's newly added inside it, so even a self-updater
+    // that predates gifski entirely still copies it correctly, with no extra release needed.
+    return isWin ? path.join(extDir, 'data', 'gifski', 'win', 'gifski.exe')
+                 : path.join(extDir, 'data', 'gifski', 'mac', 'gifski');
 }
 
 // Node's own temp dir, handed to ExtendScript as the preferred base for rendered frames.

@@ -35,7 +35,10 @@ rsync -a "$SCRIPT_DIR/CSXS/" "$DEST/CSXS/"
 rsync -a "$SCRIPT_DIR/host/" "$DEST/host/"
 rsync -a "$SCRIPT_DIR/css/"  "$DEST/css/"
 rsync -a "$SCRIPT_DIR/js/"   "$DEST/js/"
-rsync -a "$SCRIPT_DIR/bin/"  "$DEST/bin/"
+# data/ was missing from this manual updater entirely (unlike js/update.js's in-app one, which
+# already included it) — this would have silently skipped both the spellcheck dictionary and,
+# now, the bundled gifski binaries on every manual update.
+rsync -a "$SCRIPT_DIR/data/" "$DEST/data/"
 cp    -f "$SCRIPT_DIR/index.html" "$DEST/index.html"
 # Re-stage BBQC's files inside Lineup's own folder — same staging spot the
 # in-app self-updater uses (js/update.js), whether or not BBQC is actually
