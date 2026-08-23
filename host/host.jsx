@@ -6404,10 +6404,44 @@ function lineup_batchApplyCompSettings(
 }
 
 // ── BATCH RENAME ─────────────────────────────────────────────────────────────
-// Seeded from Batch Comp Settings' own seed call rather than a separate one, since both filter proj.selection identically.
+// Targets the active comp's selected layers when any are selected, else the comps
+// selected in the Project panel — lineup_getBatchRenameSeed and lineup_batchRenameApply
+// each resolve this same set independently, since nothing else identifies "the batch"
+// between the seed call (panel open) and the apply call (panel close).
+
+function lineup_brnResolveTargets() {
+    var comp = app.project.activeItem;
+    if (comp instanceof CompItem && comp.selectedLayers && comp.selectedLayers.length > 0) {
+        return { type: "layers", items: comp.selectedLayers };
+    }
+    var comps = [];
+    for (var i = 0; i < app.project.selection.length; i++) {
+        if (app.project.selection[i] instanceof CompItem) comps.push(app.project.selection[i]);
+    }
+    return { type: "comps", items: comps };
+}
+
+// name<TAB>frameRate<TAB>width<TAB>height<TAB>duration per comp entry, or bare
+// names for layers — see js/main.js's openBatchRename for the matching parser.
+function lineup_getBatchRenameSeed() {
+    try {
+        var t = lineup_brnResolveTargets();
+        var entries = [];
+        for (var i = 0; i < t.items.length; i++) {
+            var it = t.items[i];
+            var name = it.name.replace(/\|/g, "/").replace(/\t/g, " ");
+            if (t.type === "comps") {
+                entries.push([name, it.frameRate, it.width, it.height, it.duration].join("\t"));
+            } else {
+                entries.push(name);
+            }
+        }
+        return t.type + "|" + entries.join("|");
+    } catch (e) { return "ERROR: " + e.toString(); }
+}
 
 // Spreadsheet-style column letters: 1 -> A, 2 -> B, … 26 -> Z, 27 -> AA, …
-function numberToLetters(num) {
+function lineup_brnNumberToLetters(num) {
     var s = "";
     while (num > 0) {
         var rem = (num - 1) % 26;
@@ -6417,44 +6451,108 @@ function numberToLetters(num) {
     return s;
 }
 
-function lineup_batchRenameComps(pattern, start, orderIndices) {
-    try {
-        var proj = app.project;
-        var allComps = [];
-        for (var i = 0; i < proj.selection.length; i++) {
-            if (proj.selection[i] instanceof CompItem) allComps.push(proj.selection[i]);
-        }
-        if (allComps.length === 0) return "ERROR: Select at least one composition in the Project panel.";
-        if (!pattern) return "ERROR: Enter a name pattern.";
+function lineup_brnFormatFrameRate(fr) {
+    return String(Math.round(fr * 1000) / 1000);
+}
 
-        // orderIndices is a CSV of indices into allComps in the panel's (possibly reordered/trimmed) order, which drives the numbering.
-        var order = [];
-        if (orderIndices) {
-            var parts = String(orderIndices).split(",");
+// Ignores pixel aspect ratio by design — this is the frame's width:height ratio, not the pixel shape.
+function lineup_brnFormatAspectRatio(width, height) {
+    if (!height) return "";
+    return (Math.round((width / height) * 10) / 10).toFixed(1);
+}
+
+// Largest-unit duration: h:mm:ss.s, m:ss.s, or just s.s — mirrors js/main.js's _brnFormatDuration.
+function lineup_brnFormatDuration(totalSeconds) {
+    var t = Math.max(0, totalSeconds);
+    var hrs  = Math.floor(t / 3600);
+    var mins = Math.floor((t % 3600) / 60);
+    var secs = Math.round((t - hrs * 3600 - mins * 60) * 10) / 10;
+    if (secs >= 60) { secs -= 60; mins += 1; }
+    if (mins >= 60) { mins -= 60; hrs += 1; }
+
+    function pad2(n) { return (n < 10 ? "0" : "") + n; }
+    function secStr(s) { return (s < 10 ? "0" : "") + s.toFixed(1); }
+
+    if (hrs > 0)  return hrs + ":" + pad2(mins) + ":" + secStr(secs);
+    if (mins > 0) return mins + ":" + secStr(secs);
+    return secs.toFixed(1);
+}
+
+// Comp-only Replace tokens — meta is null for layers, so these pass through untouched.
+function lineup_brnApplyCompTokens(str, meta) {
+    if (!str || !meta) return str;
+    var w = meta.width, h = meta.height;
+    return str
+        .replace(/\[frameRate\]/g, lineup_brnFormatFrameRate(meta.frameRate))
+        .replace(/\[aspectRatio\]/g, lineup_brnFormatAspectRatio(w, h))
+        .replace(/\[dimension\]/g, w + "x" + h)
+        .replace(/\[width\]/g, String(w))
+        .replace(/\[height\]/g, String(h))
+        .replace(/\[duration\]/g, lineup_brnFormatDuration(meta.duration));
+}
+
+// [#]/[##]/[###]… becomes a zero-padded counter (width = number of #'s); [A] becomes a letter by position alone.
+function lineup_brnApplyReplaceTokens(replaceStr, num, letterPos) {
+    if (!replaceStr) return replaceStr;
+    var out = replaceStr.replace(/\[#+\]/g, function (m) {
+        var width = m.length - 2;
+        var s = String(num);
+        while (s.length < width) s = "0" + s;
+        return s;
+    });
+    out = out.replace(/\[A\]/g, lineup_brnNumberToLetters(letterPos));
+    return out;
+}
+
+// Falls back to the original name on a bad pattern rather than throwing mid-batch —
+// mirrors js/main.js's _brnComputeName, which validates the same way for its live preview.
+function lineup_brnComputeName(origName, findStr, replaceStr, num, letterPos, meta) {
+    if (!findStr) return origName;
+    try {
+        var repl = lineup_brnApplyCompTokens(replaceStr, meta);
+        repl = lineup_brnApplyReplaceTokens(repl, num, letterPos);
+        return origName.replace(new RegExp(findStr, "g"), repl);
+    } catch (e) {
+        return origName;
+    }
+}
+
+function lineup_batchRenameApply(findStr, replaceStr, excludedIndicesCsv, start) {
+    try {
+        if (!findStr) return "ERROR: Enter a value to find.";
+
+        var t = lineup_brnResolveTargets();
+        if (t.items.length === 0) return "ERROR: Select at least one composition or layer.";
+
+        var excluded = {};
+        if (excludedIndicesCsv) {
+            var parts = String(excludedIndicesCsv).split(",");
             for (var i = 0; i < parts.length; i++) {
                 var idx = parseInt(parts[i], 10);
-                if (!isNaN(idx) && allComps[idx]) order.push(idx);
+                if (!isNaN(idx)) excluded[idx] = true;
             }
         }
-        if (order.length === 0) return "ERROR: No compositions left to rename — all were removed from the list.";
 
         var startNum = parseInt(start, 10);
         if (isNaN(startNum)) startNum = 1;
 
-        app.beginUndoGroup("Batch Rename Compositions");
+        app.beginUndoGroup(t.type === "comps" ? "Batch Rename Compositions" : "Batch Rename Layers");
         try {
-            for (var pos = 0; pos < order.length; pos++) {
-                var num      = startNum + pos;
+            var pos = 0;
+            for (var i = 0; i < t.items.length; i++) {
+                if (excluded[i]) continue;
+                var item = t.items[i];
+                var num = startNum + pos;
                 var letterPos = pos + 1; // [A] always starts at A, independent of Start-at
-                // Replace every [#]/[##]/[###]… run with the index zero-padded to the # count, and [A] with a letter by position.
-                var newName = pattern.replace(/\[#+\]/g, function (m) {
-                    var width = m.length - 2;
-                    var s = String(num);
-                    while (s.length < width) s = "0" + s;
-                    return s;
-                });
-                newName = newName.replace(/\[A\]/g, numberToLetters(letterPos));
-                allComps[order[pos]].name = newName;
+                var meta = (t.type === "comps")
+                    ? { frameRate: item.frameRate, width: item.width, height: item.height, duration: item.duration }
+                    : null;
+                item.name = lineup_brnComputeName(item.name, findStr, replaceStr, num, letterPos, meta);
+                pos++;
+            }
+            if (pos === 0) {
+                app.endUndoGroup();
+                return "ERROR: No compositions or layers left to rename — all were removed from the list.";
             }
         } catch (err) {
             app.endUndoGroup();
@@ -6549,31 +6647,43 @@ function lineup_exportReducedProject(exportPath, excludedIndices) {
 // opens so the panel can show a clear "make one first" state instead of only discovering this
 // deep into a render. Output module template info is only exposed off a render queue item, so
 // this probes with a throwaway item (removed immediately, never rendered) against any comp in
-// the project. Returns "yes" / "no", or "unknown" if there's no comp to probe with or something
-// unexpected goes wrong — the panel treats "unknown" as "proceed normally" rather than blocking
-// on an inconclusive check.
+// the project. Returns "hasPng|hasBothFlavors": hasPng is "yes"/"no", or "unknown" if there's no
+// comp to probe with or something unexpected goes wrong (the panel treats "unknown" as "proceed
+// normally" rather than blocking on an inconclusive check); hasBothFlavors is "yes" only when a
+// plain PNG template AND a separate alpha-named one (see lineup_gifPickPngTemplate) both exist —
+// that's what gates showing the GIF panel's Preserve Alpha toggle at all.
 function lineup_gifHasPngTemplate() {
     var rq = app.project.renderQueue;
     var rqItem = null;
+    // On Windows, adding/removing a render-queue item below clears the Project panel's
+    // selection as a side effect (not reproduced on Mac) — save/restore it so the GIF panel's
+    // own selection read right after this call isn't left seeing "nothing selected".
+    var savedSelection = app.project.selection;
     try {
         var comp = null;
         for (var n = 1; n <= app.project.numItems; n++) {
             var item = app.project.item(n);
             if (item instanceof CompItem) { comp = item; break; }
         }
-        if (!comp) return "unknown";
+        if (!comp) return "unknown|no";
 
         rqItem = rq.items.add(comp);
         var templates = [];
         try { templates = rqItem.outputModule(1).templates || []; } catch (eList) {}
+
+        var hasPng = false, hasAlpha = false, hasPlain = false;
         for (var t = 0; t < templates.length; t++) {
-            if (/png/i.test(templates[t])) return "yes";
+            if (!/png/i.test(templates[t])) continue;
+            hasPng = true;
+            if (/alpha/i.test(templates[t])) hasAlpha = true;
+            else hasPlain = true;
         }
-        return "no";
+        return (hasPng ? "yes" : "no") + "|" + (hasAlpha && hasPlain ? "yes" : "no");
     } catch (e) {
-        return "unknown";
+        return "unknown|no";
     } finally {
         try { if (rqItem) rqItem.remove(); } catch (eRemove) {}
+        try { app.project.selection = savedSelection; } catch (eRestore) {}
     }
 }
 
@@ -6654,13 +6764,29 @@ function lineup_gifMakeTempFolder(compId, preferredBase) {
 // _gifEncode), by keeping only every Nth rendered file, since the render queue doesn't offer a
 // simple per-frame skip control the way a manual frame-by-frame loop did.
 //
+// Picks the PNG template matching the requested alpha preference: a name containing "alpha" for
+// preserveAlpha, one without for plain. Falls back to any other PNG template if that flavor isn't
+// available (e.g. the Preserve Alpha toggle was on from a saved setting but only one flavor exists
+// on this machine) rather than failing the render outright.
+function lineup_gifPickPngTemplate(templateNames, preserveAlpha) {
+    var fallback = null;
+    for (var t = 0; t < templateNames.length; t++) {
+        var name = templateNames[t];
+        if (!/png/i.test(name)) continue;
+        var isAlpha = /alpha/i.test(name);
+        if (preserveAlpha === isAlpha) return name;
+        if (!fallback) fallback = name;
+    }
+    return fallback;
+}
+
 // There is no ExtendScript API to CREATE a new output module template — only to apply an
 // existing one by name, or attempt to directly override an item's own settings (which Adobe's
 // docs say is read-only for "Format", though scripts have long relied on it working anyway).
 // This tries both, and — if neither works — returns a detailed diagnostic (available template
 // names, the current Format value, exactly which step failed) rather than a generic error, since
 // which of those is actually true varies by AE version/install and isn't safe to assume.
-function lineup_gifRenderQueueSequence(compId, folderFsName) {
+function lineup_gifRenderQueueSequence(compId, folderFsName, preserveAlpha) {
     var rq = app.project.renderQueue;
     var rqItem = null;
     var requeue = []; // pre-existing render=true items we temporarily disable, so render() only processes ours
@@ -6694,10 +6820,7 @@ function lineup_gifRenderQueueSequence(compId, folderFsName) {
         var templateNames = [];
         try { templateNames = om.templates || []; } catch (eList) { diag.push("couldn't list templates: " + eList.toString()); }
 
-        var pngTemplate = null;
-        for (var t = 0; t < templateNames.length; t++) {
-            if (/png/i.test(templateNames[t])) { pngTemplate = templateNames[t]; break; }
-        }
+        var pngTemplate = lineup_gifPickPngTemplate(templateNames, String(preserveAlpha) === "true");
 
         if (pngTemplate) {
             try {
@@ -6794,12 +6917,19 @@ function lineup_gifSweepStaleTemp(preferredBase) {
     } catch (e) {}
 }
 
-// Folder picker, not a Save dialog — a GIF Export batch writes one .gif per comp into this folder.
+// A GIF Export batch writes one .gif per comp into this folder, so semantically this wants a plain
+// folder picker — but ExtendScript's Folder.selectDialog() on Windows is the old "Browse For Folder"
+// tree-view dialog, which looks nothing like the modern Explorer-style picker lineup_pickExportLocation
+// gets from File.saveDlg() above. This fakes a folder pick with that same saveDlg instead, for a
+// consistent, modern dialog on both platforms — the filename it asks for is discarded; only the
+// folder the user navigates to (picked.parent) is kept.
 function lineup_pickGifOutputFolder(defaultPath) {
     try {
-        var picked = Folder.selectDialog("Choose a folder for the exported GIFs");
+        var base = defaultPath || Folder.myDocuments.fsName;
+        var seed = new File(base.replace(/\/+$/, "") + "/Choose this folder (name is ignored)");
+        var picked = seed.saveDlg("Choose a folder for the exported GIFs");
         if (!picked) return "";
-        return picked.fsName.replace(/\|/g, "/");
+        return picked.parent.fsName.replace(/\|/g, "/");
     } catch (e) { return "ERROR: " + e.toString(); }
 }
 

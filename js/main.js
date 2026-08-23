@@ -10234,6 +10234,7 @@ var _gifBinReady     = false; // memoized per panel session — see _gifEnsureBi
 var _gifRunning      = false;
 var _gifAbort        = false;
 var _gifResults      = []; // {name, ok, msg} per job in the current/last run — see _gifFinishRun
+var _gifAlphaAvailable = false; // true when the install has both a plain PNG Sequence template and an alpha one — see openGifExport
 
 function _gifNodeAvailable() {
     return typeof require === 'function';
@@ -10431,6 +10432,10 @@ function _gifLoadSettings() {
     else { loopCheck.checked = true; loopCount.value = repeat > 0 ? String(repeat) : ''; }
     _gifOnLoopModeChange();
 
+    // Only meaningful (and only shown) when the install has both PNG template flavors — restored
+    // regardless, so the choice is remembered for whenever it next becomes available.
+    document.getElementById('gifAlphaCheck').checked = _gifAlphaAvailable && !!s.preserveAlpha;
+
     if (!_gifFolder && s.folder) _gifSetPath(s.folder);
     _gifUpdateEstimate(); // recompute now that quality/resolution reflect the restored settings
 }
@@ -10441,7 +10446,8 @@ function _gifSaveSettings() {
             quality: parseInt(document.getElementById('gifQualityPreset').value, 10),
             resolution: parseFloat(document.getElementById('gifResolutionSelect').value),
             repeat: _gifReadRepeat(),
-            folder: _gifFolder
+            folder: _gifFolder,
+            preserveAlpha: _gifAlphaAvailable && document.getElementById('gifAlphaCheck').checked
         }));
     } catch (e) {}
 }
@@ -10458,8 +10464,12 @@ function openGifExport() {
     _gifEnsureBinaryReady(function (err) {
         if (err) { showToast(err); return; }
 
-        cs.evalScript('lineup_gifHasPngTemplate()', function (pngResult) {
-            if (pngResult === 'no') { _gifShowState(true); return; }
+        // "hasPng|hasBothFlavors" — see lineup_gifHasPngTemplate in host.jsx.
+        cs.evalScript('lineup_gifHasPngTemplate()', function (result) {
+            var parts = String(result || '').split('|');
+            if (parts[0] === 'no') { _gifShowState(true); return; }
+            _gifAlphaAvailable = parts[1] === 'yes';
+            document.getElementById('gifAlphaRow').classList.toggle('gif-hidden', !_gifAlphaAvailable);
             _gifOpenNormal();
         });
     });
@@ -10577,6 +10587,8 @@ function applyGifExport() {
     var fpsRaw = document.getElementById('gifFpsInput').value.trim();
     var fpsChoice = fpsRaw ? parseFloat(fpsRaw) : NaN;
 
+    var preserveAlpha = _gifAlphaAvailable && document.getElementById('gifAlphaCheck').checked;
+
     _gifSaveSettings();
 
     for (var i = 0; i < jobs.length; i++) {
@@ -10589,6 +10601,7 @@ function applyGifExport() {
         job.motionQuality = motion;
         job.maxWidth      = Math.max(16, Math.round(job.compWidth * resFactor));
         job.repeat        = repeat;
+        job.preserveAlpha = preserveAlpha;
         job.outPath       = _gifOutPathFor(job.name);
     }
 
@@ -10623,7 +10636,7 @@ function _gifRenderComp(job, jobs, i) {
 
     _gifSetProgress(((i + 0.05) / total) * 100, 'Rendering "' + job.name + '" (comp ' + (i + 1) + ' of ' + total + ')…');
 
-    var script = 'lineup_gifRenderQueueSequence(' + job.id + ',' + _esQuote(job.tempFolder) + ')';
+    var script = 'lineup_gifRenderQueueSequence(' + job.id + ',' + _esQuote(job.tempFolder) + ',' + (job.preserveAlpha ? 'true' : 'false') + ')';
     cs.evalScript(script, function (result) {
         if (_gifAbort) { _gifFinishRun(total); return; }
         if (!result || result.indexOf('ERROR:') === 0) { _gifJobFailed(job, result, jobs, i); return; }
