@@ -17,6 +17,117 @@ var TAB_SLIDE_IN_MS = 170;
 var TAB_SLIDE_OUT_EASE = 'cubic-bezier(0.95, 0.05, 0.795, 0.035)'; // ease-in, steeper — stays slow longer, then whips much faster into the cut
 var TAB_SLIDE_IN_EASE = 'cubic-bezier(0.215, 0.61, 0.355, 1)'; // ease-out — fast, then slow
 
+// ── Sliding tab selector + Lottie selection icons ────────────────────────────
+// The selector is a separate absolutely-positioned element rather than each button drawing its
+// own active background, specifically so it can slide smoothly between positions instead of
+// popping from button to button.
+var TAB_LOTTIE_NAMES = ['home', 'tools', 'trophy'];
+var _tabLottieAnims = {}; // name -> lottie AnimationItem, only populated for names that loaded successfully
+
+function _initTabLottieIcons() {
+    if (typeof lottie === 'undefined' || typeof TAB_LOTTIE_DATA === 'undefined') return; // vendored player/data missing — fallback SVGs stay visible permanently
+    TAB_LOTTIE_NAMES.forEach(function(name) {
+        var mount = document.getElementById('tabLottie-' + name);
+        var data = TAB_LOTTIE_DATA[name];
+        if (!mount || !data) return;
+        try {
+            var anim = lottie.loadAnimation({
+                container: mount,
+                renderer: 'svg',
+                loop: false,
+                autoplay: false,
+                animationData: data
+            });
+            anim.addEventListener('DOMLoaded', function() {
+                anim.goToAndStop(0, true);
+                mount.style.display = 'block';
+                var fallback = document.querySelector('#tabBtn-' + name + ' .tab-btn-fallback-icon');
+                if (fallback) fallback.style.display = 'none';
+            });
+            _tabLottieAnims[name] = anim;
+        } catch (e) {}
+    });
+}
+
+// Plays the newly-active tab's selection animation forward from its resting frame; whichever tab
+// was previously active snaps straight back to its own resting frame rather than reverse-playing —
+// this is a "you selected this" cue, not a two-way transition.
+function _playTabLottie(activeName, prevName) {
+    var activeAnim = _tabLottieAnims[activeName];
+    if (activeAnim) { activeAnim.goToAndStop(0, true); activeAnim.play(); }
+    var prevAnim = prevName && _tabLottieAnims[prevName];
+    if (prevAnim) prevAnim.goToAndStop(0, true);
+}
+
+// Measures the active button's own rect rather than computing a fixed percentage — the flex gap
+// between buttons makes that math awkward, and this stays correct through any width/resize.
+//
+// `animate` (a genuine tab switch) stretches the selector across BOTH the old and new button's
+// combined span mid-travel, then eases back down to the destination's own width — a plain
+// translateX slide can't do that (it never changes width), so this drives left/width directly via
+// the Web Animations API instead of a CSS transition. Resize/initial-paint calls pass no `animate`
+// and just snap straight to the new rect — a live-resize or first-paint reposition isn't a
+// "selection", so it shouldn't play the same stretch.
+var _tabSelectorRect = null; // {left, width} last committed, in px — null until first positioned
+var _tabSelectorAnim = null;
+
+function _updateTabSelector(name, animate) {
+    var selector = document.getElementById('tabSelector');
+    var btn = document.getElementById('tabBtn-' + name);
+    if (!selector || !btn) return;
+
+    var newLeft = btn.offsetLeft, newWidth = btn.offsetWidth;
+    var prevRect = _tabSelectorRect;
+    _tabSelectorRect = { left: newLeft, width: newWidth };
+
+    if (_tabSelectorAnim) { _tabSelectorAnim.cancel(); _tabSelectorAnim = null; }
+
+    if (!animate || !prevRect) {
+        selector.classList.remove('tab-selector-unset');
+        selector.style.left = newLeft + 'px';
+        selector.style.width = newWidth + 'px';
+        return;
+    }
+    if (prevRect.left === newLeft && prevRect.width === newWidth) return; // already there — nothing to animate
+
+    // The full old+new union (STRETCH_FACTOR 1) reads as a dramatic full-bar reach no matter how
+    // the timing is tuned — the fix is a smaller stretch, not just a faster one. This blends the
+    // stretch keyframe's edges between "no stretch at all" (plain destination rect) and "full
+    // union", so only a fraction of the extra reach actually shows: a quick flick, not a lunge.
+    var STRETCH_FACTOR = 0.3;
+    var fullLeft  = Math.min(prevRect.left, newLeft);
+    var fullRight = Math.max(prevRect.left + prevRect.width, newLeft + newWidth);
+    var destRight = newLeft + newWidth;
+    var stretchLeft  = newLeft  + (fullLeft  - newLeft)  * STRETCH_FACTOR;
+    var stretchRight = destRight + (fullRight - destRight) * STRETCH_FACTOR;
+
+    // Two different easings, not one uniform curve for the whole thing: the leading edge reaches
+    // out at a steady pace (segment 1), but the trailing edge then needs to catch up briskly
+    // (segment 2) rather than lingering behind — an even ease-in-out on the back half read as a
+    // slow drag, since ease-in-out is at its slowest right where the trailing edge most needs to
+    // get moving. A per-keyframe easing lets each half have its own pace instead of compromising.
+    _tabSelectorAnim = selector.animate([
+        { left: prevRect.left + 'px', width: prevRect.width + 'px', easing: 'cubic-bezier(0.3, 0, 0.6, 1)' },
+        { left: stretchLeft + 'px', width: (stretchRight - stretchLeft) + 'px', offset: 0.4, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+        { left: newLeft + 'px', width: newWidth + 'px' }
+    ], { duration: 240 });
+
+    _tabSelectorAnim.finished.catch(function() {}).then(function() {
+        // cancel(), not just let fill lapse — matches _tabAnimate's own convention elsewhere, so a
+        // later resize's plain style.left/.width assignment isn't fighting a held animation effect.
+        if (_tabSelectorAnim) _tabSelectorAnim.cancel();
+        _tabSelectorAnim = null;
+        selector.style.left = newLeft + 'px';
+        selector.style.width = newWidth + 'px';
+    });
+}
+
+function _initTabSelectorResize() {
+    var bar = document.getElementById('tabBarEl');
+    if (!bar || typeof ResizeObserver === 'undefined') return;
+    new ResizeObserver(function() { _updateTabSelector(_activeTabName); }).observe(bar);
+}
+
 function switchTab(name) {
     var prevName = _activeTabName;
     if (prevName === name) return;
@@ -27,6 +138,8 @@ function switchTab(name) {
         var btn = document.getElementById('tabBtn-' + n);
         if (btn) btn.classList.toggle('active', n === name);
     });
+    _updateTabSelector(name, true);
+    _playTabLottie(name, prevName);
     // Classic's own Trophy toggle — same active/inactive convention as the tab buttons.
     var classicTrophyBtn = document.getElementById('classicTrophyBtn');
     if (classicTrophyBtn) classicTrophyBtn.classList.toggle('active', name === 'trophy');
@@ -532,6 +645,18 @@ var WHATS_NEW = {
             title: 'GIF Export',
             body: "Batch-export the comps selected in the Project panel straight to GIF, powered by the bundled gifski encoder for real dithering and palette quality instead of a flat color reduction. Configure quality, motion quality, output FPS, max width, and looping — your last settings and export folder are remembered."
         }
+    ],
+    '1.12.0': [
+        {
+            icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="6"/><line x1="13" y1="13" x2="17.5" y2="17.5"/></svg>',
+            title: 'Right-Click Search',
+            body: "Right-click anywhere on the panel to search and run any tool instantly. Prefer a radial menu instead? Switch it in Settings."
+        },
+        {
+            icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4.5" width="16" height="11" rx="2"/><text x="10" y="12.7" font-family="Arial, Helvetica, sans-serif" font-size="6.8" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">GIF</text></svg>',
+            title: 'GIF Export',
+            body: "Batch-export selected comps straight to GIF, powered by the bundled gifski encoder for real dithering and quality. Quality, FPS, size, and looping are all configurable — your settings are remembered."
+        }
     ]
 };
 
@@ -805,6 +930,23 @@ function restoreSmartStack() {
     _smartStackEnabled = raw !== '0'; // unset (first run) -> on, matching the default above
     var chk = document.getElementById('smartStackCheck');
     if (chk) chk.checked = _smartStackEnabled;
+}
+
+// ── Right-click menu mode (jumping straight to Search vs the radial pie) ────────
+var _rightClickMode = 'search'; // 'search' | 'radial' — Search is the default
+
+function setRightClickMode(mode) {
+    _rightClickMode = (mode === 'radial') ? 'radial' : 'search';
+    try { localStorage.setItem('lineup-right-click-mode', _rightClickMode); } catch(e) {}
+}
+
+function restoreRightClickMode() {
+    var raw;
+    try { raw = localStorage.getItem('lineup-right-click-mode'); } catch(e) {}
+    // Unset (first run) -> 'search', matching the default above.
+    _rightClickMode = (raw === 'radial') ? 'radial' : 'search';
+    var sel = document.getElementById('rightClickModeSelect');
+    if (sel) sel.value = _rightClickMode;
 }
 
 // ── Tools search + filter groups ─────────────────────────────────────────────────
@@ -6415,6 +6557,443 @@ function _qaBuildTile(instKey, id) {
     return tile;
 }
 
+// ── Command Palette (opened via the radial menu's Search item — see below) ──────────────────
+// A Spotlight-style search over the same tool catalog the Tools tab itself uses (_qaCatalog) —
+// live-cloned tiles (_qaCloneCatalogTile, same mask-id-collision fix Quick Actions/Toolbar mode
+// already rely on) with their native onclick left intact, so clicking a result runs the exact
+// same handler a real click in the Tools tab would, including tools that read the native `event`
+// object or open their own modal. No category filter here — plain substring-on-title search,
+// matching applyToolsFilter's own matching rule for consistency with the Tools tab's own search.
+var _cmdPaletteOpen = false;
+// Mirrors #cmdPaletteGrid.cmd-palette-grid's own @media breakpoints in css/style.css exactly —
+// narrower panel widths get fewer columns so tiles keep a sane minimum size instead of getting
+// smushed into visual artifacting, always capped at 2 rows regardless of column count.
+var CMD_PALETTE_COLS_BREAKPOINTS = [
+    { maxWidth: 349, cols: 2 },
+    { maxWidth: 449, cols: 3 }
+]; // else (450px+) 4 columns
+var CMD_PALETTE_ROWS = 2; // never more, never scrollable (see .cmd-palette-grid)
+var CMD_RECENT_KEY = 'lineup-cmd-recent-tools';
+var CMD_RECENT_MAX = 20; // only needs to comfortably outlast the largest possible result count (4 cols * 2 rows)
+var _cmdPaletteSelectedIndex = -1;
+
+function _cmdPaletteCols() {
+    var w = window.innerWidth;
+    for (var i = 0; i < CMD_PALETTE_COLS_BREAKPOINTS.length; i++) {
+        if (w <= CMD_PALETTE_COLS_BREAKPOINTS[i].maxWidth) return CMD_PALETTE_COLS_BREAKPOINTS[i].cols;
+    }
+    return 4;
+}
+
+// Recency is tracked only for tools actually launched from the palette itself, not from every
+// tool tile anywhere in the app (Quick Actions/Toolbar mode tiles carry their own remove badges
+// as children of the same [data-tool-id] element, and a document-wide click listener would have
+// no clean way to tell "ran the tool" apart from "clicked its remove button" without auditing
+// every such badge across the app) — "recently used" here means recently launched via this palette.
+function _cmdRecordRecentTool(id) {
+    if (!id) return;
+    var recent = _cmdGetRecentTools();
+    recent = recent.filter(function (x) { return x !== id; }); // de-dupe, most-recent-first
+    recent.unshift(id);
+    try { localStorage.setItem(CMD_RECENT_KEY, JSON.stringify(recent.slice(0, CMD_RECENT_MAX))); } catch (e) {}
+}
+
+function _cmdGetRecentTools() {
+    try {
+        var recent = JSON.parse(localStorage.getItem(CMD_RECENT_KEY));
+        return Array.isArray(recent) ? recent : [];
+    } catch (e) { return []; }
+}
+
+function _cmdTitleOf(tile) { return (tile.getAttribute('title') || '').toLowerCase(); }
+function _cmdAlphaSort(tiles) {
+    return tiles.slice().sort(function (a, b) {
+        var ta = _cmdTitleOf(a), tb = _cmdTitleOf(b);
+        return ta < tb ? -1 : ta > tb ? 1 : 0;
+    });
+}
+
+// The empty-query default view: recently-launched tools first (most recent first), then whatever
+// catalog entries haven't been launched yet, alphabetically — so it's never just a partial row of
+// recents with empty space next to it. With zero recent tools at all, this is just the full
+// alphabetical list, per "if no recent tools, just show alphabetical".
+function _cmdDefaultOrder() {
+    var catalog = _qaCatalog();
+    var byId = {};
+    catalog.forEach(function (t) { byId[t.getAttribute('data-tool-id')] = t; });
+
+    var recentTiles = _cmdGetRecentTools()
+        .map(function (id) { return byId[id]; })
+        .filter(Boolean); // drop ids for tools that no longer exist in the catalog
+
+    var seen = {};
+    recentTiles.forEach(function (t) { seen[t.getAttribute('data-tool-id')] = true; });
+    var rest = _cmdAlphaSort(catalog.filter(function (t) { return !seen[t.getAttribute('data-tool-id')]; }));
+
+    return recentTiles.concat(rest);
+}
+
+// No keyboard trigger — Space, then Shift+Space, were both tried first and both got
+// captured/tracked oddly by After Effects itself rather than reaching this panel reliably.
+// openCmdPalette() is reached via the radial menu's Search item instead (see below).
+function _initCmdPalette() {
+    var input = document.getElementById('cmdPaletteInput');
+    if (input) {
+        input.addEventListener('input', function () { _renderCmdPaletteResults(input.value); });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { e.stopPropagation(); closeCmdPalette(); return; }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                var tiles = _cmdPaletteTiles();
+                if (_cmdPaletteSelectedIndex >= 0 && tiles[_cmdPaletteSelectedIndex]) tiles[_cmdPaletteSelectedIndex].click();
+                return;
+            }
+            var delta = 0;
+            var cols = _cmdPaletteCols();
+            if (e.key === 'ArrowRight') delta = 1;
+            else if (e.key === 'ArrowLeft') delta = -1;
+            else if (e.key === 'ArrowDown') delta = cols;
+            else if (e.key === 'ArrowUp') delta = -cols;
+            else return;
+            e.preventDefault(); // don't move the text cursor in the input
+            _cmdPaletteSetSelected(_cmdPaletteSelectedIndex + delta);
+        });
+    }
+    _initCmdSearchGlow();
+}
+
+// Same soft cursor-follow spotlight recipe as .anchor-grid's own (_anchorGlowTick above), just
+// dialed down further in css/style.css per "even more subtle than in other places" — lower alpha,
+// nothing else about the recipe changes. #cmdPaletteOverlay sits outside #panel-content (the
+// UI-Scale-zoomed subtree — see _anchorGlowTick's own comment on why IT avoids
+// getBoundingClientRect), so a plain gBCR here is safe/accurate. Single element, so this skips
+// the multi-target active-tile tracking _toolsGlowTick needs for a whole grid of tiles.
+var _cmdSearchGlowRAF = null;
+var _cmdSearchGlowActive = false;
+var _cmdSearchGlowRawX = -9999, _cmdSearchGlowRawY = -9999;
+var _cmdSearchGlowX = -9999, _cmdSearchGlowY = -9999;
+
+function _cmdSearchGlowTick() {
+    var row = document.querySelector('.cmd-palette-search-row');
+    if (!row || !_cmdSearchGlowActive) { _cmdSearchGlowRAF = null; return; }
+    var dx = _cmdSearchGlowRawX - _cmdSearchGlowX, dy = _cmdSearchGlowRawY - _cmdSearchGlowY;
+    _cmdSearchGlowX += dx * 0.12;
+    _cmdSearchGlowY += dy * 0.12;
+    var rect = row.getBoundingClientRect();
+    row.style.setProperty('--search-glow-x', (_cmdSearchGlowX - rect.left) + 'px');
+    row.style.setProperty('--search-glow-y', (_cmdSearchGlowY - rect.top) + 'px');
+    _cmdSearchGlowRAF = requestAnimationFrame(_cmdSearchGlowTick);
+}
+
+// mousemove + closest-equivalent hover detection rather than mouseenter — the row is display:none
+// (via an ancestor) until the palette opens, so there's nothing to wire per-open; attaching once
+// here at init time works because a hidden element never receives pointer events to begin with.
+function _initCmdSearchGlow() {
+    var row = document.querySelector('.cmd-palette-search-row');
+    if (!row) return;
+    row.addEventListener('mousemove', function (e) {
+        if (!_cmdSearchGlowActive) {
+            // Snap straight to the cursor on entering instead of easing in from wherever it last sat.
+            _cmdSearchGlowActive = true;
+            _cmdSearchGlowRawX = _cmdSearchGlowX = e.clientX;
+            _cmdSearchGlowRawY = _cmdSearchGlowY = e.clientY;
+        } else {
+            _cmdSearchGlowRawX = e.clientX;
+            _cmdSearchGlowRawY = e.clientY;
+        }
+        if (!_cmdSearchGlowRAF) _cmdSearchGlowRAF = requestAnimationFrame(_cmdSearchGlowTick);
+    });
+    row.addEventListener('mouseleave', function () { _cmdSearchGlowActive = false; });
+}
+
+function _cmdPaletteTiles() {
+    var grid = document.getElementById('cmdPaletteGrid');
+    return grid ? Array.prototype.slice.call(grid.querySelectorAll('.tools-grid-btn')) : [];
+}
+
+// Clamps rather than wraps — running an arrow off either end just holds at that edge, which reads
+// more predictably than jumping to the opposite corner.
+function _cmdPaletteSetSelected(index) {
+    var tiles = _cmdPaletteTiles();
+    var prev = tiles[_cmdPaletteSelectedIndex];
+    if (prev) prev.classList.remove('cmd-palette-tile-selected');
+    if (!tiles.length) { _cmdPaletteSelectedIndex = -1; return; }
+    index = Math.max(0, Math.min(tiles.length - 1, index));
+    _cmdPaletteSelectedIndex = index;
+    tiles[index].classList.add('cmd-palette-tile-selected');
+}
+
+// Matches .cmd-palette-overlay.cmd-palette-closing's transition duration in css/style.css —
+// cmd-palette-hidden (display:none) only gets added once that's actually finished playing, not
+// immediately, so the snappy close animation has time to be seen rather than being cut off.
+var CMD_PALETTE_CLOSE_MS = 150;
+
+function openCmdPalette() {
+    var overlay = document.getElementById('cmdPaletteOverlay');
+    var input = document.getElementById('cmdPaletteInput');
+    if (!overlay || !input) return;
+    _cmdPaletteOpen = true;
+    input.value = '';
+    _renderCmdPaletteResults('');
+    overlay.classList.remove('cmd-palette-hidden', 'cmd-palette-closing');
+    // Forces layout to commit display:none -> flex before the next line flips the class that
+    // triggers the opacity/transform transition — without this the browser can coalesce both
+    // changes into a single paint and skip the entrance animation entirely.
+    void overlay.offsetWidth;
+    overlay.classList.add('cmd-palette-visible');
+    input.focus();
+    // Re-render on live panel resize so the result count always matches the column count actually
+    // laid out at the new width (see CMD_PALETTE_COLS_BREAKPOINTS) — otherwise a resize mid-search
+    // could leave a stale 8-tile result set wrapping into a 3rd row at a now-narrower width.
+    window.addEventListener('resize', _cmdPaletteOnResize);
+}
+
+function closeCmdPalette() {
+    if (!_cmdPaletteOpen) return;
+    _cmdPaletteOpen = false;
+    window.removeEventListener('resize', _cmdPaletteOnResize);
+    var overlay = document.getElementById('cmdPaletteOverlay');
+    if (!overlay) return;
+    overlay.classList.remove('cmd-palette-visible');
+    overlay.classList.add('cmd-palette-closing');
+    setTimeout(function () {
+        overlay.classList.add('cmd-palette-hidden');
+        overlay.classList.remove('cmd-palette-closing');
+    }, CMD_PALETTE_CLOSE_MS);
+}
+
+function _cmdPaletteOnResize() {
+    var input = document.getElementById('cmdPaletteInput');
+    _renderCmdPaletteResults(input ? input.value : '');
+}
+
+function _renderCmdPaletteResults(query) {
+    var grid = document.getElementById('cmdPaletteGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    var q = query.trim().toLowerCase();
+    var matches;
+    if (q.length === 0) {
+        matches = _cmdDefaultOrder();
+    } else {
+        matches = _cmdAlphaSort(_qaCatalog().filter(function (t) { return _cmdTitleOf(t).indexOf(q) !== -1; }));
+    }
+    // Hard cap, not just a visual one — always CMD_PALETTE_ROWS (2) rows of however many columns
+    // actually fit at the current width (.cmd-palette-grid's own breakpoints), never scrollable,
+    // so anything past this simply doesn't render rather than needing to scroll to reach it.
+    matches = matches.slice(0, _cmdPaletteCols() * CMD_PALETTE_ROWS);
+
+    if (matches.length === 0) {
+        // Rendered as the grid's own content (grid-column:1/-1 spans all 4 tracks in CSS), not a
+        // separate element below it — fills the same drawer box the tiles would otherwise occupy.
+        var empty = document.createElement('div');
+        empty.className = 'cmd-palette-empty';
+        empty.textContent = 'No matching tools';
+        grid.appendChild(empty);
+        _cmdPaletteSelectedIndex = -1;
+        return;
+    }
+
+    matches.forEach(function (source) {
+        var tile = _qaCloneCatalogTile(source);
+        var id = source.getAttribute('data-tool-id');
+        // Runs after the clone's own native onclick (attribute handlers attach before this) —
+        // both fire synchronously in the same tick, so the tool's modal (if any) is already open
+        // underneath by the time this closes the palette; nothing ever visibly flashes in between.
+        tile.addEventListener('click', function () {
+            _cmdRecordRecentTool(id);
+            closeCmdPalette();
+        });
+        grid.appendChild(tile);
+    });
+
+    _cmdPaletteSetSelected(0); // first result is always selected by default, per the arrow-key/Enter nav above
+}
+
+// ── Radial menu (right-click empty panel space: Search / Settings / Edit / Close) ───────────
+// Reached by right-click rather than a keyboard shortcut — see the Command Palette section above
+// for why. Only shows up over genuinely empty panel space: skipped entirely for buttons, form
+// controls, links, and anything that already has its own oncontextmenu (Smart Select's mode
+// picker, Split Text's mode picker, Select Paths, the Quick Actions favorite-tile menu, etc.) —
+// checking e.defaultPrevented after those get their turn during the bubble phase is what avoids
+// needing to individually enumerate every one of them here.
+//
+// Picking is Blender-style and NOT limited to the hit circle: _radialMenuPointerMove tracks the
+// mouse's angle from the menu's origin on every move anywhere in the panel, and whichever
+// .radial-menu-item's --radial-angle is angularly closest gets highlighted
+// (.radial-menu-item-active) regardless of how close the cursor actually is to that ring.
+// _radialMenuGlobalMouseDown (capture-phase, left-button only) then treats ANY left click while
+// the menu is open — on the hit circle, in the panel beyond it, wherever — as a confirm of
+// whichever item is currently active, or a cancel if the mouse never left the center dead zone
+// (RADIAL_DEADZONE_PX). A click landing directly on one of the 4 rings is the one exception: it's
+// left to bubble normally so that ring's own click listener (below) fires directly, precise-click
+// style, same as before. All 4 items (including Close, at the bottom) are plain .radial-menu-item
+// rings and go through the same click dispatch — Close just doesn't match any action branch, so
+// it falls through to the closeRadialMenu() already called unconditionally at the top of that
+// handler.
+var _radialMenuOpen = false;
+var RADIAL_MENU_CLOSE_MS = 140;
+var RADIAL_DEADZONE_PX = 20;
+var RADIAL_MENU_AUTOCLOSE_MS = 5000;
+var _radialMenuOriginX = 0;
+var _radialMenuOriginY = 0;
+var _radialMenuItems = []; // [{btn, angle}] — populated once in _initRadialMenu, angle in degrees
+var _radialMenuActiveBtn = null;
+var _radialMenuAutoCloseTimer = null;
+
+function _radialMenuShouldSkip(target) {
+    if (!target || !target.closest) return true;
+    if (target.closest('button, input, textarea, select, a, [contenteditable="true"]')) return true;
+    // Allowlist, not a blacklist: only the main app view (#panel-content — Home/Tools/Trophy
+    // tabs) or the radial menu's own DOM (so a second right-click landing on it can still toggle
+    // it closed) may open/retarget it. Every popup — Settings, the Command Palette, Batch Comp
+    // Settings, GIF Export, Help, etc. — is a separate fixed-position sibling of #panel-content
+    // that visually covers it while open, so this one check keeps the radial menu out of all of
+    // them without needing to enumerate each one here.
+    if (!target.closest('#panel-content, #radialMenu')) return true;
+    return false;
+}
+
+function _radialAngleDiff(a, b) {
+    var d = Math.abs(a - b) % 360;
+    return d > 180 ? 360 - d : d;
+}
+
+function _radialMenuSetActive(btn) {
+    if (_radialMenuActiveBtn === btn) return;
+    if (_radialMenuActiveBtn) _radialMenuActiveBtn.classList.remove('radial-menu-item-active');
+    _radialMenuActiveBtn = btn;
+    if (_radialMenuActiveBtn) _radialMenuActiveBtn.classList.add('radial-menu-item-active');
+}
+
+function _radialMenuPointerMove(e) {
+    var arc = document.getElementById('radialMenuArc');
+    var dx = e.clientX - _radialMenuOriginX;
+    var dy = e.clientY - _radialMenuOriginY;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < RADIAL_DEADZONE_PX) {
+        _radialMenuSetActive(null);
+        if (arc) arc.style.opacity = '0';
+        return;
+    }
+
+    // atan2(dy, dx): 0deg = east, positive = clockwise (screen y grows down) — the same
+    // convention each item's own --radial-angle is authored in, so they compare directly.
+    var angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    if (arc) {
+        arc.style.opacity = '1';
+        arc.style.transform = 'rotate(' + angle + 'deg)';
+    }
+
+    var nearestBtn = null, nearestDiff = Infinity;
+    for (var i = 0; i < _radialMenuItems.length; i++) {
+        var diff = _radialAngleDiff(angle, _radialMenuItems[i].angle);
+        if (diff < nearestDiff) { nearestDiff = diff; nearestBtn = _radialMenuItems[i].btn; }
+    }
+    _radialMenuSetActive(nearestBtn);
+}
+
+function _initRadialMenu() {
+    document.addEventListener('contextmenu', function (e) {
+        if (e.defaultPrevented) return; // some element's own oncontextmenu already claimed this
+        if (_radialMenuShouldSkip(e.target)) return;
+        e.preventDefault();
+        if (_radialMenuOpen) { closeRadialMenu(); return; } // right-click again toggles it closed
+        // Settings > Right-Click Opens: "Search" bypasses the radial menu entirely and jumps
+        // straight to the Command Palette (see setRightClickMode/restoreRightClickMode above).
+        if (_rightClickMode === 'search') { openCmdPalette(); return; }
+        openRadialMenu(e.clientX, e.clientY);
+    });
+
+    var menu = document.getElementById('radialMenu');
+    if (!menu) return;
+
+    Array.prototype.slice.call(menu.querySelectorAll('.radial-menu-item[data-action]')).forEach(function (btn) {
+        _radialMenuItems.push({ btn: btn, angle: parseFloat(btn.style.getPropertyValue('--radial-angle')) });
+        btn.addEventListener('click', function () {
+            var action = btn.getAttribute('data-action');
+            closeRadialMenu();
+            if (action === 'search') openCmdPalette();
+            else if (action === 'settings') openSettingsPopup();
+            else if (action === 'edit') {
+                // Edit Layout only means anything on the Home tab (_toggleEditMode toggles
+                // #homeToolGrid's own board-editing class) — switch there first if needed, rather
+                // than silently toggling state behind whichever tab is actually showing.
+                if (_activeTabName !== 'home') switchTab('home');
+                if (!_editMode) _toggleEditMode();
+            }
+        });
+    });
+
+}
+
+function openRadialMenu(x, y) {
+    var menu = document.getElementById('radialMenu');
+    if (!menu) return;
+    // Clamp so the menu (item radius 62px + each item's own 25px half-width) stays fully
+    // on-screen even when right-clicking close to a panel edge.
+    var margin = 100;
+    x = Math.max(margin, Math.min(window.innerWidth - margin, x));
+    y = Math.max(margin, Math.min(window.innerHeight - margin, y));
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    _radialMenuOriginX = x;
+    _radialMenuOriginY = y;
+
+    _radialMenuSetActive(null);
+    var arc = document.getElementById('radialMenuArc');
+    if (arc) arc.style.opacity = '0';
+
+    _radialMenuOpen = true;
+    menu.classList.remove('radial-menu-hidden', 'radial-menu-closing');
+    // Forces layout to commit display:none -> block before the next line flips the class that
+    // triggers the per-item transform/opacity transition — same reflow-forcing trick
+    // openCmdPalette uses, for the same reason (otherwise the browser can coalesce both changes
+    // into one paint and skip the entrance animation).
+    void menu.offsetWidth;
+    menu.classList.add('radial-menu-visible');
+
+    setTimeout(function () {
+        document.addEventListener('mousedown', _radialMenuGlobalMouseDown, true);
+        document.addEventListener('mousemove', _radialMenuPointerMove);
+    }, 0);
+
+    clearTimeout(_radialMenuAutoCloseTimer);
+    _radialMenuAutoCloseTimer = setTimeout(closeRadialMenu, RADIAL_MENU_AUTOCLOSE_MS);
+}
+
+function closeRadialMenu() {
+    if (!_radialMenuOpen) return;
+    _radialMenuOpen = false;
+    clearTimeout(_radialMenuAutoCloseTimer);
+    document.removeEventListener('mousedown', _radialMenuGlobalMouseDown, true);
+    document.removeEventListener('mousemove', _radialMenuPointerMove);
+    _radialMenuSetActive(null);
+    var menu = document.getElementById('radialMenu');
+    if (!menu) return;
+    menu.classList.remove('radial-menu-visible');
+    menu.classList.add('radial-menu-closing');
+    setTimeout(function () {
+        menu.classList.add('radial-menu-hidden');
+        menu.classList.remove('radial-menu-closing');
+    }, RADIAL_MENU_CLOSE_MS);
+}
+
+// Capture-phase so this runs before whatever's under the cursor reacts to its own click — a
+// confirm/cancel here should never also trigger the app content underneath. Left-click only
+// (e.button === 0) so a right-click's mousedown (used to toggle the menu closed, see
+// _initRadialMenu's contextmenu handler) never gets misread as a selection confirm.
+function _radialMenuGlobalMouseDown(e) {
+    if (e.button !== 0) return;
+    if (e.target && e.target.closest && e.target.closest('.radial-menu-item')) return; // that ring's own click handler will fire normally
+    e.preventDefault();
+    e.stopPropagation();
+    if (_radialMenuActiveBtn) _radialMenuActiveBtn.click();
+    else closeRadialMenu(); // dead zone, or genuinely outside the pie with nothing angularly active -> cancel
+}
+
 function _qaCreateAddTile(instKey) {
     var addTile = document.createElement('button');
     addTile.className = 'quick-actions-add-tile';
@@ -7920,6 +8499,29 @@ function _favGoToPage(index) {
     }
 }
 
+// Scroll over the favorites bar to flip pages — an alternative to clicking the dots, same idea as
+// the Anchor grid's scroll-to-switch-tier (_initAnchorScrollGrid). Unlike that one's simple binary
+// toggle, this has to advance one page per physical scroll gesture rather than per wheel event —
+// a single trackpad swipe fires many small deltaY ticks — so a short cooldown after each page
+// change swallows the rest of the same gesture instead of blowing through several pages at once.
+var _favLastScrollNavAt = 0;
+var FAV_SCROLL_NAV_COOLDOWN_MS = 350;
+
+function _initFavScrollPaging() {
+    var box = _favSlotEl();
+    if (!box) return;
+    box.addEventListener('wheel', function(e) {
+        if (_favGet().length <= 1) return; // nothing to page between — let the scroll pass through
+        e.preventDefault();
+        if (Math.abs(e.deltaY) < 1) return;
+        var now = Date.now();
+        if (now - _favLastScrollNavAt < FAV_SCROLL_NAV_COOLDOWN_MS) return;
+        _favLastScrollNavAt = now;
+        _favLastManualNavAt = now; // counts as manual nav, same as a dot click — suppresses Smart Stack auto-switching briefly
+        _favGoToPage(_favActiveIndex + (e.deltaY > 0 ? 1 : -1));
+    }, { passive: false });
+}
+
 // ── Smart Stack polling ──────────────────────────────────────────────────────
 // Predictive: jumps to a page on the EDGE its trigger newly becomes true (selection none->some), not continuously while true, so manual swiping isn't fought.
 var _favSmartPrevKeyframes = false;
@@ -8893,6 +9495,16 @@ function applyScale(val) {
     _uiZoom = f;
     var content = document.getElementById('panel-content');
     if (content) content.style.zoom = String(f);
+
+    // Tools/Trophy are separate sibling tab-panels, not nested inside #panel-content (only Home
+    // is), and the tab bar sits outside all three — none of them picked up UI Scale on their own,
+    // so whichever of these was visible stayed a fixed size while Home visibly grew/shrank around
+    // it. zoom is zoom-safe to apply per-element like this (each keeps its own local offsetLeft/
+    // Width coordinate space, same reasoning _blOffsetFromAncestor already relies on elsewhere).
+    ['tabBarEl', 'tab-tools', 'tab-trophy'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.style.zoom = String(f);
+    });
 
     // Overlay modals live outside #panel-content, so the zoom above doesn't reach them. This used to
     // match it with transform:scale() instead — which stretches the modal's already-rasterized
@@ -11374,6 +11986,9 @@ function _closeTrophyCalendar() {
 
 document.addEventListener('DOMContentLoaded', function() {
     restoreActiveTab();
+    _initTabLottieIcons();
+    _initTabSelectorResize();
+    _updateTabSelector(_activeTabName); // positions the selector for whichever tab restoreActiveTab left active, including the default (home) if it never called switchTab at all
     _shapeSelInit();
     _anchorModeInit();
     _ignoreMasksRefreshButton();
@@ -11389,6 +12004,7 @@ document.addEventListener('DOMContentLoaded', function() {
     _initToolbarDragSuppression();
     _buildAnchor5x5Grid();
     _initAnchorScrollGrid();
+    _initFavScrollPaging();
     _initAnchorGridGlow();
     _initAnchorBtnHoverAnim();
     _initBcsResizeHandles();
@@ -11401,8 +12017,11 @@ document.addEventListener('DOMContentLoaded', function() {
     _blApplyLayout();
     restoreHighContrast();
     restoreSmartStack();
+    restoreRightClickMode();
     restoreScoringSetting();
     initToolsSearch();
+    _initCmdPalette();
+    _initRadialMenu();
     _initToolsFilterCompact();
     _initToolsBodyFadeScroll();
     _loadToolsFavorites();

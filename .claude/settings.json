@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(sed -n '/<!-- Command Palette/,/^<\\\\/div>$/p' /Users/noahbell/Documents/GitHub/Lineup_AE/index.html)",
+      "Bash(awk -F: '$1 > 6900')",
+      "Bash(awk -F: '$1 > 370')"
+    ]
+  }
+}

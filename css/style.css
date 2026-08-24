@@ -97,8 +97,20 @@ body.high-contrast #sec-favorite .tool-body[data-block-id="ease"] .ease-interp-b
     background: #3a3a3a;
     color: #ffffff;
 }
-body.high-contrast .tab-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
-body.high-contrast .tab-btn.active { background: #163e73; border-color: #4d9bff; color: #ffffff; }
+/* Same sliding-pill + Lottie system as every other theme, not the old per-button-background
+   layout — only the colors change here. .tab-bar's own card look matches .tool-box's high-contrast
+   override above so it doesn't stand out as a dim grey box in an otherwise pure-black theme; the
+   selector reuses the same dark-blue-fill/bright-blue-border pair this file already uses for other
+   high-contrast "active" states. */
+body.high-contrast .tab-bar { background: #000000; border-color: #909090; }
+body.high-contrast .tab-selector { background: #163e73; border: 1px solid #4d9bff; }
+body.high-contrast .tab-btn { color: #e0e0e0; }
+body.high-contrast .tab-btn:hover { color: #ffffff; }
+body.high-contrast .tab-btn.active { color: #ffffff; }
+/* Lifted from the normal theme's 0.45 resting dim — high-contrast wants the unselected icon to
+   stay clearly visible against the bar's pure-black background, not fade toward it. */
+body.high-contrast .tab-btn-lottie { filter: brightness(0.75); }
+body.high-contrast .tab-btn.active .tab-btn-lottie { filter: brightness(1); }
 body.high-contrast .tools-search-input { background: #000000; border: 1px solid #909090; }
 /* #toolsSearchInput (an ID selector) is what actually paints the search
    bar's background/border — its own specificity outranks the plain class
@@ -229,6 +241,31 @@ body.high-contrast .picker-star-btn { color: #909090; }
 body.high-contrast .picker-star-btn:hover { color: #d0d0d0; background: #3a3a3a; border-color: #909090; }
 body.high-contrast .picker-star-btn.fav-active { color: #ffd75e; }
 body.high-contrast .picker-star-btn.fav-active:hover { color: #ffe08a; background: #3a3a3a; border-color: #909090; }
+
+/* ── Command Palette (search) + Radial Menu — neither had any high-contrast coverage. Most of
+   .cmd-palette-search-row/#cmdPaletteGrid/.radial-menu-item's own colors are hardcoded rgba(), not
+   the shared variables body.high-contrast already re-points at the top of this file, so they need
+   explicit overrides here the same way .tools-search-input/.tools-grid did above. Hover/active
+   states that already read var(--accent)/var(--bg-btn-act)/var(--text-dim) (the search icon, the
+   radial ring's rotating arc, every .radial-menu-item's hover/active fill) re-color automatically
+   and need nothing here. */
+body.high-contrast .cmd-palette-search-row { background: #000000; border-color: #909090; }
+body.high-contrast .cmd-palette-search-row::before {
+    background: radial-gradient(circle 120px at var(--search-glow-x, -9999px) var(--search-glow-y, -9999px), rgba(77, 155, 255, 0.1), transparent 70%);
+}
+body.high-contrast #cmdPaletteGrid.cmd-palette-grid { background: #000000; border-color: #909090; }
+/* #cmdPaletteGrid.cmd-palette-grid .tools-grid-btn (ID + 2 classes) outranks the plain
+   body.high-contrast .tools-grid-btn rule above regardless of source order — same specificity trap
+   documented for #toolsSearchInput/#sec-quick-actions elsewhere in this file — so it silently kept
+   its normal-theme translucent fill without this. */
+body.high-contrast #cmdPaletteGrid.cmd-palette-grid .tools-grid-btn { background: #000000; border-color: #909090; color: #e0e0e0; }
+/* Solid HC "active" fill (same pair .tab-selector/.tools-filter-btn.active/.trophy-day-dot.is-today
+   all use) instead of the normal theme's subtle grey-into-blue gradient, which wouldn't read as
+   clearly selected against a pure-black high-contrast grid. */
+body.high-contrast #cmdPaletteGrid.cmd-palette-grid .tools-grid-btn.cmd-palette-tile-selected { background: #163e73; }
+body.high-contrast .radial-menu-item { background: #000000; border-color: #909090; }
+body.high-contrast .radial-menu-ring-track { stroke: #909090; }
+
 /* Shape Tools' Fill/Stroke edit modal — a .settings-overlay/.settings-modal
    like the others (covered by the shared rule above already); just needs
    its own content (row labels, color swatch buttons) covered here. */
@@ -400,25 +437,89 @@ body.layout-toolbar #panel-content {
 .tab-bar {
     display: flex;
     gap: 6px;
-    padding: 8px 10px 0;
-    width: 100%;
-    max-width: 570px;
-    margin: 0 auto;
+    /* Uniform 4px on all sides — a smaller gap between the selector pill and the bar's own
+       background, plus a shorter bar overall (paired with .tab-btn/.tab-selector's own reduced
+       height below). Left/right match top/bottom rather than keeping the old wider 10px. */
+    padding: 4px;
+    /* calc(100% - 20px), not plain 100% — the content containers (.tool-grid/#tab-tools/
+       #tab-trophy) are themselves invisible and span the full panel width edge-to-edge, but their
+       own 10px padding keeps their visible .tool-box cards inset from the window edge at ANY panel
+       width, not just once centering margin kicks in above 570px. This bar paints its background
+       directly on its own outer box (no separate invisible wrapper), so at plain width:100% it had
+       no equivalent inset at narrow panel widths — margin:auto alone does nothing once an element
+       already fills 100% of its container. Subtracting 20px up front reserves that same minimum
+       10px-per-side gap unconditionally, and still caps out at 550px (matching the content cards'
+       effective width — see the max-width comment) once the panel is wide enough for that to bind
+       instead of the calc(). */
+    width: calc(100% - 20px);
+    max-width: 550px;
+    /* Top margin, not padding — same reasoning as the width fix above: this bar's own outer box
+       IS the visible card (no separate invisible wrapper providing the gap), so it needs an actual
+       gap from the panel's top edge to match the same 10px inset the content containers' own
+       top padding already gives their first visible card. */
+    margin: 10px auto 0;
+    position: relative;
+    /* Darker than .tool-box's usual #181818, just to see how it reads. */
+    background: #0f0f0f;
+    border: 1px solid #2c2c2c;
+    border-radius: 10px;
+    box-sizing: border-box;
     /* Classic hides this entirely (Settings is reached via #settingsGearBtn
        in the footer instead, in both modes) — collapsing smoothly via
-       max-height/opacity instead of an instant display:none swap. 50px
-       comfortably clears the bar's own ~44px natural height (36px button +
-       8px top padding) so the transition always starts from its full,
-       un-clipped size. */
-    max-height: 50px;
+       max-height/opacity instead of an instant display:none swap. 48px
+       comfortably clears the bar's own ~40px natural height (30px button +
+       4px top/bottom padding + 2px border) so the transition always starts
+       from its full, un-clipped size. */
+    max-height: 48px;
     overflow: hidden;
-    transition: opacity 0.16s ease, max-height 0.16s ease, padding 0.16s ease;
+    transition: opacity 0.16s ease, max-height 0.16s ease, padding 0.16s ease, margin 0.16s ease;
 }
+
+/* Slides behind whichever tab button is active — left/width are set inline by _updateTabSelector
+   (main.js), measured off the real button rects rather than computed from a fixed percentage,
+   since the flex gap between buttons makes that math awkward to get exact. Positioned via left,
+   not transform, because a genuine tab switch stretches width mid-travel (a WAAPI .animate() call
+   in JS) to cover both the old and new button — plain transform can't animate that, only an actual
+   layout property can. Resize/initial-paint repositioning skips the stretch and just snaps here. */
+.tab-selector {
+    position: absolute;
+    top: 4px;
+    left: 0;
+    height: 30px;
+    background: #333333;
+    border-radius: 7px;
+    /* Clips the dash below — see its own comment — to only its top half. */
+    overflow: hidden;
+    z-index: 0;
+    pointer-events: none;
+}
+/* Straddles the selector's own bottom edge (half its height sits below bottom:0, i.e. outside the
+   selector's box) so .tab-selector's overflow:hidden clips away the bottom half, leaving just a
+   small rounded nub peeking up from the edge rather than the full pill-shaped dash sitting on top
+   of it. Also dimmed slightly (opacity, not a flat color swap) so it doesn't match the icon's own
+   full-bright white above it exactly. */
+.tab-selector-dash {
+    position: absolute;
+    bottom: -3px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 17px;
+    height: 6px;
+    border-radius: 3px;
+    background: #F9F9F4;
+    opacity: 0.75;
+}
+/* No selector to slide yet on first paint (position is only known once JS measures the active
+   button) — hidden until _updateTabSelector positions it for the first time. */
+.tab-selector.tab-selector-unset { opacity: 0; }
 body.layout-classic .tab-bar,
 body.layout-toolbar .tab-bar {
     opacity: 0;
     max-height: 0;
     padding-top: 0;
+    /* margin sits outside max-height/overflow's clipping — without zeroing this too, the now-
+       invisible bar would still leave its 10px top gap sitting empty at the very top of the panel. */
+    margin-top: 0;
     pointer-events: none;
 }
 /* Smart Stack jumps the Favorites bar, which is Compact-only — Classic/
@@ -434,25 +535,67 @@ body.layout-toolbar #enableScoringRow {
 }
 .tab-btn {
     flex: 1;
-    height: 36px;
+    height: 30px;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 5px;
-    background: #1e1e1e;
-    border: 1px solid #323232;
+    background: transparent;
+    /* Transparent, not none — high-contrast mode below overrides border-color only, which needs
+       an actual border width/style already present to have anything to color. */
+    border: 1px solid transparent;
     border-radius: 7px;
     color: var(--text-dim);
     font-size: 11px;
     font-family: inherit;
     cursor: pointer;
     padding: 0;
-    transition: background 0.05s linear, border-color 0.05s linear, color 0.05s linear;
+    position: relative;
+    z-index: 1;
+    transition: color 0.05s linear;
 }
-.tab-btn:hover  { background: #2a2a2a; border-color: #444444; color: #d0d0d0; }
-.tab-btn.active { background: #3c3c3c; border-color: #6a6a6a; color: #F9F9F4; }
+.tab-btn:hover  { color: #d0d0d0; }
+.tab-btn.active { color: #F9F9F4; }
 .tab-btn svg { width: 14px; height: 14px; flex-shrink: 0; pointer-events: none; }
-.tab-btn-icon svg { width: 16px; height: 16px; }
+.tab-btn-icon svg { width: 29px; height: 29px; }
+
+/* Nudges the icon up slightly once selected — a little lift to pair with the underline dash
+   appearing beneath it, tweened with a touch of overshoot rather than a flat ease. */
+.tab-btn-fallback-icon { transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.tab-btn.active .tab-btn-fallback-icon,
+.tab-btn.active .tab-btn-lottie {
+    transform: translateY(-3px);
+}
+
+/* Hovering an unselected tab scales its icon up a touch and brightens it — a lighter-weight cue
+   than the lift+brighten-to-full the active state gets, so hover still reads as clearly distinct
+   from "selected". Excluded on .active since that tab already has its own selected treatment;
+   scaling on top of the already-lifted icon would fight that instead of complementing it. */
+.tab-btn:hover:not(.active) .tab-btn-fallback-icon,
+.tab-btn:hover:not(.active) .tab-btn-lottie {
+    transform: scale(1.12);
+}
+.tab-btn:hover:not(.active) .tab-btn-lottie {
+    filter: brightness(0.75);
+}
+
+/* Lottie renders into this once loaded (see _initTabLottieIcons in main.js); the plain SVG stays
+   visible as the resting-state look until then, and permanently if the vendored player ever fails
+   to load — this only replaces the icon, never removes the fallback from the DOM.
+   The animation bakes in its own fixed colors (unlike the fallback SVG's stroke/fill="currentColor",
+   which already follows .tab-btn's own color), so dimming it toward grey at rest — and back to full
+   brightness once selected — needs its own filter here rather than inheriting from .tab-btn.active. */
+.tab-btn-lottie {
+    display: none;
+    width: 29px;
+    height: 29px;
+    flex-shrink: 0;
+    pointer-events: none;
+    filter: brightness(0.45);
+    transition: filter 0.15s linear, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.tab-btn-lottie svg { width: 100%; height: 100%; }
+.tab-btn.active .tab-btn-lottie { filter: brightness(1); }
 
 /* position:relative so the Select Paths/Fill/Stroke and Split Text mode
    flyouts (.fav-ctx, position:absolute — see its own comment) can anchor
@@ -2043,6 +2186,16 @@ body.high-contrast .stagger-cancel-btn { border-color: #909090; color: #ffffff; 
     border-radius: 8px;
 }
 
+/* Separates Enable Scoring from the rows above it — each .settings-tab-row is its own bordered
+   card already, so a plain thin rule between them (rather than a border-top on the card itself,
+   which would just read as a second edge right against the card's own border) is what actually
+   shows as a gap with a line in it. */
+.settings-row-divider {
+    height: 1px;
+    background: var(--divider);
+    margin: 2px 4px;
+}
+
 /* A settings row whose label carries its own icon (Smart Stack) instead of
    plain text — .settings-tab-row's own space-between still pushes the
    toggle to the right of this whole group. */
@@ -2185,7 +2338,11 @@ body.high-contrast .stagger-cancel-btn { border-color: #909090; color: #ffffff; 
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 8px; /* -20% from 10px, between-widget spacing only — padding (outer edge) unchanged */
-    padding: 10px;
+    /* Top only reduced to 6px, matching .tab-bar's own top margin above it — was a flat 10px on
+       every side, which read as a visibly bigger gap below the bar than above it once that
+       margin was tightened. Left/right/bottom stay 10px. Classic/Toolbar override this to 0
+       anyway (see below), so this only ever applies in Compact, where the bar is actually visible. */
+    padding: 6px 10px 10px;
     /* Still flexes/shrinks freely below this — it's only a ceiling. Without
        it, a wide panel stretches every button/dropdown/icon in the 6-column
        grid right along with it, since they're all 1fr/flex-based. Kept in
@@ -6840,6 +6997,338 @@ input.gap-inline-input {
 .props-line .check-label { font-size: 11px; gap: 6px; }
 .props-line input[type="checkbox"] { width: 14px; height: 14px; border-radius: 4px; }
 .props-line input[type="checkbox"]:checked::after { left: 3px; top: 1px; width: 6px; height: 9px; }
+
+/* ── Command Palette (opened via the radial menu's Search item — see below) ─ */
+/* Same full-viewport blurred backdrop idea as #settingsPopup/.settings-overlay, just its own
+   class (z-index above absolutely everything, including any already-open tool modal) and, unlike
+   those, no enclosing opaque "window" card — the search bar and results grid sit directly on the
+   blur itself, each with their own translucent fill, so everything reads as floating on one
+   glassy surface instead of popping a second window on top of it. See
+   _initCmdPalette/openCmdPalette/closeCmdPalette in main.js.
+
+   Open/close animation: the overlay's own opacity is the backdrop fade; .cmd-palette-content (the
+   search bar + grid, as one unit so they pop together instead of scaling independently around
+   their own separate centers) additionally scales + rises into place. .cmd-palette-visible is
+   added a frame after .cmd-palette-hidden is removed (openCmdPalette forces a reflow in between,
+   otherwise the browser can coalesce display:none->flex and the transition-triggering class
+   change into one paint and skip the transition entirely) — that triggers the entrance below, a
+   quick un-overshot ease-out (no bounce). Closing removes .cmd-palette-visible and adds
+   .cmd-palette-closing, which overrides both transitions to something quicker still, so the exit
+   reads as a snap shut; .cmd-palette-hidden is only added once that shorter transition has
+   actually finished (closeCmdPalette's setTimeout), not immediately. */
+.cmd-palette-overlay {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    flex-direction: column;
+    align-items: center;
+    /* Flush toward the top with a modest gap, not vertically centered in the panel. */
+    padding: 24px 20px 0;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 20000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.16s ease;
+}
+.cmd-palette-overlay.cmd-palette-visible { opacity: 1; pointer-events: auto; }
+.cmd-palette-overlay.cmd-palette-closing { transition: opacity 0.14s ease; }
+.cmd-palette-hidden { display: none !important; }
+
+.cmd-palette-content {
+    width: 100%;
+    /* Matches .panel's own 220px floor for the main app — without it, .cmd-palette-overlay's own
+       side padding (20px each side) would let this shrink a bit narrower than the panel's actual
+       host-enforced minimum width, squishing the search bar/grid tighter than the rest of the app
+       ever gets to. */
+    min-width: 220px;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    transform: scale(0.9) translateY(-14px);
+    opacity: 0;
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease;
+}
+.cmd-palette-overlay.cmd-palette-visible .cmd-palette-content {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+}
+.cmd-palette-overlay.cmd-palette-closing .cmd-palette-content {
+    transition: transform 0.15s cubic-bezier(0.4, 0, 1, 1), opacity 0.12s ease;
+}
+
+/* The icon sits absolutely inside the pill rather than as a flex sibling next to the input — one
+   continuous field with the icon layered into its left edge, not two things side by side. The
+   input spans the row's full width, with left padding sized to clear the icon so typed text
+   starts shifted right of it instead of overlapping. Solid dark translucent fill (a diagonal
+   white gradient was tried first but read as too glassy against the blurred backdrop); fully-
+   rounded ends for the pill shape. */
+.cmd-palette-search-row {
+    width: 100%;
+    max-width: 480px;
+    position: relative;
+    flex-shrink: 0;
+    background: rgba(20, 20, 20, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    /* Clips the glow's filter:blur() (below) to the pill's own rounded shape — blur ignores an
+       element's bounds entirely, unlike a background, so without this it would bleed past the
+       rounded ends instead of staying confined to them. */
+    overflow: hidden;
+}
+/* Same soft cursor-follow spotlight recipe as .anchor-grid's own (_anchorGlowTick/
+   _initCmdSearchGlow in main.js), dialed down further here — half the alpha (0.1 vs 0.22) and a
+   tighter, softer circle — so it reads as barely-there on a search field instead of the more
+   noticeable glow a whole grid of tiles can support. */
+.cmd-palette-search-row::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(circle 120px at var(--search-glow-x, -9999px) var(--search-glow-y, -9999px), rgba(36, 112, 224, 0.1), transparent 70%);
+    filter: blur(30px);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+}
+.cmd-palette-search-row:hover::before {
+    opacity: 1;
+    transition: opacity 0.12s ease;
+}
+.cmd-palette-search-icon {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    color: var(--text-dim);
+    pointer-events: none;
+}
+/* #cmdPaletteInput, not just .cmd-palette-input — there's a global `input[type="text"]` rule
+   elsewhere in this file (for the small numeric/name fields used throughout the app) that pins
+   text inputs to width:48px/height:22px/its own opaque background. An attribute selector
+   (input[type="text"]) outranks a plain class regardless of source order, so .cmd-palette-input
+   alone was silently losing every one of those properties to it — the ID here is what actually
+   guarantees this wins. */
+#cmdPaletteInput.cmd-palette-input {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: auto;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    /* Left padding clears the icon (16px offset + 16px icon + 10px gap); right matches it loosely
+       for a balanced pill. Taller vertical padding (14px, up from 11px) for a taller pill overall. */
+    padding: 14px 18px 14px 42px;
+}
+#cmdPaletteInput.cmd-palette-input::placeholder { color: var(--text-dimmer); }
+
+/* Reuses .tools-grid's own card look wholesale, but with its own 2/3/4-column breakpoints (below
+   — different widths than .tools-grid's own 1/2/3, since this has no filter sidebar stealing
+   width) and capped to at most 2 rows at every width — _renderCmdPaletteResults (main.js) never
+   hands it more than CMD_PALETTE_MAX_RESULTS (current column count * 2, via _cmdPaletteCols())
+   tiles, so max-height/overflow below is just a hard guarantee against ever needing to scroll,
+   not the thing actually limiting what's shown. Both the grid's own fill and each tile's are
+   dropped to partial opacity via an rgba background (not a flat `opacity`, which would also fade
+   the icons/text) so it reads as translucent glass rather than a second opaque surface.
+
+   It also scales up on its own, slightly after the search bar/content pop above it starts (the
+   transition-delay below) — a separate, subtler motion from .cmd-palette-content's own bounce, so
+   the grid reads as following the search bar into place rather than arriving with it. Quick and
+   un-overshot (no bounce) per "subtle/snappy", unlike the entrance curve used elsewhere. Closing
+   drops the delay entirely so the grid doesn't visibly linger on the way out. */
+#cmdPaletteGrid.cmd-palette-grid {
+    width: 100%;
+    max-width: 480px;
+    margin-top: 10px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    max-height: none;
+    overflow: hidden;
+    background: rgba(16, 16, 16, 0.6);
+    border-color: rgba(255, 255, 255, 0.08);
+    transform: scale(0.92);
+    opacity: 0;
+    transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1) 0.07s, opacity 0.16s ease 0.07s;
+}
+/* Fewer columns at narrower panel widths so tiles keep a sane minimum size instead of getting
+   smushed into visual artifacting — still always capped to 2 rows, just fewer-per-row (see
+   _cmdPaletteCols/CMD_PALETTE_COLS_BREAKPOINTS in main.js, which mirror these exact widths so
+   CMD_PALETTE_MAX_RESULTS and the arrow-key column math never fall out of sync with what's
+   actually laid out here). */
+@media (max-width: 449px) {
+    #cmdPaletteGrid.cmd-palette-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 349px) {
+    #cmdPaletteGrid.cmd-palette-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.cmd-palette-overlay.cmd-palette-visible #cmdPaletteGrid.cmd-palette-grid {
+    transform: scale(1);
+    opacity: 1;
+}
+.cmd-palette-overlay.cmd-palette-closing #cmdPaletteGrid.cmd-palette-grid {
+    transition: transform 0.1s cubic-bezier(0.4, 0, 1, 1), opacity 0.08s ease;
+}
+#cmdPaletteGrid.cmd-palette-grid .tools-grid-btn {
+    background: rgba(22, 22, 22, 0.7);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+/* Keyboard selection (arrow keys, Enter-to-click — see _cmdPaletteSetSelected in main.js). A
+   subtle grey-into-blue diagonal gradient fill (not reusing :hover's mouse-tilt-tracking
+   transform), grey top-left into blue bottom-right, the blue kept dark/desaturated rather than
+   the bright accent so the fill itself stays understated — with the icon and label pushed to
+   white via `color`. Reads as its own distinct "this is what Enter will run" affordance instead
+   of imitating a mouse hover that isn't actually happening. */
+#cmdPaletteGrid.cmd-palette-grid .tools-grid-btn.cmd-palette-tile-selected {
+    background: linear-gradient(135deg, rgba(30, 30, 30, 0.75), rgba(30, 58, 92, 0.55));
+    border-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+/* Rendered by _renderCmdPaletteResults AS THE GRID'S OWN CONTENT when there are zero matches
+   (not a separate element below it) — grid-column:1/-1 spans all 4 tracks so it fills the same
+   drawer box the tiles would otherwise occupy, rather than leaving that box empty with a message
+   floating underneath. */
+.cmd-palette-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 28px 10px;
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+/* ── Radial menu (right-click empty panel space) ─────────────────────────── */
+/* Search/Settings/Edit, reached via right-click since keyboard shortcuts here (Space, then
+   Shift+Space) both turned out to get captured/tracked oddly by After Effects itself — see
+   _initRadialMenu/openRadialMenu/closeRadialMenu in main.js. The menu container has no size of
+   its own (width/height:0) and no pointer-events — it's purely an anchor positioned at the click
+   point (openRadialMenu sets its left/top inline); each item opts back into pointer-events and
+   places itself via the classic rotate/translate/counter-rotate trick: rotate to --radial-angle,
+   translate outward by the radius, then rotate back the same amount so its own icon stays
+   upright regardless of which angle it landed at. Same open/close animation approach as the
+   Command Palette (a *-visible class added a frame after *-hidden is removed, forcing a reflow in
+   between so the transition isn't skipped; closing removes *-visible, plays a quicker collapse via
+   *-closing, and only adds *-hidden back once that's actually finished). */
+.radial-menu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+    z-index: 20000;
+    pointer-events: none;
+}
+.radial-menu-hidden { display: none; }
+
+/* Dims/blurs the app behind the pie so it's clear the panel isn't interactive underneath, while
+   staying light enough that you can still see what you were doing. Fixed positioning escapes the
+   0x0-sized .radial-menu it lives in. Fades with the same *-visible/*-closing classes the pie
+   itself uses — no separate JS show/hide needed. */
+.radial-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.16s ease;
+}
+.radial-menu.radial-menu-visible .radial-menu-backdrop { opacity: 1; }
+.radial-menu.radial-menu-closing .radial-menu-backdrop { transition: opacity 0.12s ease; }
+
+/* Invisible pick surface spanning the whole pie, including the gaps between arms — this is what
+   makes mouse angle (not precise button hover) drive selection, Blender-style. Sits below the
+   ring/close/item elements (they're later in DOM, so a click landing exactly on one of them hits
+   that element instead) but above everything else. See _radialMenuPointerMove in main.js. */
+.radial-menu-hit {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 200px;
+    height: 200px;
+    margin: -100px 0 0 -100px;
+    border-radius: 50%;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+/* Center ring — always-visible (and deliberately thick/prominent) track plus a rotating arc that
+   points toward the current mouse angle (set via inline transform in JS). The arc fades in only
+   once the mouse leaves the dead zone at the very center (see RADIAL_DEADZONE_PX in main.js),
+   where hovering/clicking cancels instead of picking — no ring lives in that dead zone. */
+.radial-menu-ring {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+.radial-menu.radial-menu-visible .radial-menu-ring { opacity: 1; }
+.radial-menu-ring-track { stroke: rgba(255, 255, 255, 0.22); }
+.radial-menu-ring-arc {
+    stroke: var(--accent);
+    fill: none;
+    stroke-dasharray: 11.9 500;
+    stroke-dashoffset: 5.95;
+    opacity: 0;
+    transform-origin: 20px 20px;
+    transition: opacity 0.12s ease;
+}
+
+.radial-menu-item {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 44px;
+    height: 44px;
+    margin: -22px 0 0 -22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(30, 30, 30, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 50%;
+    color: var(--text-dim);
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+    transform: rotate(var(--radial-angle)) translate(48px) rotate(calc(-1 * var(--radial-angle))) scale(0.5);
+    opacity: 0;
+    /* --radial-delay (set per button in index.html, in stagger-order-around-the-circle steps, not
+       clockwise-angle order) staggers the pop-in only — the closing rule below redeclares this
+       transition with no delay term so close-out isn't staggered. */
+    transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) calc(var(--radial-delay, 0) * 45ms),
+        opacity 0.15s ease calc(var(--radial-delay, 0) * 45ms),
+        background 0.08s linear, border-color 0.08s linear, color 0.08s linear;
+}
+.radial-menu-item svg { width: 17px; height: 17px; pointer-events: none; }
+.radial-menu-item:hover,
+.radial-menu-item.radial-menu-item-active {
+    background: var(--bg-btn-act);
+    border-color: var(--accent);
+    color: #fff;
+}
+.radial-menu.radial-menu-visible .radial-menu-item {
+    transform: rotate(var(--radial-angle)) translate(48px) rotate(calc(-1 * var(--radial-angle))) scale(1);
+    opacity: 1;
+}
+.radial-menu.radial-menu-visible .radial-menu-item.radial-menu-item-active {
+    transform: rotate(var(--radial-angle)) translate(48px) rotate(calc(-1 * var(--radial-angle))) scale(1.12);
+}
+.radial-menu.radial-menu-closing .radial-menu-item {
+    transition: transform 0.14s cubic-bezier(0.4, 0, 1, 1), opacity 0.1s ease;
+}
 
 /* ── Error / status toast ─────────────────────────────────────────────────── */
 
