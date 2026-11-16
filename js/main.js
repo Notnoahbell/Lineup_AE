@@ -321,7 +321,6 @@ function _syncAnchorRowUnit() {
 // Two bands off #homeToolGrid width: below NARROW_STACK_THRESHOLD every widget goes full-width/stacked; below ANCHOR_TINY_THRESHOLD is a "tiny" sub-tier nothing hooks into yet.
 var NARROW_STACK_THRESHOLD = 330;
 var ANCHOR_TINY_THRESHOLD = 275; // halfway between NARROW_STACK_THRESHOLD (330) and the panel's own MinSize width (220)
-var VECTORTOOLS_TITLE_DROP_WIDTH = 300; // below this, "Shape Tools" drops even in one-line (data-span="6") mode
 // #homeTopGroup's width at the panel's full max-width — the "zoom:1" reference point.
 var TOP_GROUP_REFERENCE_WIDTH = 550;
 // Floored higher than the raw ratio (0.6) so text/icons stop shrinking before it gets hard to read.
@@ -360,19 +359,8 @@ function _syncAnchorTiers() {
     }
     // Settle label-dropping synchronously before measuring below, to avoid a one-frame height spill during continuous shrink.
     _syncCtrlRowLabels();
-    _syncVectortoolsTitle(width);
     // Anchor's natural height depends on the active tier/zoom, so always recompute — not just on narrowChanged.
     _syncAnchorRowUnit();
-}
-
-// Half-width/Favorite always hides "Shape Tools" via CSS; one-line (data-span="6")
-// only hides it below VECTORTOOLS_TITLE_DROP_WIDTH — which also governs narrow-stack
-// since that forces every widget to data-span="6" regardless of real pairing.
-function _syncVectortoolsTitle(gridWidth) {
-    var box = document.querySelector('.tool-box[data-block-id="vectortools"]');
-    if (!box) return;
-    var oneLine = box.getAttribute('data-span') === '6';
-    box.classList.toggle('vectortools-one-line-tiny', oneLine && gridWidth < VECTORTOOLS_TITLE_DROP_WIDTH);
 }
 
 function _initAnchorTiers() {
@@ -1104,7 +1092,7 @@ function _initToolsFavContextMenu() {
         // Smart Select/Link/Merge, Select Paths/Fill/Stroke, and Split Text already open
         // their own mode-picker flyout on right-click — Favorite is folded into that
         // instead (see _syncFavRowInCtx), so this standalone popup steps aside for them.
-        if (tile.classList.contains('smart-btn') || tile.classList.contains('shape-sel-btn') || tile.classList.contains('split-text-btn')) return;
+        if (tile.classList.contains('smart-btn') || tile.classList.contains('shape-sel-btn') || tile.classList.contains('split-text-btn') || tile.classList.contains('stroke-align-btn')) return;
         e.preventDefault();
         _openToolsFavCtx(tile, e);
     });
@@ -5446,27 +5434,24 @@ function doSelectAllStrokes() {
 
 // AE's native tool-group convention, mode shared/global via .shape-sel-btn; every icon framed in a dashed "marching ants" square so it reads as "this selects something".
 var SHAPE_SEL_FRAME = '<rect x="1.5" y="1.5" width="17" height="17" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/>';
+var SHAPE_SEL_SVG_OPEN = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">';
 var SHAPE_SEL_MODES = [
     {
         id: 'path', title: 'Select All Paths', shortLabel: 'Sel. Path', flyoutLabel: 'Path', fn: doSelectAllPaths,
-        svg: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">' +
-            SHAPE_SEL_FRAME +
-            '<path d="M3,15 C3,15 6,5 10,10 C14,15 17,5 17,5" stroke-width="1.5"/>' +
-            '<rect x="1.8" y="13.2" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>' +
-            '<rect x="8.8" y="8.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>' +
-            '<rect x="15.8" y="3.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/></svg>'
+        svg: SHAPE_SEL_SVG_OPEN + SHAPE_SEL_FRAME +
+            '<path d="M5.5,14.5 C5.5,10 14.5,10 14.5,5.5" stroke-width="1.4"/>' +
+            '<rect x="4.2" y="13.2" width="2.6" height="2.6" rx="0.6" fill="currentColor" stroke="none"/>' +
+            '<rect x="13.2" y="4.2" width="2.6" height="2.6" rx="0.6" fill="currentColor" stroke="none"/></svg>'
     },
     {
         id: 'fill', title: 'Select All Fills', shortLabel: 'Sel. Fill', flyoutLabel: 'Fill', fn: doSelectAllFills,
-        svg: '<svg viewBox="0 0 20 20" fill="currentColor">' +
-            SHAPE_SEL_FRAME +
-            '<rect x="4" y="4" width="12" height="12" rx="2.5"/></svg>'
+        svg: SHAPE_SEL_SVG_OPEN + SHAPE_SEL_FRAME +
+            '<rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" stroke="none"/></svg>'
     },
     {
         id: 'stroke', title: 'Select All Strokes', shortLabel: 'Sel. Stroke', flyoutLabel: 'Stroke', fn: doSelectAllStrokes,
-        svg: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor">' +
-            SHAPE_SEL_FRAME +
-            '<rect x="4" y="4" width="12" height="12" rx="2.5" stroke-width="2.2"/></svg>'
+        svg: SHAPE_SEL_SVG_OPEN + SHAPE_SEL_FRAME +
+            '<rect x="5.5" y="5.5" width="9" height="9" rx="1.8" stroke-width="2.4"/></svg>'
     }
 ];
 var SHAPE_SEL_MODE_KEY = 'lineup-shape-sel-mode';
@@ -5916,6 +5901,129 @@ function doChangeStrokeType(e) {
     run('lineup_changeStrokeType(' + capOnly + ')');
 }
 
+// Stroke Alignment — same toolbar convention as Select Paths/Fill/Stroke: left-click reapplies the last
+// mode, right-click picks one (and applies it). Icon: thin line = the path, thick band = where the stroke lands.
+function _strokeAlignSvg(band) {
+    return '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor">' +
+        '<rect x="' + band.xy + '" y="' + band.xy + '" width="' + band.wh + '" height="' + band.wh + '" rx="' + band.rx + '" stroke-width="3" opacity="0.5"/>' +
+        '<rect x="5" y="5" width="10" height="10" rx="2" stroke-width="1.2"/></svg>';
+}
+var STROKE_ALIGN_MODES = [
+    { id: 'outside', title: 'Stroke Alignment: Outside', shortLabel: 'Stroke Out', flyoutLabel: 'Outside', svg: _strokeAlignSvg({ xy: 3.5, wh: 13, rx: 3.5 }) },
+    { id: 'center',  title: 'Stroke Alignment: Center',  shortLabel: 'Stroke Ctr', flyoutLabel: 'Center',  svg: _strokeAlignSvg({ xy: 5,   wh: 10, rx: 2 }) },
+    { id: 'inside',  title: 'Stroke Alignment: Inside',  shortLabel: 'Stroke In',  flyoutLabel: 'Inside',  svg: _strokeAlignSvg({ xy: 6.5, wh: 7,  rx: 1 }) }
+];
+var STROKE_ALIGN_MODE_KEY = 'lineup-stroke-align-mode';
+var _strokeAlignMode = 'outside';
+
+function _strokeAlignFindMode(id) {
+    for (var i = 0; i < STROKE_ALIGN_MODES.length; i++) {
+        if (STROKE_ALIGN_MODES[i].id === id) return STROKE_ALIGN_MODES[i];
+    }
+    return STROKE_ALIGN_MODES[0];
+}
+
+function _strokeAlignInit() {
+    var saved;
+    try { saved = localStorage.getItem(STROKE_ALIGN_MODE_KEY); } catch (e) {}
+    _strokeAlignMode = _strokeAlignFindMode(saved).id;
+    _strokeAlignRefreshButtons();
+}
+
+function _strokeAlignSetMode(id) {
+    _strokeAlignMode = _strokeAlignFindMode(id).id;
+    try { localStorage.setItem(STROKE_ALIGN_MODE_KEY, _strokeAlignMode); } catch (e) {}
+    _strokeAlignRefreshButtons();
+}
+
+// Only swaps the <svg>/label, same as _shapeSelRefreshButtons.
+function _strokeAlignRefreshButtons() {
+    var mode = _strokeAlignFindMode(_strokeAlignMode);
+    document.querySelectorAll('.stroke-align-btn').forEach(function(btn) {
+        var svg = btn.querySelector('svg');
+        if (svg) svg.outerHTML = mode.svg;
+        var label = btn.querySelector('.stroke-align-label');
+        if (label) label.textContent = mode.shortLabel;
+        btn.title = mode.title;
+    });
+}
+
+function _strokeAlignRunActive() {
+    run("lineup_setStrokeAlignment('" + _strokeAlignMode + "')", function(result) { showToast(result, 'info'); });
+}
+
+var _strokeAlignCtx = null;
+
+function _buildStrokeAlignCtx() {
+    var el = document.createElement('div');
+    el.className = 'fav-ctx shape-sel-ctx';
+    var row = document.createElement('div');
+    row.className = 'shape-sel-ctx-row';
+    STROKE_ALIGN_MODES.forEach(function(mode) {
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'shape-sel-ctx-icon-btn';
+        item.title = mode.title;
+        item.innerHTML = mode.svg + '<span class="shape-sel-ctx-lbl">' + mode.flyoutLabel + '</span>';
+        item.setAttribute('data-mode', mode.id);
+        item.addEventListener('click', function() {
+            _strokeAlignSetMode(mode.id);
+            _strokeAlignRunActive();
+            _closeStrokeAlignCtx();
+        });
+        row.appendChild(item);
+    });
+    el.appendChild(row);
+    document.body.appendChild(el);
+    return el;
+}
+
+// Positioned from the click itself, same reasoning/fix as _openShapeSelCtx.
+function _openStrokeAlignCtx(btn, e) {
+    if (!_strokeAlignCtx) _strokeAlignCtx = _buildStrokeAlignCtx();
+    var container = btn.closest('.tab-panel') || document.body;
+    container.appendChild(_strokeAlignCtx);
+    var items = _strokeAlignCtx.querySelectorAll('.shape-sel-ctx-icon-btn');
+    for (var i = 0; i < items.length; i++) {
+        items[i].classList.toggle('active', items[i].getAttribute('data-mode') === _strokeAlignMode);
+    }
+    _syncFavRowInCtx(_strokeAlignCtx, btn, _closeStrokeAlignCtx);
+    var cw = container.clientWidth, ch = container.clientHeight;
+    _strokeAlignCtx.classList.remove('compact');
+    var wideFits = (_strokeAlignCtx.offsetWidth + 8) <= cw;
+    _strokeAlignCtx.classList.toggle('compact', !wideFits);
+
+    var containerRect = container.getBoundingClientRect();
+    var rect = btn.getBoundingClientRect();
+    var cx = (e ? e.clientX : rect.left) - containerRect.left;
+    var cy = (e ? e.clientY : rect.top)  - containerRect.top;
+    var ctxW = _strokeAlignCtx.offsetWidth;
+    var ctxH = _strokeAlignCtx.offsetHeight;
+    var left = Math.min(Math.max(4, cx - ctxW / 2), cw - ctxW - 4);
+    var top = (cy + 4 + ctxH <= ch) ? cy + 4 : Math.max(4, cy - ctxH - 4);
+    _strokeAlignCtx.style.left = left + 'px';
+    _strokeAlignCtx.style.top  = top + 'px';
+    _strokeAlignCtx.classList.add('visible');
+    setTimeout(function() {
+        document.addEventListener('mousedown', _strokeAlignCtxOutside);
+        document.addEventListener('keydown', _strokeAlignCtxKey);
+    }, 0);
+}
+
+function _closeStrokeAlignCtx() {
+    if (_strokeAlignCtx) _strokeAlignCtx.classList.remove('visible');
+    document.removeEventListener('mousedown', _strokeAlignCtxOutside);
+    document.removeEventListener('keydown', _strokeAlignCtxKey);
+}
+
+function _strokeAlignCtxOutside(e) {
+    if (_strokeAlignCtx && !_strokeAlignCtx.contains(e.target)) _closeStrokeAlignCtx();
+}
+
+function _strokeAlignCtxKey(e) {
+    if (e.key === 'Escape') _closeStrokeAlignCtx();
+}
+
 function doMergeShapes(e) {
     var keepOriginals = (e && e.altKey) ? 1 : 0;
     run('lineup_mergeShapes(' + keepOriginals + ')');
@@ -5929,518 +6037,6 @@ function doExplodeShapes(e) {
 function doManageColors() {
     run('lineup_manageColors()', function(result) { showToast(result, 'info'); });
 }
-
-// ── SHAPE COLOR HUD ───────────────────────────────────────────────────────────
-// Live Fill/Stroke summary modeled on AE's Tools-panel swatches; lineup_getShapeColorHud in host.jsx scans selected shape layers, or all if none selected.
-
-var _shapeColorHudLast    = null; // last polled+parsed payload — the edit popup reads from THIS, not a live poll, so its list can't shift under the cursor mid-edit (closing and reopening it refreshes)
-var _shapeColorHudLastRaw = '';   // last raw JSON string, to skip re-rendering (and re-touching the DOM) when nothing actually changed
-
-function _hexToRgb01(hex) {
-    hex = hex.replace('#', '');
-    return [
-        parseInt(hex.substring(0, 2), 16) / 255,
-        parseInt(hex.substring(2, 4), 16) / 255,
-        parseInt(hex.substring(4, 6), 16) / 255
-    ];
-}
-function _rgb01ToHex(rgb) {
-    function ch(v) {
-        var s = Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16);
-        return s.length < 2 ? '0' + s : s;
-    }
-    return '#' + ch(rgb[0]) + ch(rgb[1]) + ch(rgb[2]);
-}
-
-// ── COLOR PICKER (in-panel) ──────────────────────────────────────────────────
-// Neither <input type="color"> nor ExtendScript's $.colorPicker() can open AE's own Fill/Stroke dialog, so this is a from-scratch HSB picker styled after it but narrow.
-
-function _rgbToHsb(r, g, b) { // r,g,b: 0-255 -> { h: 0-360, s: 0-100, b: 0-100 }
-    r /= 255; g /= 255; b /= 255;
-    var max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
-    var h = 0;
-    if (d !== 0) {
-        if (max === r) h = 60 * (((g - b) / d) % 6);
-        else if (max === g) h = 60 * ((b - r) / d + 2);
-        else h = 60 * ((r - g) / d + 4);
-    }
-    if (h < 0) h += 360;
-    return { h: h, s: max === 0 ? 0 : (d / max) * 100, b: max * 100 };
-}
-function _hsbToRgb(h, s, b) { // h: 0-360, s/b: 0-100 -> [r,g,b] 0-255
-    s /= 100; b /= 100;
-    var c = b * s;
-    var x = c * (1 - Math.abs((h / 60) % 2 - 1));
-    var m = b - c;
-    var r, g, bl;
-    if (h < 60)       { r = c; g = x; bl = 0; }
-    else if (h < 120) { r = x; g = c; bl = 0; }
-    else if (h < 180) { r = 0; g = c; bl = x; }
-    else if (h < 240) { r = 0; g = x; bl = c; }
-    else if (h < 300) { r = x; g = 0; bl = c; }
-    else              { r = c; g = 0; bl = x; }
-    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((bl + m) * 255)];
-}
-
-var _cpOnApply = null;      // callback(rgb01Array), called only on OK
-var _cpH = 0, _cpS = 0, _cpBVal = 100; // current HSB — source of truth while the dialog is open
-var _cpHScrub, _cpSScrub, _cpBrScrub, _cpRScrub, _cpGScrub, _cpBScrub;
-var _cpSbDragging = false, _cpHueDragging = false;
-
-function _cpInitScrubs() {
-    _cpHScrub  = _bcsMakeScrub(document.getElementById('cpH'),  { min: 0, onChange: function(v) { _cpFromHsbField('h', v); } });
-    _cpSScrub  = _bcsMakeScrub(document.getElementById('cpS'),  { min: 0, onChange: function(v) { _cpFromHsbField('s', v); } });
-    _cpBrScrub = _bcsMakeScrub(document.getElementById('cpBr'), { min: 0, onChange: function(v) { _cpFromHsbField('b', v); } });
-    _cpRScrub  = _bcsMakeScrub(document.getElementById('cpR'),  { min: 0, onChange: _cpFromRgbFields });
-    _cpGScrub  = _bcsMakeScrub(document.getElementById('cpG'),  { min: 0, onChange: _cpFromRgbFields });
-    _cpBScrub  = _bcsMakeScrub(document.getElementById('cpB'),  { min: 0, onChange: _cpFromRgbFields });
-    document.getElementById('cpHex').addEventListener('input', _cpHexChanged);
-}
-
-function _cpFromHsbField(which, v) {
-    if (which === 'h') { _cpH = ((Math.round(v) % 360) + 360) % 360; _cpHScrub.set(_cpH, true); }
-    else if (which === 's') { _cpS = Math.min(100, Math.max(0, v)); _cpSScrub.set(_cpS, true); }
-    else { _cpBVal = Math.min(100, Math.max(0, v)); _cpBrScrub.set(_cpBVal, true); }
-    _cpSyncFromHsb(which === 'h');
-}
-
-// Shared onChange for all three RGB scrubs — re-reads all three rather than tracking which one fired, since there's no cheap way to tell which field the user just edited.
-function _cpFromRgbFields() {
-    var r = Math.min(255, Math.max(0, _cpRScrub.get()));
-    var g = Math.min(255, Math.max(0, _cpGScrub.get()));
-    var b = Math.min(255, Math.max(0, _cpBScrub.get()));
-    _cpRScrub.set(r, true); _cpGScrub.set(g, true); _cpBScrub.set(b, true);
-    var hsb = _rgbToHsb(r, g, b);
-    var hueChanged = Math.round(hsb.h) !== Math.round(_cpH);
-    _cpH = hsb.h; _cpS = hsb.s; _cpBVal = hsb.b;
-    _cpHScrub.set(Math.round(_cpH), true);
-    _cpSScrub.set(Math.round(_cpS), true);
-    _cpBrScrub.set(Math.round(_cpBVal), true);
-    _cpUpdateHexAndSwatch([r, g, b]);
-    _cpPositionHandles();
-    if (hueChanged) _cpDrawSbCanvas();
-}
-
-function _cpHexChanged() {
-    var v = document.getElementById('cpHex').value.replace(/[^0-9a-fA-F]/g, '');
-    if (v.length !== 6) return; // wait for a full 6-digit value before acting on it
-    var rgb01 = _hexToRgb01('#' + v);
-    _cpRScrub.set(Math.round(rgb01[0] * 255), true);
-    _cpGScrub.set(Math.round(rgb01[1] * 255), true);
-    _cpBScrub.set(Math.round(rgb01[2] * 255), true);
-    _cpFromRgbFields();
-}
-
-// Recomputes RGB/hex/handles from HSB; hueChanged also redraws the Sat/Brightness square since its gradient is tinted by hue.
-function _cpSyncFromHsb(hueChanged) {
-    var rgb = _hsbToRgb(_cpH, _cpS, _cpBVal);
-    _cpRScrub.set(rgb[0], true);
-    _cpGScrub.set(rgb[1], true);
-    _cpBScrub.set(rgb[2], true);
-    _cpUpdateHexAndSwatch(rgb);
-    _cpPositionHandles();
-    if (hueChanged) _cpDrawSbCanvas();
-}
-
-function _cpUpdateHexAndSwatch(rgb) {
-    var hex = _rgb01ToHex([rgb[0] / 255, rgb[1] / 255, rgb[2] / 255]);
-    document.getElementById('cpSwatch').style.backgroundColor = hex;
-    var hexInput = document.getElementById('cpHex');
-    if (document.activeElement !== hexInput) hexInput.value = hex.replace('#', '').toUpperCase();
-}
-
-function _cpPositionHandles() {
-    var sbWrap = document.getElementById('cpSbWrap');
-    var sbHandle = document.getElementById('cpSbHandle');
-    sbHandle.style.left = (_cpS / 100 * sbWrap.clientWidth) + 'px';
-    sbHandle.style.top  = ((1 - _cpBVal / 100) * sbWrap.clientHeight) + 'px';
-
-    var hueWrap = document.getElementById('cpHueWrap');
-    document.getElementById('cpHueHandle').style.top = (_cpH / 360 * hueWrap.clientHeight) + 'px';
-}
-
-// Standard three-layer HSB square trick: solid hue, white→transparent across X, transparent→black down Y. Redrawn only when hue changes.
-function _cpDrawSbCanvas() {
-    var canvas = document.getElementById('cpSbCanvas');
-    var ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    var w = canvas.width, h = canvas.height;
-    var rgb = _hsbToRgb(_cpH, 100, 100);
-    ctx.fillStyle = 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
-    ctx.fillRect(0, 0, w, h);
-    var satGrad = ctx.createLinearGradient(0, 0, w, 0);
-    satGrad.addColorStop(0, 'rgba(255,255,255,1)');
-    satGrad.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = satGrad;
-    ctx.fillRect(0, 0, w, h);
-    var briGrad = ctx.createLinearGradient(0, 0, 0, h);
-    briGrad.addColorStop(0, 'rgba(0,0,0,0)');
-    briGrad.addColorStop(1, 'rgba(0,0,0,1)');
-    ctx.fillStyle = briGrad;
-    ctx.fillRect(0, 0, w, h);
-}
-
-// Static — every hue 0-360, wrapping to red at the bottom same as top — drawn once, never redrawn since it doesn't depend on state.
-function _cpDrawHueCanvas() {
-    var canvas = document.getElementById('cpHueCanvas');
-    var ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    var w = canvas.width, h = canvas.height;
-    var grad = ctx.createLinearGradient(0, 0, 0, h);
-    [0, 60, 120, 180, 240, 300, 360].forEach(function(hue) {
-        var rgb = _hsbToRgb(hue % 360, 100, 100);
-        grad.addColorStop(hue / 360, 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')');
-    });
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-}
-
-function _cpSbUpdateFromEvent(e) {
-    var rect = document.getElementById('cpSbWrap').getBoundingClientRect();
-    var x = Math.min(Math.max(0, e.clientX - rect.left), rect.width);
-    var y = Math.min(Math.max(0, e.clientY - rect.top), rect.height);
-    _cpS = (x / rect.width) * 100;
-    _cpBVal = (1 - y / rect.height) * 100;
-    _cpSScrub.set(Math.round(_cpS), true);
-    _cpBrScrub.set(Math.round(_cpBVal), true);
-    _cpSyncFromHsb(false);
-}
-function _cpSbMouseDown(e) {
-    _cpSbDragging = true;
-    _cpSbUpdateFromEvent(e);
-    document.addEventListener('mousemove', _cpSbMouseMove);
-    document.addEventListener('mouseup', _cpSbMouseUp);
-    e.preventDefault();
-}
-function _cpSbMouseMove(e) { if (_cpSbDragging) _cpSbUpdateFromEvent(e); }
-function _cpSbMouseUp() {
-    _cpSbDragging = false;
-    document.removeEventListener('mousemove', _cpSbMouseMove);
-    document.removeEventListener('mouseup', _cpSbMouseUp);
-}
-
-function _cpHueUpdateFromEvent(e) {
-    var rect = document.getElementById('cpHueWrap').getBoundingClientRect();
-    var y = Math.min(Math.max(0, e.clientY - rect.top), rect.height);
-    _cpH = (y / rect.height) * 360;
-    _cpHScrub.set(Math.round(_cpH), true);
-    _cpSyncFromHsb(true);
-}
-function _cpHueMouseDown(e) {
-    _cpHueDragging = true;
-    _cpHueUpdateFromEvent(e);
-    document.addEventListener('mousemove', _cpHueMouseMove);
-    document.addEventListener('mouseup', _cpHueMouseUp);
-    e.preventDefault();
-}
-function _cpHueMouseMove(e) { if (_cpHueDragging) _cpHueUpdateFromEvent(e); }
-function _cpHueMouseUp() {
-    _cpHueDragging = false;
-    document.removeEventListener('mousemove', _cpHueMouseMove);
-    document.removeEventListener('mouseup', _cpHueMouseUp);
-}
-
-// rgb01: [r,g,b] each 0-1 (AE's color format). onApply fires only on OK; Cancel/outside-click/× just closes with no callback.
-function _openColorPicker(rgb01, title, onApply) {
-    _cpOnApply = onApply;
-    document.getElementById('cpTitle').textContent = title;
-    var rgb = [Math.round(rgb01[0] * 255), Math.round(rgb01[1] * 255), Math.round(rgb01[2] * 255)];
-    var hsb = _rgbToHsb(rgb[0], rgb[1], rgb[2]);
-    _cpH = hsb.h; _cpS = hsb.s; _cpBVal = hsb.b;
-    _cpHScrub.set(Math.round(_cpH), true);
-    _cpSScrub.set(Math.round(_cpS), true);
-    _cpBrScrub.set(Math.round(_cpBVal), true);
-    _cpRScrub.set(rgb[0], true);
-    _cpGScrub.set(rgb[1], true);
-    _cpBScrub.set(rgb[2], true);
-    _cpUpdateHexAndSwatch(rgb);
-    _cpDrawSbCanvas();
-    document.getElementById('cpOverlay').classList.remove('cp-hidden');
-    _cpPositionHandles(); // after unhiding — needs the wrap elements' real (non-zero) layout size
-}
-
-function _closeColorPicker(apply) {
-    document.getElementById('cpOverlay').classList.add('cp-hidden');
-    if (apply && _cpOnApply) {
-        _cpOnApply([_cpRScrub.get() / 255, _cpGScrub.get() / 255, _cpBScrub.get() / 255]);
-    }
-    _cpOnApply = null;
-}
-
-// Applies a { type: 'none'|'color'|'mix', value } summary to a swatch. Fill paints background (a dot); stroke paints border (a ring).
-function _applySwatchSummary(el, summary, mode) {
-    el.classList.remove('vectools-swatch-none', 'vectools-swatch-mix');
-    el.style.backgroundColor = '';
-    el.style.borderColor = '';
-    if (!summary || summary.type === 'none') { el.classList.add('vectools-swatch-none'); return; }
-    if (summary.type === 'mix') { el.classList.add('vectools-swatch-mix'); return; }
-    var hex = _rgb01ToHex(summary.value);
-    if (mode === 'stroke') el.style.borderColor = hex;
-    else el.style.backgroundColor = hex;
-}
-
-// Direct edits on the HUD's own swatches always override every fill/stroke in scope; per-instance editing lives in the full popup instead.
-function _pickFillColor() {
-    var summary = _shapeColorHudLast && _shapeColorHudLast.fillSummary;
-    var current = (summary && summary.type === 'color') ? summary.value : [0.5, 0.5, 0.5];
-    _openColorPicker(current, 'Shape Fill Color', function(rgb) {
-        run('lineup_setShapeFillColorAll(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')', function() { _pollShapeColorHud(); });
-    });
-}
-function _pickStrokeColor() {
-    var summary = _shapeColorHudLast && _shapeColorHudLast.strokeColorSummary;
-    var current = (summary && summary.type === 'color') ? summary.value : [0.5, 0.5, 0.5];
-    _openColorPicker(current, 'Shape Stroke Color', function(rgb) {
-        run('lineup_setShapeStrokeColorAll(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')', function() { _pollShapeColorHud(); });
-    });
-}
-
-function _renderShapeColorHud(data) {
-    var fillSwatch = document.getElementById('vectoolsFillSwatch');
-    if (fillSwatch) _applySwatchSummary(fillSwatch, data.fillSummary, 'fill');
-
-    var strokeSwatch = document.getElementById('vectoolsStrokeSwatch');
-    if (strokeSwatch) _applySwatchSummary(strokeSwatch, data.strokeColorSummary, 'stroke');
-
-    if (_headerWidthScrub) {
-        var w = data.strokeWidthSummary;
-        // Always shows *something* — "0 px" rather than blank when there's no stroke in scope — so the control stays visible/legible.
-        var text = (!w || w.type === 'none') ? '0 px' : (w.type === 'mix' ? 'Mix' : (Math.round(w.value * 10) / 10) + ' px');
-        _headerWidthScrub.render(text); // no-ops itself while the user is mid-drag/edit
-    }
-}
-
-// Blue scrubbable px number: drag to change, click (no drag) to type exactly — shared by the header's stroke-width field and the edit modal's width cells.
-function _makeWidthScrub(el, getValue, setValue) {
-    var drag = null, editing = false, lastText = el.textContent;
-
-    function render(text) {
-        lastText = text;
-        if (!editing && !drag) el.textContent = text;
-    }
-    function isBusy() { return editing || !!drag; }
-
-    function onMouseDown(e) {
-        if (editing) return;
-        e.preventDefault();
-        drag = { startX: e.clientX, startVal: getValue(), moved: false, lastSent: null };
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-    }
-    function onMouseMove(e) {
-        if (!drag) return;
-        var dx = e.clientX - drag.startX;
-        if (!drag.moved && Math.abs(dx) < 3) return; // dead zone — distinguishes a click from a drag
-        drag.moved = true;
-        var newVal = Math.max(0, Math.round((drag.startVal + dx * 0.1) * 10) / 10);
-        if (newVal === drag.lastSent) return;
-        drag.lastSent = newVal;
-        el.textContent = newVal + ' px';
-        setValue(newVal);
-    }
-    function onMouseUp() {
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-        var d = drag;
-        drag = null;
-        if (d && !d.moved) openEdit(); // a plain click, no drag — edit instead of scrub
-    }
-    function openEdit() {
-        var current = getValue();
-        editing = true;
-        el.textContent = '';
-        var input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'vectools-fs-width-edit';
-        input.value = (current || current === 0) ? current : '';
-        el.appendChild(input);
-        input.focus();
-        input.select();
-        var settled = false;
-        function commit(apply) {
-            if (settled) return;
-            settled = true;
-            editing = false;
-            if (apply) {
-                var v = parseFloat(input.value);
-                if (!isNaN(v) && v >= 0) { setValue(v); return; }
-            }
-            el.textContent = lastText; // invalid input, or Escape — just restore the display
-        }
-        input.addEventListener('blur', function() { commit(true); });
-        input.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') input.blur();
-            else if (e.key === 'Escape') commit(false);
-        });
-    }
-
-    el.addEventListener('mousedown', onMouseDown);
-    return { render: render, isBusy: isBusy };
-}
-
-// Same "always overrides every stroke in scope" behavior as the color swatches — per-instance editing lives in the full popup.
-var _headerWidthScrub = null;
-function _initHeaderWidthScrub() {
-    var el = document.getElementById('vectoolsStrokeWidth');
-    if (!el) return;
-    _headerWidthScrub = _makeWidthScrub(el,
-        function() {
-            var w = _shapeColorHudLast && _shapeColorHudLast.strokeWidthSummary;
-            return (w && w.type === 'value') ? w.value : 0;
-        },
-        function(v) { run('lineup_setShapeStrokeWidthAll(' + v + ')', function() { _pollShapeColorHud(); }); });
-}
-
-// Throttled to 1s (vs Align's 300ms) since this scan can walk every shape layer in the comp; skips the round-trip when Shape Tools isn't visible.
-// afterUpdate fires once this tick's round-trip lands (regardless of change), so a caller can re-render from _shapeColorHudLast only once it's fresh.
-function _pollShapeColorHud(afterUpdate) {
-    var body = document.querySelector('.tool-body[data-block-id="vectortools"]');
-    if (!body || !body.offsetParent) { if (afterUpdate) afterUpdate(); return; }
-    cs.evalScript('lineup_getShapeColorHud()', function(result) {
-        if (result && result !== 'undefined' && result.indexOf('ERROR:') !== 0 && result !== _shapeColorHudLastRaw) {
-            _shapeColorHudLastRaw = result;
-            var data = null;
-            try { data = JSON.parse(result); } catch (e) {}
-            if (data && !data.empty) {
-                _shapeColorHudLast = data;
-                _renderShapeColorHud(data);
-            }
-        }
-        if (afterUpdate) afterUpdate();
-    });
-}
-
-// ── Shape Color HUD: edit modal ──────────────────────────────────────────────
-// Full popup, unified across Fill/Stroke as two tabs (switching re-renders #shapeEditBody); lists every polled instance plus an "All Fills/Strokes" row.
-
-var _shapeEditPopupMode = null; // 'fill' | 'stroke' — which tab is active
-
-function _closeShapeEditPopup() {
-    var overlay = document.getElementById('shapeEditOverlay');
-    if (overlay) overlay.classList.add('shape-edit-hidden');
-}
-
-function _shapeEditSyncTabs() {
-    Array.prototype.forEach.call(document.querySelectorAll('#shapeEditOverlay .vectools-edit-tab'), function(tab) {
-        tab.classList.toggle('active', tab.getAttribute('data-tab') === _shapeEditPopupMode);
-    });
-}
-
-// Switches tabs within the same open modal instead of closing/reopening.
-function _switchShapeEditTab(mode) {
-    _shapeEditPopupMode = mode;
-    _shapeEditSyncTabs();
-    _renderShapeEditPopup();
-}
-
-// Solid Fill/Stroke = plain swatch square; No Fill/Stroke reuses the diagonal-red-slash .vectools-swatch-none square — matches AE's on/off iconography.
-function _shapeEditOnIcon() {
-    return '<span class="vectools-edit-onoff-icon"></span>';
-}
-function _shapeEditOffIcon() {
-    return '<span class="vectools-edit-onoff-icon vectools-swatch-none"></span>';
-}
-
-function _renderShapeEditPopup() {
-    var data = _shapeColorHudLast;
-    var body = document.getElementById('shapeEditBody');
-    var isFill = _shapeEditPopupMode === 'fill';
-    var items = isFill ? data.fills : data.strokes;
-    var allLabel = isFill ? 'All Fills' : 'All Strokes';
-    var enabledSummary = isFill ? data.fillEnabledSummary : data.strokeEnabledSummary;
-    var onTitle = isFill ? 'Solid Fill' : 'Solid Stroke';
-    var offTitle = isFill ? 'No Fill' : 'No Stroke';
-
-    // Solid/No Fill(Stroke) toggles every instance's on/off state (AE's Contents-panel checkbox), not a color change.
-    var html = '<div class="vectools-edit-onoff-row">' +
-        '<button type="button" class="vectools-edit-onoff-btn' + (enabledSummary.type === 'all' ? ' active' : '') + '" data-role="on" title="' + onTitle + '">' + _shapeEditOnIcon() + '</button>' +
-        '<button type="button" class="vectools-edit-onoff-btn' + (enabledSummary.type === 'none' ? ' active' : '') + '" data-role="off" title="' + offTitle + '">' + _shapeEditOffIcon() + '</button>' +
-        '</div>';
-
-    // Color cells are plain buttons (not <input type="color">, which never opens in CEP) that open the in-panel picker; width cells reuse _makeWidthScrub.
-    var allWidthText = data.strokeWidthSummary.type === 'value' ? (Math.round(data.strokeWidthSummary.value * 10) / 10) + ' px'
-        : (data.strokeWidthSummary.type === 'mix' ? 'Mix' : '0 px');
-    html += '<div class="vectools-edit-row vectools-edit-all-row">' +
-        '<span class="vectools-edit-row-lbl">' + allLabel + '</span>' +
-        '<button type="button" class="vectools-color-input" data-role="all"></button>' +
-        (isFill ? '' : '<span class="vectools-fs-width" data-role="all-width">' + allWidthText + '</span>') +
-        '</div>';
-    if (!items.length) {
-        html += '<div class="vectools-edit-empty">No ' + (isFill ? 'fills' : 'strokes') + ' found.</div>';
-    } else {
-        html += '<div class="vectools-edit-list">';
-        items.forEach(function(item, i) {
-            var colorVal = isFill ? item.value : item.colorValue;
-            var safeLbl = String(item.layerName).replace(/"/g, '&quot;').replace(/</g, '&lt;');
-            html += '<div class="vectools-edit-row' + (item.enabled ? '' : ' vectools-edit-row-off') + '">' +
-                '<span class="vectools-edit-row-lbl" title="' + safeLbl + '">' + safeLbl + '</span>' +
-                '<button type="button" class="vectools-color-input" data-index="' + i + '" style="background-color:' + _rgb01ToHex(colorVal) + '"></button>' +
-                (isFill ? '' : '<span class="vectools-fs-width" data-index="' + i + '">' + (Math.round(item.widthValue * 10) / 10) + ' px</span>') +
-                '</div>';
-        });
-        html += '</div>';
-    }
-    body.innerHTML = html;
-
-    var enableAllFn = isFill ? 'lineup_setShapeFillEnabledAll' : 'lineup_setShapeStrokeEnabledAll';
-    var onBtn = body.querySelector('button[data-role="on"]');
-    var offBtn = body.querySelector('button[data-role="off"]');
-    if (onBtn) onBtn.addEventListener('click', function() {
-        run(enableAllFn + '(1)', function() { _pollShapeColorHud(function() { _renderShapeEditPopup(); }); });
-    });
-    if (offBtn) offBtn.addEventListener('click', function() {
-        run(enableAllFn + '(0)', function() { _pollShapeColorHud(function() { _renderShapeEditPopup(); }); });
-    });
-
-    var allColorBtn = body.querySelector('button[data-role="all"]');
-    if (allColorBtn) {
-        var colorSummary = isFill ? data.fillSummary : data.strokeColorSummary;
-        var allRgb = colorSummary.type === 'color' ? colorSummary.value : [0.5, 0.5, 0.5];
-        if (colorSummary.type === 'color') allColorBtn.style.backgroundColor = _rgb01ToHex(colorSummary.value);
-        allColorBtn.addEventListener('click', function() {
-            _openColorPicker(allRgb, isFill ? 'All Fills' : 'All Strokes', function(rgb) {
-                allRgb = rgb;
-                allColorBtn.style.backgroundColor = _rgb01ToHex(rgb);
-                var fn = isFill ? 'lineup_setShapeFillColorAll' : 'lineup_setShapeStrokeColorAll';
-                run(fn + '(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')', function() { _pollShapeColorHud(); });
-            });
-        });
-    }
-    var allWidthEl = body.querySelector('.vectools-fs-width[data-role="all-width"]');
-    if (allWidthEl) {
-        _makeWidthScrub(allWidthEl,
-            function() { return (data.strokeWidthSummary.type === 'value') ? data.strokeWidthSummary.value : 0; },
-            function(v) { run('lineup_setShapeStrokeWidthAll(' + v + ')', function() { _pollShapeColorHud(); }); });
-    }
-    Array.prototype.forEach.call(body.querySelectorAll('button.vectools-color-input[data-index]'), function(btn) {
-        var idx = parseInt(btn.getAttribute('data-index'), 10);
-        var rowRgb = isFill ? items[idx].value : items[idx].colorValue;
-        btn.addEventListener('click', function() {
-            _openColorPicker(rowRgb, isFill ? 'Shape Fill Color' : 'Shape Stroke Color', function(rgb) {
-                rowRgb = rgb;
-                btn.style.backgroundColor = _rgb01ToHex(rgb);
-                var fn = isFill ? 'lineup_setShapeFillColorAt' : 'lineup_setShapeStrokeColorAt';
-                run(fn + '(' + idx + ',' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')', function() { _pollShapeColorHud(); });
-            });
-        });
-    });
-    Array.prototype.forEach.call(body.querySelectorAll('.vectools-fs-width[data-index]'), function(el) {
-        var idx = parseInt(el.getAttribute('data-index'), 10);
-        _makeWidthScrub(el,
-            function() { return items[idx].widthValue; },
-            function(v) { run('lineup_setShapeStrokeWidthAt(' + idx + ',' + v + ')', function() { _pollShapeColorHud(); }); });
-    });
-}
-
-function _openShapeEditPopup(mode) {
-    if (!_shapeColorHudLast) return; // nothing polled yet — nothing to show
-    _shapeEditPopupMode = mode;
-    _shapeEditSyncTabs();
-    _renderShapeEditPopup();
-    document.getElementById('shapeEditOverlay').classList.remove('shape-edit-hidden');
-}
-function _openFillPopup()   { _openShapeEditPopup('fill'); }
-function _openStrokePopup() { _openShapeEditPopup('stroke'); }
 
 // ── AUTO CROP ─────────────────────────────────────────────────────────────────
 
@@ -11990,6 +11586,7 @@ document.addEventListener('DOMContentLoaded', function() {
     _initTabSelectorResize();
     _updateTabSelector(_activeTabName); // positions the selector for whichever tab restoreActiveTab left active, including the default (home) if it never called switchTab at all
     _shapeSelInit();
+    _strokeAlignInit();
     _anchorModeInit();
     _ignoreMasksRefreshButton();
     _initAnchorIgnoreMasksSquare();
@@ -12032,9 +11629,6 @@ document.addEventListener('DOMContentLoaded', function() {
     _bcsInit();
     _gifInit();
     _brnInit();
-    _cpInitScrubs();
-    _cpDrawHueCanvas();
-    _initHeaderWidthScrub();
     _activityInit();
     _timerInit();
     _staggerInitCurveEditor();
@@ -12050,7 +11644,6 @@ document.addEventListener('DOMContentLoaded', function() {
     _layerStaggerLoadPresets();
     _layerStaggerRenderPresetList();
     setInterval(_pollKeyAlignMode, 300);
-    setInterval(_pollShapeColorHud, 1000);
     setInterval(_pollFavSmartStack, 300);
     setInterval(_pollEaseGraph, 250);
     setInterval(_refreshMarkerPreview, 250);

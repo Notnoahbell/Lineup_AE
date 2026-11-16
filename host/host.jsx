@@ -315,7 +315,7 @@ function lineup_hasSelectedKeyframes() {
 }
 
 // Cheap poll target for the Favorites bar's smart-stack switch: "1" if the actual selection includes a shape layer.
-// Unlike lineup_shapeColorHudTargetLayers, this never falls back to "any shape layer in the comp".
+// Only checks the actual selection — never falls back to "any shape layer in the comp".
 function lineup_hasSelectedShapeLayer() {
     try {
         var comp = app.project.activeItem;
@@ -1428,6 +1428,206 @@ function lineup_collectStrokesInVectorsGroup(contents, out) {
     }
 }
 
+// ── STROKE ALIGNMENT ──────────────────────────────────────────────────────────
+// AE strokes are always centered on their path. Outside/Inside are faked by an
+// Offset Paths placed directly above the Stroke, its Amount expression-linked
+// to +/- strokeWidth/2. An offset also reshapes every Fill BELOW it, so fills
+// get moved above the group's topmost alignment offset; those strokes then
+// switch Composite to "Above Previous" so they still draw over the fill (an
+// Inside stroke would otherwise be hidden under it). Center removes the offset.
+// Scope: selected Strokes, groups, or anything inside a group (-> that group's
+// strokes); a shape layer with nothing selected inside it -> all its strokes.
+
+var STROKE_ALIGN_PREFIX = "Stroke Align";
+
+function lineup_isStrokeMatchName(mn) {
+    return mn === "ADBE Vector Graphic - Stroke" || mn === "ADBE Vector Graphic - G-Stroke";
+}
+function lineup_isFillMatchName(mn) {
+    return mn === "ADBE Vector Graphic - Fill" || mn === "ADBE Vector Graphic - G-Fill";
+}
+function lineup_isStrokeAlignOffset(item) {
+    try {
+        return item.matchName === "ADBE Vector Filter - Offset" && item.name.indexOf(STROKE_ALIGN_PREFIX) === 0;
+    } catch (e) { return false; }
+}
+
+// Property indices from the layer down to prop, so it can be re-resolved after edits invalidate references.
+function lineup_propPathFromLayer(prop) {
+    var path = [];
+    var p = prop;
+    while (p && p.propertyDepth > 0) {
+        path.unshift(p.propertyIndex);
+        p = p.parentProperty;
+    }
+    return path;
+}
+function lineup_propFromPath(layer, path) {
+    var p = layer;
+    for (var i = 0; i < path.length; i++) p = p.property(path[i]);
+    return p;
+}
+
+// Buckets strokes by their parent Contents, so each Contents list is edited in one pass.
+function lineup_strokeAlignAddStroke(targets, layer, stroke) {
+    var cPath = lineup_propPathFromLayer(stroke.parentProperty);
+    var key = layer.index + ":" + cPath.join(",");
+    if (!targets.map[key]) {
+        targets.map[key] = { layer: layer, path: cPath, strokes: {} };
+        targets.keys.push(key);
+    }
+    targets.map[key].strokes[stroke.propertyIndex] = true;
+}
+function lineup_strokeAlignAddAll(targets, layer, contents) {
+    var found = [];
+    lineup_collectAnyStrokes(contents, found);
+    for (var i = 0; i < found.length; i++) lineup_strokeAlignAddStroke(targets, layer, found[i]);
+}
+// Like lineup_collectStrokesInVectorsGroup, but also picks up Gradient Strokes.
+function lineup_collectAnyStrokes(contents, out) {
+    for (var i = 1; i <= contents.numProperties; i++) {
+        var item = contents.property(i);
+        var mn;
+        try { mn = item.matchName; } catch (e) { continue; }
+        if (mn === "ADBE Vector Group") lineup_collectAnyStrokes(item.property("ADBE Vectors Group"), out);
+        else if (lineup_isStrokeMatchName(mn)) out.push(item);
+    }
+}
+
+// Composite Order's enum isn't documented, so the "Above Previous" value is derived from a fresh stroke's default ("Below Previous").
+function lineup_strokeAboveCompositeValue(contents) {
+    var tmp = contents.addProperty("ADBE Vector Graphic - Stroke");
+    var def = tmp.property("ADBE Vector Composite Order").value;
+    tmp.remove();
+    return def === 1 ? 2 : 1;
+}
+
+function lineup_exprString(s) {
+    return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+}
+
+// Rewrites every alignment offset's expression in one Contents list (each one subtracts the offsets above
+// it, since offsets stack), then moves fills above the first offset and lifts strokes over those fills.
+function lineup_strokeAlignRebuild(contents, aboveVal) {
+    var firstOff = 0;
+    var prevNames = [];
+    for (var i = 1; i <= contents.numProperties; i++) {
+        var item = contents.property(i);
+        if (!lineup_isStrokeAlignOffset(item)) continue;
+        if (!firstOff) firstOff = i;
+        var stroke = i < contents.numProperties ? contents.property(i + 1) : null;
+        if (!stroke || !lineup_isStrokeMatchName(stroke.matchName)) continue;
+        var sign = item.name.indexOf("(Inside)") !== -1 ? -1 : 1;
+        var expr = "// Lineup Stroke Align: follows the Stroke directly below.\n" +
+            "var g = thisProperty.propertyGroup(2);\n" +
+            "var s = g(thisProperty.propertyGroup(1).propertyIndex + 1);\n" +
+            "var a = " + sign + " * s(\"ADBE Vector Stroke Width\").value / 2;\n";
+        for (var p = 0; p < prevNames.length; p++) {
+            expr += "a -= g(" + lineup_exprString(prevNames[p]) + ")(\"ADBE Vector Offset Amount\").value;\n";
+        }
+        expr += "a;";
+        item.property("ADBE Vector Offset Amount").expression = expr;
+        try { item.property("ADBE Vector Offset Line Join").setValue(stroke.property("ADBE Vector Stroke Line Join").value); } catch (e) {}
+        try { item.property("ADBE Vector Offset Miter Limit").setValue(stroke.property("ADBE Vector Stroke Miter Limit").value); } catch (e) {}
+        prevNames.push(item.name);
+    }
+    if (!firstOff) return;
+
+    var moved = 0;
+    for (var j = firstOff + 1; j <= contents.numProperties; j++) {
+        if (lineup_isFillMatchName(contents.property(j).matchName)) {
+            contents.property(j).moveTo(firstOff + moved);
+            moved++;
+        }
+    }
+
+    var sawFill = false;
+    for (var k = 1; k <= contents.numProperties; k++) {
+        var it = contents.property(k);
+        if (lineup_isFillMatchName(it.matchName)) sawFill = true;
+        else if (sawFill && lineup_isStrokeMatchName(it.matchName)) {
+            try { it.property("ADBE Vector Composite Order").setValue(aboveVal); } catch (e) {}
+        }
+    }
+}
+
+// mode: "outside" | "center" | "inside"
+function lineup_setStrokeAlignment(mode) {
+    try {
+        var comp = app.project.activeItem;
+        if (!(comp && comp instanceof CompItem)) return "";
+        var layers = comp.selectedLayers;
+        if (!layers || layers.length === 0) return "Select a shape layer or its strokes first.";
+
+        var targets = { map: {}, keys: [] };
+        for (var i = 0; i < layers.length; i++) {
+            var layer = layers[i];
+            if (!(layer instanceof ShapeLayer)) continue;
+            var root = layer.property("ADBE Root Vectors Group");
+            if (!root) continue;
+            var sel = layer.selectedProperties || [];
+            var usedSel = false;
+            for (var s = 0; s < sel.length; s++) {
+                var q = sel[s];
+                while (q && q.propertyDepth > 0) {
+                    var mn = q.matchName;
+                    if (lineup_isStrokeMatchName(mn)) { lineup_strokeAlignAddStroke(targets, layer, q); usedSel = true; break; }
+                    if (mn === "ADBE Vector Group") { lineup_strokeAlignAddAll(targets, layer, q.property("ADBE Vectors Group")); usedSel = true; break; }
+                    if (mn === "ADBE Root Vectors Group") { lineup_strokeAlignAddAll(targets, layer, q); usedSel = true; break; }
+                    q = q.parentProperty;
+                }
+            }
+            if (!usedSel) lineup_strokeAlignAddAll(targets, layer, root);
+        }
+        if (!targets.keys.length) return "No strokes found in the selection.";
+
+        // Deepest Contents first: editing a parent list shifts its child groups' indices, never the reverse.
+        targets.keys.sort(function(a, b) { return targets.map[b].path.length - targets.map[a].path.length; });
+
+        app.beginUndoGroup("Stroke Alignment");
+        var first = targets.map[targets.keys[0]];
+        var aboveVal = lineup_strokeAboveCompositeValue(lineup_propFromPath(first.layer, first.path));
+        var label = mode === "inside" ? "Inside" : "Outside";
+        var count = 0;
+
+        for (var t = 0; t < targets.keys.length; t++) {
+            var tgt = targets.map[targets.keys[t]];
+            var contents = lineup_propFromPath(tgt.layer, tgt.path);
+            var idxs = [];
+            for (var key in tgt.strokes) if (tgt.strokes.hasOwnProperty(key)) idxs.push(parseInt(key, 10));
+            idxs.sort(function(a, b) { return b - a; }); // bottom-up, so inserting/removing above a stroke never shifts one still to do
+
+            for (var n = 0; n < idxs.length; n++) {
+                var idx = idxs[n];
+                var prev = idx > 1 ? contents.property(idx - 1) : null;
+                var hasOff = prev && lineup_isStrokeAlignOffset(prev);
+                if (mode === "center") {
+                    if (hasOff) prev.remove();
+                    count++;
+                    continue;
+                }
+                var strokeName = contents.property(idx).name;
+                var offName = STROKE_ALIGN_PREFIX + " (" + label + ") - " + strokeName;
+                if (hasOff) {
+                    prev.name = offName;
+                } else {
+                    contents.addProperty("ADBE Vector Filter - Offset");
+                    contents.property(contents.numProperties).moveTo(idx);
+                    contents.property(idx).name = offName;
+                }
+                count++;
+            }
+            lineup_strokeAlignRebuild(contents, aboveVal);
+        }
+        app.endUndoGroup();
+        var modeLabel = mode === "center" ? "Center" : label;
+        return "Stroke alignment set to " + modeLabel + " on " + count + " stroke" + (count === 1 ? "" : "s") + ".";
+    } catch (err) {
+        try { app.endUndoGroup(); } catch (e) {}
+        return "ERROR: " + err.toString();
+    }
+}
+
 // ── SHAPE MERGE / EXPLODE ─────────────────────────────────────────────────────
 // Clones shape content by VALUE (addProperty + copying leaf values) rather than AE Copy/Paste, which silently no-ops
 // without Timeline focus. 2D layers only; keyframes are not reproduced, only current static values.
@@ -2220,321 +2420,6 @@ function lineup_manageColors() {
     } catch (err) {
         try { app.endUndoGroup(); } catch (e) {}
         return "ERROR: " + err.toString();
-    }
-}
-
-// ── SHAPE COLOR HUD ───────────────────────────────────────────────────────────
-// Powers the Shape Tools widget's Fill/Stroke swatches + color gallery (see
-// _pollShapeColorHud/_renderShapeColorHud in main.js) — a live, AE-Tools-panel-
-// style summary of every shape layer's Fill/Stroke, scoped to the selected
-// shape layers (or every shape layer in the comp if none are selected).
-// Gradients are out of scope entirely — Gradient Fill/Stroke groups simply
-// have different matchNames ("ADBE Vector Graphic - G-Fill"/"-G-Stroke") that
-// are never matched below, same as Color Management's own scan. Effects and
-// layer styles are also out of scope here (unlike Color Management) — this
-// only looks at shape layers' own Fill/Stroke Contents groups, matching the
-// AE Tools-panel widget it's modeled on.
-
-function lineup_shapeColorHudTargetLayers(comp) {
-    var selected = comp.selectedLayers;
-    var layers = [];
-    if (selected && selected.length) {
-        for (var i = 0; i < selected.length; i++) {
-            if (selected[i] instanceof ShapeLayer) layers.push(selected[i]);
-        }
-    } else {
-        for (var i = 1; i <= comp.numLayers; i++) {
-            if (comp.layer(i) instanceof ShapeLayer) layers.push(comp.layer(i));
-        }
-    }
-    return layers;
-}
-
-// Recursively walks a vector Contents list collecting every solid Fill into
-// `fillSlots` and every solid Stroke (color AND width together, since both
-// live on the same "ADBE Vector Graphic - Stroke" item) into `strokeSlots` —
-// same traversal shape as lineup_collectShapeColorSlots (Color Management,
-// above), just keeping fill/stroke separate and capturing width, which that
-// function has no need for. Disabled Fill/Stroke items are INCLUDED (not
-// skipped) — the popup needs to see and toggle them (Solid/No Fill), so
-// each slot carries its own `enabled` flag plus the item itself.
-function lineup_collectFillStrokeSlots(contents, layerName, fillSlots, strokeSlots) {
-    for (var i = 1; i <= contents.numProperties; i++) {
-        var item = contents.property(i);
-        var mn;
-        try { mn = item.matchName; } catch (e) { continue; }
-        if (mn === "ADBE Vector Group") {
-            lineup_collectFillStrokeSlots(item.property("ADBE Vectors Group"), layerName, fillSlots, strokeSlots);
-        } else if (mn === "ADBE Vector Graphic - Fill") {
-            var fillEnabled = true;
-            try { fillEnabled = !!item.enabled; } catch (e) {}
-            var fillColor = item.property("ADBE Vector Fill Color");
-            if (fillColor) fillSlots.push({ layerName: layerName, item: item, prop: fillColor, value: fillColor.value, enabled: fillEnabled });
-        } else if (mn === "ADBE Vector Graphic - Stroke") {
-            var strokeEnabled = true;
-            try { strokeEnabled = !!item.enabled; } catch (e) {}
-            var strokeColor = item.property("ADBE Vector Stroke Color");
-            var strokeWidth = item.property("ADBE Vector Stroke Width");
-            if (strokeColor && strokeWidth) {
-                strokeSlots.push({
-                    layerName: layerName, item: item,
-                    colorProp: strokeColor, colorValue: strokeColor.value,
-                    widthProp: strokeWidth, widthValue: strokeWidth.value,
-                    enabled: strokeEnabled
-                });
-            }
-        }
-        // Gradient Fill/Stroke and every other item type simply aren't matched above — no color/width of interest there.
-    }
-}
-
-function lineup_collectAllFillStrokeSlots(comp) {
-    var layers = lineup_shapeColorHudTargetLayers(comp);
-    var fillSlots = [], strokeSlots = [];
-    for (var i = 0; i < layers.length; i++) {
-        var root;
-        try { root = layers[i].property("ADBE Root Vectors Group"); } catch (e) { root = null; }
-        if (root) lineup_collectFillStrokeSlots(root, layers[i].name, fillSlots, strokeSlots);
-    }
-    return { fillSlots: fillSlots, strokeSlots: strokeSlots };
-}
-
-// { type: 'none' } | { type: 'color', value: [...] } | { type: 'mix' } — "mix" covers differing colors AND mixed on/off.
-function lineup_summarizeColorSlots(slots, valueKey) {
-    var anyEnabled = false, allEnabled = true, first = null, mixColor = false;
-    for (var i = 0; i < slots.length; i++) {
-        if (slots[i].enabled) {
-            anyEnabled = true;
-            if (first === null) first = slots[i][valueKey];
-            else if (!lineup_colorsApproxEqual(first, slots[i][valueKey])) mixColor = true;
-        } else {
-            allEnabled = false;
-        }
-    }
-    if (!anyEnabled) return { type: "none" };
-    if (!allEnabled || mixColor) return { type: "mix" };
-    return { type: "color", value: first };
-}
-
-// { type: 'none' } | { type: 'value', value: N } | { type: 'mix' } — same
-// enabled-aware treatment as lineup_summarizeColorSlots, above.
-function lineup_summarizeWidthSlots(slots) {
-    var anyEnabled = false, allEnabled = true, first = null, mixWidth = false;
-    for (var i = 0; i < slots.length; i++) {
-        if (slots[i].enabled) {
-            anyEnabled = true;
-            if (first === null) first = slots[i].widthValue;
-            else if (Math.abs(first - slots[i].widthValue) > 0.004) mixWidth = true;
-        } else {
-            allEnabled = false;
-        }
-    }
-    if (!anyEnabled) return { type: "none" };
-    if (!allEnabled || mixWidth) return { type: "mix" };
-    return { type: "value", value: first };
-}
-
-// { type: 'all' } | { type: 'none' } | { type: 'mix' } — purely the on/off
-// state across scope, independent of color/width, for the Solid/No Fill
-// (or No Stroke) toggle's own active-state display.
-function lineup_summarizeEnabled(slots) {
-    if (!slots.length) return { type: "none" };
-    var anyOn = false, anyOff = false;
-    for (var i = 0; i < slots.length; i++) {
-        if (slots[i].enabled) anyOn = true; else anyOff = true;
-    }
-    if (anyOn && anyOff) return { type: "mix" };
-    return { type: anyOn ? "all" : "none" };
-}
-
-function lineup_getShapeColorHud() {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return JSON.stringify({ empty: true });
-
-        var collected = lineup_collectAllFillStrokeSlots(comp);
-        var fillSlots = collected.fillSlots, strokeSlots = collected.strokeSlots;
-
-        var fills = [];
-        for (var i = 0; i < fillSlots.length; i++) {
-            fills.push({ layerName: fillSlots[i].layerName, value: fillSlots[i].value, enabled: fillSlots[i].enabled });
-        }
-        var strokes = [];
-        for (var i = 0; i < strokeSlots.length; i++) {
-            strokes.push({ layerName: strokeSlots[i].layerName, colorValue: strokeSlots[i].colorValue, widthValue: strokeSlots[i].widthValue, enabled: strokeSlots[i].enabled });
-        }
-
-        return JSON.stringify({
-            fills: fills,
-            strokes: strokes,
-            fillSummary: lineup_summarizeColorSlots(fillSlots, "value"),
-            fillEnabledSummary: lineup_summarizeEnabled(fillSlots),
-            strokeColorSummary: lineup_summarizeColorSlots(strokeSlots, "colorValue"),
-            strokeWidthSummary: lineup_summarizeWidthSlots(strokeSlots),
-            strokeEnabledSummary: lineup_summarizeEnabled(strokeSlots)
-        });
-    } catch (e) {
-        return "ERROR: " + e.toString();
-    }
-}
-
-// Preserves the property's own existing array length instead of assuming one — setValue needs an array matching what's already there.
-function lineup_shapeColorValueForProp(prop, r, g, b) {
-    var cur = prop.value;
-    return (cur && cur.length > 3) ? [r, g, b, cur[3]] : [r, g, b];
-}
-
-// Every setter below re-runs the same collection/indexing as the getter; all keyframe-aware (adds a key at current time rather than overwriting the animation).
-
-function lineup_setShapeFillColorAll(r, g, b) {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "";
-        var fillSlots = lineup_collectAllFillStrokeSlots(comp).fillSlots;
-        if (!fillSlots.length) return "";
-        var t = comp.time;
-        app.beginUndoGroup("Set Fill Color");
-        for (var i = 0; i < fillSlots.length; i++) {
-            var prop = fillSlots[i].prop;
-            var v = lineup_shapeColorValueForProp(prop, r, g, b);
-            if (prop.numKeys > 0) prop.setValueAtTime(t, v); else prop.setValue(v);
-        }
-        app.endUndoGroup();
-        return "ok";
-    } catch (e) {
-        try { app.endUndoGroup(); } catch (e2) {}
-        return "ERROR: " + e.toString();
-    }
-}
-
-function lineup_setShapeFillColorAt(index, r, g, b) {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "";
-        var slot = lineup_collectAllFillStrokeSlots(comp).fillSlots[index];
-        if (!slot) return "ERROR: That fill no longer exists — try reopening the popup.";
-        var t = comp.time;
-        app.beginUndoGroup("Set Fill Color");
-        var v = lineup_shapeColorValueForProp(slot.prop, r, g, b);
-        if (slot.prop.numKeys > 0) slot.prop.setValueAtTime(t, v); else slot.prop.setValue(v);
-        app.endUndoGroup();
-        return "ok";
-    } catch (e) {
-        try { app.endUndoGroup(); } catch (e2) {}
-        return "ERROR: " + e.toString();
-    }
-}
-
-function lineup_setShapeStrokeColorAll(r, g, b) {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "";
-        var strokeSlots = lineup_collectAllFillStrokeSlots(comp).strokeSlots;
-        if (!strokeSlots.length) return "";
-        var t = comp.time;
-        app.beginUndoGroup("Set Stroke Color");
-        for (var i = 0; i < strokeSlots.length; i++) {
-            var prop = strokeSlots[i].colorProp;
-            var v = lineup_shapeColorValueForProp(prop, r, g, b);
-            if (prop.numKeys > 0) prop.setValueAtTime(t, v); else prop.setValue(v);
-        }
-        app.endUndoGroup();
-        return "ok";
-    } catch (e) {
-        try { app.endUndoGroup(); } catch (e2) {}
-        return "ERROR: " + e.toString();
-    }
-}
-
-function lineup_setShapeStrokeColorAt(index, r, g, b) {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "";
-        var slot = lineup_collectAllFillStrokeSlots(comp).strokeSlots[index];
-        if (!slot) return "ERROR: That stroke no longer exists — try reopening the popup.";
-        var t = comp.time;
-        app.beginUndoGroup("Set Stroke Color");
-        var v = lineup_shapeColorValueForProp(slot.colorProp, r, g, b);
-        if (slot.colorProp.numKeys > 0) slot.colorProp.setValueAtTime(t, v); else slot.colorProp.setValue(v);
-        app.endUndoGroup();
-        return "ok";
-    } catch (e) {
-        try { app.endUndoGroup(); } catch (e2) {}
-        return "ERROR: " + e.toString();
-    }
-}
-
-function lineup_setShapeStrokeWidthAll(width) {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "";
-        var strokeSlots = lineup_collectAllFillStrokeSlots(comp).strokeSlots;
-        if (!strokeSlots.length) return "";
-        var t = comp.time;
-        app.beginUndoGroup("Set Stroke Width");
-        for (var i = 0; i < strokeSlots.length; i++) {
-            var prop = strokeSlots[i].widthProp;
-            if (prop.numKeys > 0) prop.setValueAtTime(t, width); else prop.setValue(width);
-        }
-        app.endUndoGroup();
-        return "ok";
-    } catch (e) {
-        try { app.endUndoGroup(); } catch (e2) {}
-        return "ERROR: " + e.toString();
-    }
-}
-
-function lineup_setShapeStrokeWidthAt(index, width) {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "";
-        var slot = lineup_collectAllFillStrokeSlots(comp).strokeSlots[index];
-        if (!slot) return "ERROR: That stroke no longer exists — try reopening the popup.";
-        var t = comp.time;
-        app.beginUndoGroup("Set Stroke Width");
-        if (slot.widthProp.numKeys > 0) slot.widthProp.setValueAtTime(t, width); else slot.widthProp.setValue(width);
-        app.endUndoGroup();
-        return "ok";
-    } catch (e) {
-        try { app.endUndoGroup(); } catch (e2) {}
-        return "ERROR: " + e.toString();
-    }
-}
-
-// Toggles the Fill/Stroke item's own .enabled checkbox, not a color change — existing color/width just reappears if switched back on.
-function lineup_setShapeFillEnabledAll(enabled) {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "";
-        var fillSlots = lineup_collectAllFillStrokeSlots(comp).fillSlots;
-        if (!fillSlots.length) return "";
-        app.beginUndoGroup("Set Fill Enabled");
-        for (var i = 0; i < fillSlots.length; i++) {
-            try { fillSlots[i].item.enabled = !!enabled; } catch (e) {}
-        }
-        app.endUndoGroup();
-        return "ok";
-    } catch (e) {
-        try { app.endUndoGroup(); } catch (e2) {}
-        return "ERROR: " + e.toString();
-    }
-}
-
-function lineup_setShapeStrokeEnabledAll(enabled) {
-    try {
-        var comp = app.project.activeItem;
-        if (!(comp && comp instanceof CompItem)) return "";
-        var strokeSlots = lineup_collectAllFillStrokeSlots(comp).strokeSlots;
-        if (!strokeSlots.length) return "";
-        app.beginUndoGroup("Set Stroke Enabled");
-        for (var i = 0; i < strokeSlots.length; i++) {
-            try { strokeSlots[i].item.enabled = !!enabled; } catch (e) {}
-        }
-        app.endUndoGroup();
-        return "ok";
-    } catch (e) {
-        try { app.endUndoGroup(); } catch (e2) {}
-        return "ERROR: " + e.toString();
     }
 }
 

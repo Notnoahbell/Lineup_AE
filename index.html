@@ -896,81 +896,45 @@
               <path d="M7,5.65 L4.48,10.03 L9.53,10.03 Z"/>
             </svg>
             <span class="lbl vectortools-title-compact-only">Shape Tools</span>
-            <!-- Live Fill/Stroke summary (see _pollShapeColorHud/lineup_getShapeColorHud); click labels to edit individually, swatch to set all, drag/click width to scrub/type; shares the header row per _syncVectortoolsTitle. -->
-            <div class="vectools-fillstroke">
-              <div class="vectools-fs-item">
-                <button class="lbl vectools-fs-lbl" id="vectoolsFillBtn" title="Edit fills individually" onclick="_openFillPopup()">Fill:</button>
-                <button type="button" class="vectools-fs-swatch vectools-fs-swatch-fill" id="vectoolsFillSwatch" title="Set all fills" onclick="_pickFillColor()"></button>
-              </div>
-              <div class="vectools-fs-item">
-                <button class="lbl vectools-fs-lbl" id="vectoolsStrokeBtn" title="Edit strokes individually" onclick="_openStrokePopup()">Stroke:</button>
-                <button type="button" class="vectools-fs-swatch vectools-fs-swatch-stroke" id="vectoolsStrokeSwatch" title="Set all strokes" onclick="_pickStrokeColor()"></button>
-                <span class="vectools-fs-width" id="vectoolsStrokeWidth" title="Drag to scrub, click to type">0 px</span>
-              </div>
-              <!-- Always-visible entry point into the Fill/Stroke modal; the labels above do the same but hide at smaller widths (see style.css). -->
-              <button type="button" class="vectools-fs-props-btn" id="vectoolsPropsBtn" title="Fill &amp; Stroke properties" onclick="_openFillPopup()">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
-                  <line x1="2" y1="4" x2="14" y2="4"/>
-                  <circle cx="6" cy="4" r="1.6" fill="currentColor" stroke="none"/>
-                  <line x1="2" y1="8" x2="14" y2="8"/>
-                  <circle cx="10" cy="8" r="1.6" fill="currentColor" stroke="none"/>
-                  <line x1="2" y1="12" x2="14" y2="12"/>
-                  <circle cx="7" cy="12" r="1.6" fill="currentColor" stroke="none"/>
+          </div>
+          <!-- Two separate bars: Merge/Explode on their own, then the remaining tools as a grid. Side by side at full width; at half width the Merge/Explode bar stacks vertically beside a 2x2 grid (see style.css). -->
+          <div class="btn-row-wide vectortools-row">
+            <div class="btn-group vectortools-bar">
+              <!-- Merges every selected shape layer into the first, preserving comp-space position/rotation/scale (see lineup_mergeShapes in host.jsx). -->
+              <button class="icon-btn-wide" title="Merge Shapes" onclick="doMergeShapes(event)">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
+                  <path d="M3,5 L4,5 C6,7.5 8,10 11.5,10 L13,10"/>
+                  <path d="M3,15 L4,15 C6,12.5 8,10 11.5,10 L13,10" stroke-dasharray="2.2,2"/>
+                  <path d="M13,5.5 L20,10 L13,14.5 Z" fill="currentColor" stroke="none"/>
+                </svg>
+              </button>
+              <!-- Splits each selected shape layer's top-level Contents into their own new layers, preserving comp-space appearance (see lineup_explodeShapes in host.jsx). -->
+              <button class="icon-btn-wide" title="Explode Shapes" onclick="doExplodeShapes(event)">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
+                  <path d="M1,10 L3,10 C7,10 9,7 11,5 L14,5"/>
+                  <path d="M3,10 C7,10 9,13 11,15 L14,15" stroke-dasharray="2.2,2"/>
+                  <path d="M14,1.4 L19.6,5 L14,8.6 Z" fill="currentColor" stroke="none"/>
+                  <path d="M14,11.4 L19.6,15 L14,18.6 Z" fill="currentColor" stroke="none"/>
                 </svg>
               </button>
             </div>
-          </div>
-          <!-- Each logical group is its own .vectortools-grp wrapper (flex-grow matching its button count) rather than 5 flat siblings, so half width can reflow into two independently-even rows (see style.css). -->
-          <div class="btn-row-wide">
-            <div class="btn-group btn-group-wide">
-              <div class="vectortools-grp vectortools-grp-2">
-                <!-- Merges every selected shape layer into the first, preserving comp-space position/rotation/scale (see lineup_mergeShapes in host.jsx). -->
-                <button class="icon-btn-wide" title="Merge Shapes" onclick="doMergeShapes(event)">
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
-                    <path d="M3,5 L4,5 C6,7.5 8,10 11.5,10 L13,10"/>
-                    <path d="M3,15 L4,15 C6,12.5 8,10 11.5,10 L13,10" stroke-dasharray="2.2,2"/>
-                    <path d="M13,5.5 L20,10 L13,14.5 Z" fill="currentColor" stroke="none"/>
-                  </svg>
-                </button>
-                <!-- Splits each selected shape layer's top-level Contents into their own new layers, preserving comp-space appearance (see lineup_explodeShapes in host.jsx). -->
-                <button class="icon-btn-wide" title="Explode Shapes" onclick="doExplodeShapes(event)">
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
-                    <path d="M1,10 L3,10 C7,10 9,7 11,5 L14,5"/>
-                    <path d="M3,10 C7,10 9,13 11,15 L14,15" stroke-dasharray="2.2,2"/>
-                    <path d="M14,1.4 L19.6,5 L14,8.6 Z" fill="currentColor" stroke="none"/>
-                    <path d="M14,11.4 L19.6,15 L14,18.6 Z" fill="currentColor" stroke="none"/>
-                  </svg>
-                </button>
-              </div>
-              <span class="vsep"></span>
-              <div class="vectortools-grp vectortools-grp-3">
-                <!-- Left-click runs whichever of Path/Fill/Stroke was picked last (see _shapeSelRefreshButtons); right-click opens a flyout to switch modes and runs the new pick immediately. -->
-                <button class="icon-btn-wide shape-sel-btn" title="Select All Paths" onclick="_shapeSelRunActive()" oncontextmenu="event.preventDefault(); _openShapeSelCtx(this, event);">
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">
-                    <rect x="1.5" y="1.5" width="17" height="17" rx="4" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/>
-                    <path d="M3,15 C3,15 6,5 10,10 C14,15 17,5 17,5" stroke-width="1.5"/>
-                    <rect x="1.8" y="13.2" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
-                    <rect x="8.8" y="8.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
-                    <rect x="15.8" y="3.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
-                  </svg>
-                </button>
-                <!-- Cycles cap+join together; hold Alt to cycle just the cap (see doChangeStrokeType/lineup_changeStrokeType). -->
-                <button class="icon-btn-wide" title="Change Stroke Type (hold Alt: cap only)" onclick="doChangeStrokeType(event)">
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2.4,2.2">
-                    <path d="M11.07,5.06 L16.09,14.75 A1.2,1.2 0 0 1 15.03,16.5 L4.97,16.5 A1.2,1.2 0 0 1 3.91,14.75 L8.93,5.06 A1.2,1.2 0 0 1 11.07,5.06 Z"/>
-                  </svg>
-                </button>
-                <!-- Consolidates every solid color on the selected (or all) layers into one "Color Controller" null, one Color Control effect per unique color (see lineup_manageColors in host.jsx). -->
-                <button class="icon-btn-wide" title="Color Management" onclick="doManageColors()">
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                    <defs>
-                      <clipPath id="colorMgmtClipWidget"><rect x="0" y="10.25" width="20" height="10"/></clipPath>
-                    </defs>
-                    <path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z" fill="currentColor" stroke="none" clip-path="url(#colorMgmtClipWidget)"/>
-                    <path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z"/>
-                  </svg>
-                </button>
-              </div>
+            <div class="btn-group vectortools-grid">
+              <!-- Left-click runs whichever of Path/Fill/Stroke was picked last (see _shapeSelRefreshButtons); right-click opens a flyout to switch modes and runs the new pick immediately. -->
+              <button class="icon-btn-wide shape-sel-btn" title="Select All Paths" onclick="_shapeSelRunActive()" oncontextmenu="event.preventDefault(); _openShapeSelCtx(this, event);">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="17" height="17" rx="4" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/><path d="M5.5,14.5 C5.5,10 14.5,10 14.5,5.5" stroke-width="1.4"/><rect x="4.2" y="13.2" width="2.6" height="2.6" rx="0.6" fill="currentColor" stroke="none"/><rect x="13.2" y="4.2" width="2.6" height="2.6" rx="0.6" fill="currentColor" stroke="none"/></svg>
+              </button>
+              <!-- Cycles cap+join together; hold Alt to cycle just the cap (see doChangeStrokeType/lineup_changeStrokeType). -->
+              <button class="icon-btn-wide" title="Change Stroke Type (hold Alt: cap only)" onclick="doChangeStrokeType(event)">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.00,2.60 L12.29,7.44 L17.61,8.13 L13.71,11.81 L14.70,17.07 L10.00,14.50 L5.30,17.07 L6.29,11.81 L2.39,8.13 L7.71,7.44 Z" stroke-width="1.6" pathLength="40" stroke-dasharray="2.2,1.8" stroke-dashoffset="1.1"/></svg>
+              </button>
+              <!-- Consolidates every solid color on the selected (or all) layers into one "Color Controller" null, one Color Control effect per unique color (see lineup_manageColors in host.jsx). -->
+              <button class="icon-btn-wide" title="Color Management" onclick="doManageColors()">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><defs><clipPath id="colorDropClipWidget"><path d="M10,2.6 C12.4,5.5 15.2,8.7 15.2,12.4 A5.2,5.2 0 0 1 4.8,12.4 C4.8,8.7 7.6,5.5 10,2.6 Z"/></clipPath></defs><path d="M0.5,11.2 Q3,8 5.5,11.2 T10.5,11.2 T15.5,11.2 T20.5,11.2 L20.5,19 L0.5,19 Z" fill="currentColor" stroke="none" clip-path="url(#colorDropClipWidget)"/><path d="M10,2.6 C12.4,5.5 15.2,8.7 15.2,12.4 A5.2,5.2 0 0 1 4.8,12.4 C4.8,8.7 7.6,5.5 10,2.6 Z" stroke-width="1.2"/></svg>
+              </button>
+              <!-- Left-click reapplies the last-picked Outside/Center/Inside mode; right-click opens a flyout to pick one (see _strokeAlignRunActive / lineup_setStrokeAlignment in host.jsx). Icon/title swapped per mode by _strokeAlignRefreshButtons. -->
+              <button class="icon-btn-wide stroke-align-btn" title="Stroke Alignment: Outside" onclick="_strokeAlignRunActive()" oncontextmenu="event.preventDefault(); _openStrokeAlignCtx(this, event);">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3.5" y="3.5" width="13" height="13" rx="3.5" stroke-width="3" opacity="0.5"/><rect x="5" y="5" width="10" height="10" rx="2" stroke-width="1.2"/></svg>
+              </button>
             </div>
           </div>
         </div>
@@ -1465,20 +1429,16 @@
 
       <!-- Shape Tools -->
       <button class="tools-grid-btn shape-sel-btn" data-group="shape" data-tool-id="selectAllPaths" title="Select All Paths" onclick="_shapeSelRunActive()" oncontextmenu="event.preventDefault(); _openShapeSelCtx(this, event);">
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round">
-          <rect x="1.5" y="1.5" width="17" height="17" rx="4" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/>
-          <path d="M3,15 C3,15 6,5 10,10 C14,15 17,5 17,5" stroke-width="1.5"/>
-          <rect x="1.8" y="13.2" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
-          <rect x="8.8" y="8.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
-          <rect x="15.8" y="3.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/>
-        </svg>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="17" height="17" rx="4" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/><path d="M5.5,14.5 C5.5,10 14.5,10 14.5,5.5" stroke-width="1.4"/><rect x="4.2" y="13.2" width="2.6" height="2.6" rx="0.6" fill="currentColor" stroke="none"/><rect x="13.2" y="4.2" width="2.6" height="2.6" rx="0.6" fill="currentColor" stroke="none"/></svg>
         <span class="shape-sel-label">Sel. Path</span>
       </button>
       <button class="tools-grid-btn" data-group="shape" data-tool-id="changeStrokeType" title="Change Stroke Type (hold Alt: cap only)" onclick="doChangeStrokeType(event)">
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2.4,2.2">
-          <path d="M11.07,5.06 L16.09,14.75 A1.2,1.2 0 0 1 15.03,16.5 L4.97,16.5 A1.2,1.2 0 0 1 3.91,14.75 L8.93,5.06 A1.2,1.2 0 0 1 11.07,5.06 Z"/>
-        </svg>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.00,2.60 L12.29,7.44 L17.61,8.13 L13.71,11.81 L14.70,17.07 L10.00,14.50 L5.30,17.07 L6.29,11.81 L2.39,8.13 L7.71,7.44 Z" stroke-width="1.6" pathLength="40" stroke-dasharray="2.2,1.8" stroke-dashoffset="1.1"/></svg>
         <span>Stroke Type</span>
+      </button>
+      <button class="tools-grid-btn stroke-align-btn" data-group="shape" data-tool-id="strokeAlign" title="Stroke Alignment: Outside" onclick="_strokeAlignRunActive()" oncontextmenu="event.preventDefault(); _openStrokeAlignCtx(this, event);">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3.5" y="3.5" width="13" height="13" rx="3.5" stroke-width="3" opacity="0.5"/><rect x="5" y="5" width="10" height="10" rx="2" stroke-width="1.2"/></svg>
+        <span class="stroke-align-label">Stroke Out</span>
       </button>
       <button class="tools-grid-btn" data-group="shape" data-tool-id="mergeShapes" title="Merge Shapes" onclick="doMergeShapes(event)">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="butt" stroke-linejoin="round">
@@ -1507,13 +1467,7 @@
         <span>Split Text</span>
       </button>
       <button class="tools-grid-btn" data-group="shape" data-tool-id="manageColors" title="Color Management" onclick="doManageColors()">
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <defs>
-            <clipPath id="colorMgmtClipTile"><rect x="0" y="10.25" width="20" height="10"/></clipPath>
-          </defs>
-          <path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z" fill="currentColor" stroke="none" clip-path="url(#colorMgmtClipTile)"/>
-          <path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z"/>
-        </svg>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><defs><clipPath id="colorDropClipTile"><path d="M10,2.6 C12.4,5.5 15.2,8.7 15.2,12.4 A5.2,5.2 0 0 1 4.8,12.4 C4.8,8.7 7.6,5.5 10,2.6 Z"/></clipPath></defs><path d="M0.5,11.2 Q3,8 5.5,11.2 T10.5,11.2 T15.5,11.2 T20.5,11.2 L20.5,19 L0.5,19 Z" fill="currentColor" stroke="none" clip-path="url(#colorDropClipTile)"/><path d="M10,2.6 C12.4,5.5 15.2,8.7 15.2,12.4 A5.2,5.2 0 0 1 4.8,12.4 C4.8,8.7 7.6,5.5 10,2.6 Z" stroke-width="1.2"/></svg>
         <span>Colors</span>
       </button>
       <button class="tools-grid-btn" data-group="shape" data-tool-id="pathRig" title="Path Rig — select a path plus layers to distribute them evenly along it as a live rig; select the controller plus a new layer and click again to add it in; select the controller plus ALL its current members and click again to clear the rig" onclick="doPathRig()">
@@ -2640,7 +2594,7 @@
         <div class="help-items">
           <div class="help-item">
             <div class="help-key-row">
-              <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round"><rect x="1.5" y="1.5" width="17" height="17" rx="4" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/><path d="M3,15 C3,15 6,5 10,10 C14,15 17,5 17,5" stroke-width="1.5"/><rect x="1.8" y="13.2" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/><rect x="8.8" y="8.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/><rect x="15.8" y="3.8" width="2.4" height="2.4" rx="0.5" fill="currentColor" stroke="none"/></svg>
+              <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="17" height="17" rx="4" stroke-width="1.2" stroke-dasharray="2.2,2" opacity="0.55"/><path d="M5.5,14.5 C5.5,10 14.5,10 14.5,5.5" stroke-width="1.4"/><rect x="4.2" y="13.2" width="2.6" height="2.6" rx="0.6" fill="currentColor" stroke="none"/><rect x="13.2" y="4.2" width="2.6" height="2.6" rx="0.6" fill="currentColor" stroke="none"/></svg>
               <span class="help-key">Select Paths / Fill / Stroke</span>
             </div>
             <span class="help-desc">Left-click reselects whichever mode you last picked (icon reflects it); right-click opens a flyout to switch between selecting all Paths, Fill colors, or Stroke colors on the selected shape layers.</span>
@@ -2648,14 +2602,21 @@
           <div class="help-sec-group">
             <div class="help-item sec">
               <div class="help-key-row">
-                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2.4,2.2"><path d="M11.07,5.06 L16.09,14.75 A1.2,1.2 0 0 1 15.03,16.5 L4.97,16.5 A1.2,1.2 0 0 1 3.91,14.75 L8.93,5.06 A1.2,1.2 0 0 1 11.07,5.06 Z"/></svg>
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.00,2.60 L12.29,7.44 L17.61,8.13 L13.71,11.81 L14.70,17.07 L10.00,14.50 L5.30,17.07 L6.29,11.81 L2.39,8.13 L7.71,7.44 Z" stroke-width="1.6" pathLength="40" stroke-dasharray="2.2,1.8" stroke-dashoffset="1.1"/></svg>
                 <span class="help-key">Change Stroke Type</span>
               </div>
               <span class="help-desc">Cycles cap and join together; hold Alt to cycle just the cap.</span>
             </div>
             <div class="help-item sec">
               <div class="help-key-row">
-                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z" fill="currentColor" stroke="none" opacity="0.55"/><path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z"/></svg>
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3.5" y="3.5" width="13" height="13" rx="3.5" stroke-width="3" opacity="0.5"/><rect x="5" y="5" width="10" height="10" rx="2" stroke-width="1.2"/></svg>
+                <span class="help-key">Stroke Alignment</span>
+              </div>
+              <span class="help-desc">Sets strokes to sit Outside, Centered on (AE's default), or Inside their path, by adding an Offset Paths above each stroke that's linked to ±half its stroke width, so it stays correct if the width changes or is animated. Applies to the selected strokes or shape groups, or to every stroke on a selected shape layer when nothing inside it is selected. Left-click reapplies the last mode; right-click to pick one.</span>
+            </div>
+            <div class="help-item sec">
+              <div class="help-key-row">
+                <svg class="help-inline-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><defs><clipPath id="colorDropClipHelp"><path d="M10,2.6 C12.4,5.5 15.2,8.7 15.2,12.4 A5.2,5.2 0 0 1 4.8,12.4 C4.8,8.7 7.6,5.5 10,2.6 Z"/></clipPath></defs><path d="M0.5,11.2 Q3,8 5.5,11.2 T10.5,11.2 T15.5,11.2 T20.5,11.2 L20.5,19 L0.5,19 Z" fill="currentColor" stroke="none" clip-path="url(#colorDropClipHelp)"/><path d="M10,2.6 C12.4,5.5 15.2,8.7 15.2,12.4 A5.2,5.2 0 0 1 4.8,12.4 C4.8,8.7 7.6,5.5 10,2.6 Z" stroke-width="1.2"/></svg>
                 <span class="help-key">Color Management</span>
               </div>
               <span class="help-desc">Consolidates every solid color on the selected layers (or the whole comp) into one Color Controller null, one Color Control effect per unique color — reuses an existing controller instead of making a new one. Covers shape Fill/Stroke, text layers' own character Fill/Stroke, and any effect or layer style color; gradients are always left alone.</span>
@@ -2680,13 +2641,6 @@
                 <span class="help-key">Split Text</span>
               </div>
               <span class="help-desc">Splits each selected text layer into one new layer per character, word, line, or paragraph (right-click to choose — left-click reruns whichever was picked last) — a real split, each new layer's own text is just that piece, positioned to land exactly where it rendered in the original, measured directly off After Effects' own text engine so kerning, wrapping, and justified/center/right-aligned paragraphs are all handled correctly. The original is removed; hold Alt to keep it (disabled) instead and parent every split layer to a new null carrying its transform.</span>
-            </div>
-            <div class="help-item sec">
-              <div class="help-key-row">
-                <svg class="help-inline-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><circle cx="6" cy="4" r="1.6" fill="currentColor" stroke="none"/><line x1="2" y1="8" x2="14" y2="8"/><circle cx="10" cy="8" r="1.6" fill="currentColor" stroke="none"/><line x1="2" y1="12" x2="14" y2="12"/><circle cx="7" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>
-                <span class="help-key">Fill / Stroke</span>
-              </div>
-              <span class="help-desc">Live swatches above the toolbar show the selection's fill and stroke color (and stroke width) — Mix when they differ. Click a swatch to set every instance in scope at once; click Fill/Stroke (or the sliders icon) to edit each shape individually, including turning its fill or stroke on or off. Drag the blue width number to scrub it, or click to type a value.</span>
             </div>
           </div>
         </div>
@@ -2913,84 +2867,6 @@
         <button class="btn" id="brlApplyBtn" onclick="applyBulkReplace()" disabled>Apply</button>
       </div>
     </div>
-  </div>
-</div>
-
-<!-- From-scratch in-panel HSB picker: <input type="color"> never opens inside AE's CEP host, and $.colorPicker() can't reach AE's own Fill/Stroke dialog (see _openColorPicker in main.js). -->
-<div id="cpOverlay" class="settings-overlay cp-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ _closeColorPicker(false); })">
-  <div class="settings-modal cp-modal" onclick="event.stopPropagation()">
-    <div class="settings-hdr">
-      <svg class="settings-hdr-icon" viewBox="0 0 20 20" fill="currentColor">
-        <defs>
-          <clipPath id="colorMgmtClipPicker"><rect x="0" y="10.25" width="20" height="10"/></clipPath>
-        </defs>
-        <path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z" clip-path="url(#colorMgmtClipPicker)" opacity="0.55"/>
-        <path d="M8.73,4.09 A1.28,1.28 0 0,1 11.27,4.09 C13.4,6.64 15.1,9.19 15.1,12.59 A5.1,5.1 0 1,1 4.9,12.59 C4.9,9.19 6.6,6.64 8.73,4.09 Z" fill="none" stroke="currentColor" stroke-width="1"/>
-      </svg>
-      <span class="settings-title" id="cpTitle">Shape Fill Color</span>
-      <button class="settings-close" onclick="_closeColorPicker(false)">
-        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
-          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
-        </svg>
-      </button>
-    </div>
-    <div class="settings-body cp-body">
-      <div class="cp-sb-row">
-        <div class="cp-sb-wrap" id="cpSbWrap" onmousedown="_cpSbMouseDown(event)">
-          <canvas id="cpSbCanvas" width="200" height="160"></canvas>
-          <div class="cp-sb-handle" id="cpSbHandle"></div>
-        </div>
-        <div class="cp-hue-wrap" id="cpHueWrap" onmousedown="_cpHueMouseDown(event)">
-          <canvas id="cpHueCanvas" width="14" height="160"></canvas>
-          <div class="cp-hue-handle" id="cpHueHandle"></div>
-        </div>
-      </div>
-      <div class="cp-fields-row">
-        <div class="cp-field"><span class="cp-field-lbl">H</span><div class="scrub cp-scrub" id="cpH" tabindex="0">0</div><span class="cp-field-unit">°</span></div>
-        <div class="cp-field"><span class="cp-field-lbl">S</span><div class="scrub cp-scrub" id="cpS" tabindex="0">0</div><span class="cp-field-unit">%</span></div>
-        <div class="cp-field"><span class="cp-field-lbl">B</span><div class="scrub cp-scrub" id="cpBr" tabindex="0">0</div><span class="cp-field-unit">%</span></div>
-      </div>
-      <div class="cp-fields-row">
-        <div class="cp-field"><span class="cp-field-lbl">R</span><div class="scrub cp-scrub" id="cpR" tabindex="0">0</div></div>
-        <div class="cp-field"><span class="cp-field-lbl">G</span><div class="scrub cp-scrub" id="cpG" tabindex="0">0</div></div>
-        <div class="cp-field"><span class="cp-field-lbl">B</span><div class="scrub cp-scrub" id="cpB" tabindex="0">0</div></div>
-      </div>
-      <div class="cp-hex-row">
-        <span class="cp-swatch" id="cpSwatch"></span>
-        <span class="cp-field-lbl">#</span>
-        <input type="text" class="cp-hex-input" id="cpHex" maxlength="6" spellcheck="false">
-      </div>
-      <div class="ctrl-row cp-actions">
-        <button class="btn" onclick="_closeColorPicker(false)">Cancel</button>
-        <button class="btn btn-blue" onclick="_closeColorPicker(true)">OK</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- A full popup rather than a small anchored one since it holds two tabs, a Solid/No Fill toggle, and a scrollable per-shape list (see _openShapeEditPopup/_renderShapeEditPopup). -->
-<div id="shapeEditOverlay" class="settings-overlay shape-edit-hidden" onmousedown="_overlayMouseDown(event)" onmouseup="_overlayMouseUp(event, function(){ _closeShapeEditPopup(); })">
-  <div class="settings-modal shape-edit-modal" onclick="event.stopPropagation()">
-    <div class="settings-hdr">
-      <svg class="settings-hdr-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="color:#f0954a">
-        <rect x="2.14" y="1.29" width="3.61" height="3.61" rx="0.77"/>
-        <circle cx="9.81" cy="2.92" r="2.17"/>
-        <path d="M7,5.65 L4.48,10.03 L9.53,10.03 Z"/>
-      </svg>
-      <span class="settings-title">Fill &amp; Stroke</span>
-      <button class="settings-close" onclick="_closeShapeEditPopup()">
-        <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/>
-          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/>
-        </svg>
-      </button>
-    </div>
-    <div class="vectools-edit-tabs">
-      <button class="vectools-edit-tab active" data-tab="fill" onclick="_switchShapeEditTab('fill')">Fill</button>
-      <button class="vectools-edit-tab" data-tab="stroke" onclick="_switchShapeEditTab('stroke')">Stroke</button>
-    </div>
-    <div class="settings-body vectools-edit-body" id="shapeEditBody"></div>
   </div>
 </div>
 

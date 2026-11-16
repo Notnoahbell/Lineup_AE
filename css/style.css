@@ -266,21 +266,9 @@ body.high-contrast #cmdPaletteGrid.cmd-palette-grid .tools-grid-btn.cmd-palette-
 body.high-contrast .radial-menu-item { background: #000000; border-color: #909090; }
 body.high-contrast .radial-menu-ring-track { stroke: #909090; }
 
-/* Shape Tools' Fill/Stroke edit modal — a .settings-overlay/.settings-modal
-   like the others (covered by the shared rule above already); just needs
-   its own content (row labels, color swatch buttons) covered here. */
-body.high-contrast .vectools-edit-row-lbl { color: #e0e0e0; }
-body.high-contrast .vectools-color-input {
-    background: #000000 !important;
-    border-color: #909090 !important;
-    color: #ffffff !important;
-}
-body.high-contrast .vectools-fs-swatch-fill { border-color: #909090; }
-body.high-contrast .vectools-fs-swatch-stroke { border-color: #909090; }
-
 /* .settings-modal/.settings-hdr are the shared dialog chrome EVERY full
-   popup (Help, Color Picker, Comp Export, Batch Comp Settings, Project
-   Structure, Spell Check, Find/Replace, Fill/Stroke edit, Update Confirm,
+   popup (Help, Comp Export, Batch Comp Settings, Project
+   Structure, Spell Check, Find/Replace, Update Confirm,
    What's New) sits inside — none of them had any high-contrast coverage at
    all, so the whole family stayed a plain dark-gray box regardless of the
    setting. Covered once here rather than per-dialog. */
@@ -1586,8 +1574,8 @@ body.layout-toolbar #enableScoringRow {
    day strip — same .settings-overlay backdrop convention as Settings/
    Update-confirm, but its own modal class instead of .settings-modal since
    that one's hardcoded 216px width is far too narrow for a 7-column month
-   grid. Same calc(100vw - 20px)/max-height pattern as the Fill/Stroke edit
-   modal (.shape-edit-modal) elsewhere in this file. */
+   grid. Uses a calc(100vw - 20px)/max-height pattern
+   to fit the panel. */
 .trophy-cal-hidden { display: none !important; }
 .trophy-cal-modal {
     background: #1e1e1e;
@@ -1937,8 +1925,8 @@ body.layout-toolbar #enableScoringRow {
    there's nothing to drag or click here (see _staggerRenderRuler, driven
    by both the ruler drag and the Step scrubs). */
 /* Scrubbable blue-text number control — same drag-to-change/click-to-type
-   interaction and look as Shape Tools' stroke-width scrub (.vectools-fs-
-   width), reused here via the generic _makeStaggerScrub in main.js instead
+   interaction and look as AE's own scrubby number fields,
+   reused here via the generic _makeStaggerScrub in main.js instead
    of a plain <input type="number">. */
 .stagger-scrub {
     display: inline-block;
@@ -2582,56 +2570,6 @@ body.layout-toolbar .tool-grid {
     min-height: 0;
     max-height: 32px;
 }
-/* Shape Tools: reverts its own half-line-by-default treatment (see
-   .vectortools-title-compact-only/.btn-group-wide/.vectortools-grp/
-   .icon-btn-wide/.vectools-fs-* further down this file) the same way
-   Sizing/Auto Crop/Sort do above — undoing each one back to its full-line
-   value instead of leaving it stuck stacked/shrunk once narrow-stack
-   forces the Favorite slot itself full width. */
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-title-compact-only {
-    display: inline;
-}
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .btn-group-wide {
-    flex-direction: row;
-    gap: 4px;
-    height: auto;
-}
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .btn-group-wide .vsep {
-    display: block;
-}
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-grp {
-    width: auto;
-}
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-grp-2 {
-    flex: 2 1 0;
-}
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-grp-3 {
-    flex: 3 1 0;
-}
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .icon-btn-wide {
-    height: 32px;
-    min-height: 0;
-    max-height: 32px;
-}
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-item {
-    padding: 3px 4px;
-    gap: 4px;
-}
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-swatch {
-    width: 20px;
-    height: 15px;
-}
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-width {
-    font-size: 11px;
-    max-width: 40px;
-}
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-lbl {
-    display: inline-block;
-}
-#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-props-btn {
-    display: none;
-}
-
 /* Favorite slot — see _favApplyLayout in main.js. Reads as true empty
    space (not an empty card) when nothing's favorited and you're not
    editing, same as the old blank Ease Copy gap this replaced; only turns
@@ -4535,286 +4473,6 @@ body.bl-drag-active {
 .icon-btn-wide svg    { width: 19px; height: 19px; pointer-events: none; transition: transform 0.03s linear; }
 .icon-btn-wide:hover svg { transform: scale(1.08); }
 
-/* Shape Tools' Fill/Stroke HUD — modeled on AE's own Tools-panel swatches
-   (see _pollShapeColorHud/_renderShapeColorHud in main.js), sharing the
-   header row (.ctrl-row) rather than its own line, pushed to the right of
-   the icon/title to use the header's otherwise-empty space. Small,
-   left-aligned within itself, no boxed "bar" around it. */
-.vectools-fillstroke {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 6px;
-    min-width: 0;
-    margin-left: auto;
-    overflow: hidden;
-}
-.vectools-fs-item {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex: 0 1 auto;
-    min-width: 0;
-    padding: 3px 4px;
-    border-radius: 5px;
-    color: var(--text-dim);
-    font-size: 11px;
-    white-space: nowrap;
-    overflow: hidden;
-}
-/* Entry into the Fill/Stroke modal that replaces the Fill:/Stroke: labels
-   once they disappear at smaller widths (see the label-hiding rule further
-   down) — hidden here by default since the labels themselves are the click
-   target whenever they're actually visible; only shown once they aren't. */
-.vectools-fs-props-btn {
-    display: none;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    background: none;
-    border: none;
-    border-radius: 4px;
-    color: var(--text-dim);
-    cursor: pointer;
-    transition: background 0.05s linear, color 0.05s linear;
-}
-.vectools-fs-props-btn:hover { background: #2c2c2c; color: #e0e0e0; }
-.vectools-fs-props-btn svg { width: 14px; height: 14px; pointer-events: none; }
-/* Clicking the swatch opens the in-panel color picker (neither
-   <input type="color"> nor ExtendScript's $.colorPicker() work/match AE's
-   own dialog inside the CEP host — see _openColorPicker in main.js) and
-   overrides every instance in scope at once — see
-   _pickFillColor/_pickStrokeColor. */
-.vectools-fs-swatch {
-    flex-shrink: 0;
-    width: 20px;
-    height: 15px;
-    border-radius: 2px;
-    box-sizing: border-box;
-    padding: 0;
-    background: none;
-    cursor: pointer;
-}
-/* Fill — a solid dot, colored via background. */
-.vectools-fs-swatch-fill {
-    border: 1px solid rgba(255,255,255,0.14);
-    background-color: #2a2a2a;
-}
-/* Stroke — a ring, colored via border instead of background, so the
-   indicator itself reads as an outline rather than a filled shape. */
-.vectools-fs-swatch-stroke {
-    border: 3px solid #4a4a4a;
-    background: none;
-}
-/* The label opens the full popup for per-instance editing — its own
-   click target, separate from the swatch (set-all) and, for Stroke, the
-   width field (scrub/type, also set-all). */
-.vectools-fs-lbl {
-    background: none;
-    border: none;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    color: #4fa8ff;
-    cursor: pointer;
-    white-space: nowrap;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.vectools-fs-lbl:hover { color: #7abcff; text-decoration: underline; }
-/* Stroke width — styled and behaves like AE's own scrubby number fields:
-   blue, drag left/right to change every stroke in scope, click (no drag)
-   to type an exact value instead. */
-.vectools-fs-width {
-    display: inline-block;
-    flex-shrink: 1;
-    min-width: 0;
-    max-width: 40px;
-    font-variant-numeric: tabular-nums;
-    margin-left: 1px;
-    padding: 1px 3px;
-    border-radius: 3px;
-    color: #4fa8ff;
-    cursor: ew-resize;
-    user-select: none;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: background 0.05s linear;
-}
-.vectools-fs-width:hover { background: rgba(79,168,255,0.14); }
-.vectools-fs-width-edit {
-    width: 42px;
-    box-sizing: border-box;
-    background: #1a1a1a;
-    border: 1px solid #4fa8ff;
-    border-radius: 3px;
-    color: #4fa8ff;
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-    padding: 1px 3px;
-}
-.vectools-fs-width-edit:focus { outline: none; }
-/* "No fill/stroke anywhere in scope" — a diagonal red slash, the same
-   convention AE itself uses (see the reference screenshot this whole HUD
-   is modeled on). Applies !important over both the fill dot's background
-   and the stroke ring's border so either indicator falls back the same
-   filled-square-with-slash way when there's nothing to show a color for. */
-.vectools-swatch-none {
-    border-color: rgba(255,255,255,0.14) !important;
-    background-color: #2a2a2a !important;
-    background-image: linear-gradient(
-        to top right,
-        transparent calc(50% - 1px),
-        #e05050 50%,
-        transparent calc(50% + 1px)
-    );
-}
-/* "Mix" — scope has more than one distinct value — a neutral checkerboard
-   rather than any one color, so it doesn't read as an actual color. */
-.vectools-swatch-mix {
-    border-color: rgba(255,255,255,0.14) !important;
-    background-color: #2a2a2a !important;
-    background-image:
-        linear-gradient(45deg, #4a4a4a 25%, transparent 25%, transparent 75%, #4a4a4a 75%),
-        linear-gradient(45deg, #4a4a4a 25%, transparent 25%, transparent 75%, #4a4a4a 75%);
-    background-size: 6px 6px;
-    background-position: 0 0, 3px 3px;
-}
-
-/* Fill/Stroke edit modal — a full popup (.settings-overlay/.settings-modal,
-   same convention as Settings/Color Picker) rather than a small anchored
-   one, unified across Fill/Stroke as two tabs (see _switchShapeEditTab in
-   main.js) that swap #shapeEditBody's content in place. */
-.shape-edit-hidden { display: none !important; }
-.shape-edit-modal {
-    width: calc(100vw - 20px);
-    max-width: 300px;
-    max-height: calc(100vh - 20px);
-    box-sizing: border-box;
-}
-.vectools-edit-body { gap: 8px; }
-.vectools-edit-tabs {
-    display: flex;
-    flex-shrink: 0;
-    gap: 2px;
-    padding: 6px 8px 0;
-    border-bottom: 1px solid #272727;
-}
-.vectools-edit-tab {
-    background: none;
-    border: none;
-    border-radius: 5px 5px 0 0;
-    color: #707070;
-    font: inherit;
-    font-size: 11px;
-    padding: 5px 12px;
-    cursor: pointer;
-    margin-bottom: -1px;
-    transition: color 0.1s linear, background 0.1s linear;
-}
-.vectools-edit-tab:hover { color: #a0a0a0; background: #262626; }
-.vectools-edit-tab.active { color: #e0e0e0; background: #2c2c2c; }
-/* Solid Fill/Stroke vs No Fill/Stroke — icon-only buttons (see
-   _shapeEditOnIcon/_shapeEditOffIcon in main.js) that toggle every
-   instance's own on/off state (see
-   lineup_setShapeFillEnabledAll/lineup_setShapeStrokeEnabledAll), not a
-   color change. Neither side is highlighted when scope is mixed. */
-.vectools-edit-onoff-row {
-    display: flex;
-    gap: 6px;
-}
-.vectools-edit-onoff-btn {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #232323;
-    border: 1px solid #333;
-    border-radius: 6px;
-    color: #909090;
-    padding: 7px;
-    cursor: pointer;
-    transition: background 0.05s linear, color 0.05s linear, border-color 0.05s linear;
-}
-.vectools-edit-onoff-btn:hover { background: #2c2c2c; color: #c0c0c0; }
-.vectools-edit-onoff-btn.active {
-    background: rgba(79,168,255,0.16);
-    border-color: #4fa8ff;
-    color: #7abcff;
-}
-/* The icon itself — a plain swatch square for Solid, or (with
-   .vectools-swatch-none layered on, reusing that exact rule rather than
-   redrawing it) the same diagonal-red-slash square used everywhere else in
-   this HUD for "no color in scope". */
-.vectools-edit-onoff-icon {
-    width: 16px;
-    height: 16px;
-    border-radius: 3px;
-    border: 1px solid rgba(255,255,255,0.14);
-    background-color: #6b6b6b;
-    pointer-events: none;
-}
-.vectools-edit-row {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 4px 8px;
-    border-radius: 5px;
-}
-.vectools-edit-all-row {
-    border-bottom: 1px solid #333;
-    border-radius: 0;
-    padding-bottom: 8px;
-    margin-bottom: 2px;
-}
-.vectools-edit-row-lbl {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: #a0a0a0;
-    font-size: 11px;
-}
-.vectools-edit-all-row .vectools-edit-row-lbl {
-    color: #e0e0e0;
-    font-weight: 600;
-}
-/* A shape whose Fill/Stroke is currently off (per the item's own .enabled,
-   toggled only via the Solid/No Fill(Stroke) buttons above — no per-row
-   control) shows dimmed rather than just vanishing from the list. */
-.vectools-edit-row-off .vectools-edit-row-lbl,
-.vectools-edit-row-off .vectools-color-input,
-.vectools-edit-row-off .vectools-fs-width {
-    opacity: 0.4;
-}
-.vectools-edit-list {
-    max-height: 220px;
-    overflow-y: auto;
-}
-.vectools-edit-empty {
-    padding: 6px 8px 4px;
-    color: #707070;
-    font-size: 11px;
-}
-/* Clicking opens the in-panel color picker — see _openColorPicker in
-   main.js — <input type="color">'s own picker never opens inside AE's CEP
-   panel host, so these are plain buttons with their color set inline. */
-.vectools-color-input {
-    flex-shrink: 0;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: 1px solid rgba(255,255,255,0.14);
-    border-radius: 4px;
-    background-color: #2a2a2a;
-    cursor: pointer;
-}
 /* Align Left/Center/Right: whenever selected keyframes make these buttons
    retime keyframes instead of moving layer position, each crossfades its
    whole icon into a keyframe-flavored one (hourglass bezier glyph on
@@ -4978,47 +4636,66 @@ body.bl-drag-active {
     max-height: none;
 }
 
-/* Shape Tools' two logical groups (Merge/Explode, and Select Paths/Change
-   Stroke Type/Color Management) sit side by side in one row at full
-   width — each .vectortools-grp's flex-grow matches its own button count
-   (2 and 3), so per-button width still comes out even across the whole
-   row despite the group sizes differing, same as if all 5 were flat
-   siblings of .btn-group-wide. */
-.vectortools-grp {
-    display: flex;
-    gap: 4px;
+/* Shape Tools: two separate bars — Merge/Explode on their own
+   (.vectortools-bar), the remaining tools in a second one
+   (.vectortools-grid). Full width (and narrow-stack, which forces every
+   widget to data-span="6"): the two bars sit side by side in one row,
+   flex-grow matching each bar's button count (2 and 4) so per-button
+   width comes out even across both. Scoped to .tool-box/#sec-favorite so
+   Classic (where this tool-body is relocated out of the bento box) keeps
+   its own fixed-size icon buttons. */
+.tool-box[data-block-id="vectortools"] .vectortools-row,
+#sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-row {
+    gap: 5px;
+}
+.tool-box[data-block-id="vectortools"] .vectortools-bar,
+#sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-bar {
+    flex: 2 1 0;
     min-width: 0;
 }
-.vectortools-grp-2 { flex: 2 1 0; }
-.vectortools-grp-3 { flex: 3 1 0; }
+.tool-box[data-block-id="vectortools"] .vectortools-grid,
+#sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-grid {
+    flex: 4 1 0;
+    min-width: 0;
+}
+#homeClassic .vectortools-row { gap: 6px; }
 
-/* At half width, instead of squashing both groups into one row (or a grid
-   that would mix them together), each group becomes its own full-width
-   row — Merge/Explode evenly split across the top, Select Paths/Change
-   Stroke Type/Color Management evenly split across the bottom — stacked
-   to fill the tile's whole height between them. The vsep is a horizontal
-   divider meant for two groups side by side, so it's hidden once they're
-   stacked instead, same as Align/Distribute's grid reflow above. */
-.tool-box[data-block-id="vectortools"][data-span="3"] .btn-group-wide,
-#sec-favorite .tool-body[data-block-id="vectortools"] .btn-group-wide {
-    flex-direction: column;
-    gap: 5px;
-    height: 100%;
+/* Half width (and the Favorite slot, outside narrow-stack): the
+   Merge/Explode bar turns into a vertical column on the left, beside the
+   other tools as a 2x2 grid — two button rows total, filling the tile's
+   height. Column-to-grid ratio is 1:2, so all six buttons stay the same
+   width. */
+.tool-box[data-block-id="vectortools"][data-span="3"] .vectortools-row,
+#homeToolGrid:not(.narrow-stack) #sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-row {
+    align-items: stretch;
 }
-.tool-box[data-block-id="vectortools"][data-span="3"] .btn-group-wide .vsep,
-#sec-favorite .tool-body[data-block-id="vectortools"] .btn-group-wide .vsep {
-    display: none;
-}
-.tool-box[data-block-id="vectortools"][data-span="3"] .vectortools-grp,
-#sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-grp {
+.tool-box[data-block-id="vectortools"][data-span="3"] .vectortools-bar,
+#homeToolGrid:not(.narrow-stack) #sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-bar {
     flex: 1 1 0;
-    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+}
+.tool-box[data-block-id="vectortools"][data-span="3"] .vectortools-grid,
+#homeToolGrid:not(.narrow-stack) #sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-grid {
+    flex: 2 1 0;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: 1fr;
+    align-items: stretch;
 }
 .tool-box[data-block-id="vectortools"][data-span="3"] .icon-btn-wide,
-#sec-favorite .tool-body[data-block-id="vectortools"] .icon-btn-wide {
-    height: 100%;
+#homeToolGrid:not(.narrow-stack) #sec-favorite .tool-body[data-block-id="vectortools"] .icon-btn-wide {
+    height: auto;
     min-height: 38px;
     max-height: none;
+}
+
+/* Narrow-stack squeezes all six into one narrow row — shrink the icons the
+   same way Align/Distribute do there so they don't overflow their buttons. */
+#homeToolGrid.narrow-stack .tool-box[data-block-id="vectortools"] .icon-btn-wide svg,
+#homeToolGrid.narrow-stack #sec-favorite .tool-body[data-block-id="vectortools"] .icon-btn-wide svg {
+    width: 15px;
+    height: 15px;
 }
 
 /* ── Section ──────────────────────────────────────────────────────────────── */
@@ -5122,59 +4799,6 @@ body.bl-drag-active {
     display: none;
 }
 
-/* Shape Tools: half width (data-span="3") or the Favorite slot always
-   drops "Shape Tools", same as Sizing/Auto Crop/Sort above — there's
-   simply never enough room there for both it and the Fill/Stroke HUD. */
-#sec-vectortools[data-span="3"] .vectortools-title-compact-only,
-#sec-favorite .tool-body[data-block-id="vectortools"] .vectortools-title-compact-only {
-    display: none;
-}
-/* One line (data-span="6") keeps it — there's normally room for both —
-   except once the panel itself has gotten genuinely narrow (see
-   _syncVectortoolsTitle/VECTORTOOLS_TITLE_DROP_WIDTH in main.js, which
-   toggles this class), at which point it drops there too. */
-.tool-box[data-block-id="vectortools"].vectortools-one-line-tiny .vectortools-title-compact-only {
-    display: none;
-}
-/* The header row itself must not wrap the HUD below the icon when it's
-   tight — force it to stay on one line and shrink instead (its own
-   min-width:0/overflow/ellipsis chain, see .vectools-fillstroke and
-   .vectools-fs-lbl/.vectools-fs-width above, already handles the actual
-   compression). */
-.tool-box[data-block-id="vectortools"] .ctrl-row,
-#sec-favorite .tool-body[data-block-id="vectortools"] .ctrl-row {
-    flex-wrap: nowrap;
-}
-/* The Fill/Stroke HUD's own click targets (swatch, width) were sized for
-   sharing a full-width header alongside the title text — once the title
-   drops out above, there's no reason to keep them that small, and at half
-   width/in the Favorite slot they read as fiddly to click otherwise. */
-.tool-box[data-block-id="vectortools"][data-span="3"] .vectools-fs-item,
-#sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-item {
-    padding: 4px 5px;
-    gap: 5px;
-}
-.tool-box[data-block-id="vectortools"][data-span="3"] .vectools-fs-swatch,
-#sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-swatch {
-    width: 24px;
-    height: 18px;
-}
-.tool-box[data-block-id="vectortools"][data-span="3"] .vectools-fs-width,
-#sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-width {
-    font-size: 12px;
-    max-width: 48px;
-}
-/* Below the room a full "Fill:"/"Stroke:" label needs, drop the word and
-   keep just the swatch (plus width, for Stroke) — the properties button
-   takes over as the click target into the modal at this width instead. */
-.tool-box[data-block-id="vectortools"][data-span="3"] .vectools-fs-lbl,
-#sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-lbl {
-    display: none;
-}
-.tool-box[data-block-id="vectortools"][data-span="3"] .vectools-fs-props-btn,
-#sec-favorite .tool-body[data-block-id="vectortools"] .vectools-fs-props-btn {
-    display: flex;
-}
 
 /* "Sort Layers based on" only fits alongside the Property/Axis selects at
    full width — half width (docked half) drops it and keeps just the icon.
@@ -7796,8 +7420,8 @@ body.layout-classic .classic-trophy-btn { width: 28px; opacity: 1; pointer-event
 /* "Check for Updates" lives inside the Settings modal, so this needs to
    stack strictly above it (both share .settings-overlay's base
    z-index:1000, which alone falls back to DOM order — Settings is later,
-   so it would win and sit on top) — same reasoning/same fix as #cpOverlay
-   above. _showInstallConfirm in update.js also explicitly closes Settings
+   so it would win and sit on top).
+   _showInstallConfirm in update.js also explicitly closes Settings
    first, but that fade-out takes ~160ms (see closeSettingsPopup in
    main.js) during which #settingsPopup is still on-screen and still
    capturing clicks — this is what keeps it from blocking anything even
@@ -8062,102 +7686,6 @@ body.layout-classic .classic-trophy-btn { width: 28px; opacity: 1; pointer-event
     color: #fff;
 }
 .btn.btn-blue:hover { background: #3680ea; border-color: #3680ea; }
-
-/* ── Color Picker modal ───────────────────────────────────────────────────────
-   A from-scratch HSB picker (see _openColorPicker/_cpSetHSB in main.js) —
-   <input type="color"> never opens inside AE's CEP host, and $.colorPicker()
-   only opens the OS-level panel rather than AE's own dialog, which isn't
-   scriptable at all. Sized narrow (the panel itself defaults to 280px, see
-   .bcs-modal above) rather than matching AE's own wide two-column layout. */
-.cp-hidden { display: none !important; }
-/* Opened FROM the Fill/Stroke edit modal (clicking a swatch there) without
-   that modal ever hiding itself underneath — needs to stack strictly above
-   it (both share .settings-overlay's base z-index:1000, which alone would
-   fall back to DOM order) so it doesn't render behind #shapeEditOverlay.
-   Closing (Cancel/OK) just un-hides this one, revealing that modal again. */
-#cpOverlay { z-index: 1001; }
-.cp-modal {
-    width: calc(100vw - 20px);
-    max-width: 240px;
-    box-sizing: border-box;
-}
-.cp-body { gap: 8px; }
-.cp-sb-row { display: flex; gap: 8px; align-items: stretch; }
-/* Saturation/Brightness square — drawn once per hue change (see
-   _cpDrawSbCanvas): a solid hue fill, a white→transparent gradient across X
-   for saturation, a transparent→black gradient down Y for brightness. */
-.cp-sb-wrap {
-    position: relative;
-    flex: 1 1 auto;
-    aspect-ratio: 5 / 4;
-    min-width: 0;
-    border-radius: 6px;
-    overflow: hidden;
-    cursor: crosshair;
-}
-.cp-sb-wrap canvas { width: 100%; height: 100%; display: block; }
-.cp-sb-handle {
-    position: absolute;
-    left: 0; top: 0;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid #fff;
-    box-shadow: 0 0 0 1px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.4);
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-}
-/* Hue strip — a static rainbow gradient (0-360°, wraps back to red at the
-   bottom same as the top), drawn once at open. */
-.cp-hue-wrap {
-    position: relative;
-    width: 16px;
-    flex-shrink: 0;
-    border-radius: 4px;
-    overflow: hidden;
-    cursor: ns-resize;
-}
-.cp-hue-wrap canvas { width: 100%; height: 100%; display: block; }
-.cp-hue-handle {
-    position: absolute;
-    left: -2px; right: -2px;
-    top: 0;
-    height: 4px;
-    box-sizing: border-box;
-    border-radius: 2px;
-    border: 2px solid #fff;
-    box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
-    transform: translateY(-50%);
-    pointer-events: none;
-}
-.cp-fields-row { display: flex; gap: 8px; }
-.cp-field { display: flex; align-items: center; gap: 4px; flex: 1 1 0; min-width: 0; }
-.cp-field-lbl { font-size: 10px; color: #808080; flex-shrink: 0; }
-.cp-field-unit { font-size: 10px; color: #606060; margin-left: -2px; flex-shrink: 0; }
-.cp-scrub { width: 100%; min-width: 0; }
-.cp-hex-row { display: flex; align-items: center; gap: 6px; }
-.cp-swatch {
-    width: 22px;
-    height: 22px;
-    border-radius: 4px;
-    border: 1px solid rgba(255,255,255,0.14);
-    flex-shrink: 0;
-}
-.cp-hex-input {
-    flex: 1 1 auto;
-    min-width: 0;
-    background: #131313;
-    border: 1px solid #383838;
-    border-radius: 4px;
-    color: var(--text);
-    font-size: 11px;
-    height: 22px;
-    box-sizing: border-box;
-    padding: 0 7px;
-    text-transform: uppercase;
-}
-.cp-hex-input:focus { outline: none; border-color: var(--accent); }
-.cp-actions { justify-content: flex-end; gap: 6px; margin-top: 4px; }
 
 /* ── Project Structure modal ─────────────────────────────────────────────────── */
 
@@ -9474,8 +9002,8 @@ input[type="range"].scale-slider::-webkit-slider-thumb:hover {
    border-radius to round). Shared by both flyout buttons in the Shape
    Tools widget, and by their clones in the Tools tab and Quick Actions
    (same classes carried over, so this one rule covers every instance). */
-.shape-sel-btn, .split-text-btn, .smart-btn { position: relative; }
-.shape-sel-btn::after, .split-text-btn::after, .smart-btn::after {
+.shape-sel-btn, .split-text-btn, .smart-btn, .stroke-align-btn { position: relative; }
+.shape-sel-btn::after, .split-text-btn::after, .smart-btn::after, .stroke-align-btn::after {
     content: '';
     position: absolute;
     right: 4px;
@@ -9493,7 +9021,7 @@ input[type="range"].scale-slider::-webkit-slider-thumb:hover {
    than the roomier tile-style buttons the base size above fits (Tools
    tab's .tools-grid-btn, Quick Actions' .quick-actions-btn), so the same
    triangle read as oversized there. */
-.icon-btn-wide.shape-sel-btn::after, .icon-btn-wide.split-text-btn::after {
+.icon-btn-wide.shape-sel-btn::after, .icon-btn-wide.split-text-btn::after, .icon-btn-wide.stroke-align-btn::after {
     right: 3px;
     bottom: 3px;
     width: 6px;
